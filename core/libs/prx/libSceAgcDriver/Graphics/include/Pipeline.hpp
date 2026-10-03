@@ -65,6 +65,7 @@ std::shared_ptr<Pipeline> CachedPipeline(const Context& context, const State& st
 void ClearCachedPipelines(VkDevice device);
 
 void ValidateViewport(const Context& context, const VkViewport& viewport);
+void ValidateDepthBounds(const Context& context, const State& state);
 
 void ValidateShaderPair(const ShaderRecompiler::RecompileResult& vertex, const ShaderRecompiler::RecompileResult& fragment);
 
