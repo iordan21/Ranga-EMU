@@ -203,6 +203,7 @@ private:
     bool vLshlOrB32(const RdnaInstruction& inst);
     bool vCndmaskB32(const RdnaInstruction& inst);
     bool packB16(const RdnaInstruction& inst, bool high0, bool high1);
+    bool vCvtPk16I32(const RdnaInstruction& inst, bool sign);
     void sSubvectorLoop(const RdnaInstruction& inst, bool begin);
     void sSaveexec(const RdnaInstruction& inst, IrOpcode operation, bool negateExec, bool negateSource, bool write64, bool negateResult = false, bool writeDestination = true);
     void addU32(const RdnaInstruction& inst, bool vector, bool useCarryIn);
