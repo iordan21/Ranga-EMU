@@ -285,7 +285,7 @@ constexpr std::array<OpcodeMeta, static_cast<std::size_t>(IrOpcode::Count)> Meta
     makeMeta("FPFract32", F32, F32),
     makeMeta("LaneId", U32),
     makeMeta("WriteLane", U32, U32, U32, U32),
-    makeMeta("Permlane16U32", U32, U32, U32, U32, U1),
+    makeMeta("Permlane16U32", U32, U32, U32, U32, U1, U32),
     makeMeta("BpermuteU32", U32, U32, U32, U1),
     makeMeta("GetSrtResource", SrtResource),
     makeMeta("GetBufferResource", BufferResource, U32, U32, U32, U32),
