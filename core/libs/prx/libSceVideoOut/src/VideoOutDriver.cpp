@@ -3,6 +3,7 @@
 #define NOMINMAX
 #include <windows.h>
 #endif
+#include "JoystickHints.hpp"
 #include "prx/common/StderrLog.hpp"
 #include <chrono>
 #include <cstdlib>
@@ -203,6 +204,7 @@ VideoOutDriver::VideoOutDriver() {
     // Avoid Windows DPI virtualization so SDL, the drawable and the swapchain use physical pixels
     // SDL applies this hint when the video subsystem starts; SDL_WINDOWS_DPI_AWARENESS can override it
     SDL_SetHint(SDL_HINT_WINDOWS_DPI_AWARENESS, "permonitorv2");
+    SetJoystickBackendHints();
     if (SDL_InitSubSystem(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) < 0) {
         throw std::runtime_error(std::string("SDL_InitSubSystem(VIDEO | GAMECONTROLLER) failed: ") + SDL_GetError());
     }
