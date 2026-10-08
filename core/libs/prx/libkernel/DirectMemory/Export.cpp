@@ -297,10 +297,9 @@ int APS5_VABI sceKernelVirtualQuery(const void* addr, int flags, VirtualQueryInf
 }
 
 int APS5_VABI sceKernelCheckedReleaseDirectMemory(int64_t start, size_t len) {
- (void)start;
- (void)len;
- NotImplemented_nid_no_patch(__func__);
- return 0;
+ if (len == 0) return 0;
+ if (start < 0) return SCE_KERNEL_ERROR_EINVAL;
+ return DirectMemoryCheckedFree(start, len);
 }
 
 int APS5_VABI sceKernelMtypeprotect(const void* addr, size_t len, int type, int prot) {

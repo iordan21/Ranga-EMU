@@ -32,18 +32,15 @@ struct PhysicalMemoryPool {
 
     void Free(uint64_t start, size_t len) {
         std::lock_guard<std::mutex> lock(_mutex);
-        ForgetDirectMemory(static_cast<int64_t>(start), len);
-        _mark(start, len, false);
-        const uint64_t end = start + len;
-        auto it = _blocks.upper_bound(start);
-        if (it != _blocks.begin() && std::prev(it)->second.end > start) --it;
-        while (it != _blocks.end() && it->first < end) {
-            const uint64_t blockStart = it->first;
-            const Block block = it->second;
-            it = _blocks.erase(it);
-            if (blockStart < start) _blocks[blockStart] = {start, block.type};
-            if (block.end > end) it = _blocks.emplace(end, Block{block.end, block.type}).first;
-        }
+        _free(start, len);
+    }
+
+    int CheckedFree(uint64_t start, size_t len) {
+        std::lock_guard<std::mutex> lock(_mutex);
+        if (start % PS5_PAGE_SIZE != 0 || len % PS5_PAGE_SIZE != 0 || start + len > DIRECT_MEMORY_SIZE) return SCE_KERNEL_ERROR_EINVAL;
+        if (!_isUsed(start, len)) return SCE_KERNEL_ERROR_ENOENT;
+        _free(start, len);
+        return 0;
     }
 
     bool Find(uint64_t offset, bool findNext, int64_t* start, int64_t* end, int* memoryType) {
@@ -70,6 +67,29 @@ struct PhysicalMemoryPool {
     }
 
 private:
+    void _free(uint64_t start, size_t len) {
+        ForgetDirectMemory(static_cast<int64_t>(start), len);
+        _mark(start, len, false);
+        const uint64_t end = start + len;
+        auto it = _blocks.upper_bound(start);
+        if (it != _blocks.begin() && std::prev(it)->second.end > start) --it;
+        while (it != _blocks.end() && it->first < end) {
+            const uint64_t blockStart = it->first;
+            const Block block = it->second;
+            it = _blocks.erase(it);
+            if (blockStart < start) _blocks[blockStart] = {start, block.type};
+            if (block.end > end) it = _blocks.emplace(end, Block{block.end, block.type}).first;
+        }
+    }
+
+    bool _isUsed(uint64_t offset, size_t len) const {
+        size_t first = offset / PS5_PAGE_SIZE;
+        size_t count = len / PS5_PAGE_SIZE;
+        for (size_t i = 0; i < count; ++i)
+            if (!_used[first + i]) return false;
+        return true;
+    }
+
     bool _isFree(uint64_t offset, size_t len) const {
         size_t first = offset / PS5_PAGE_SIZE;
         size_t count = len / PS5_PAGE_SIZE;
@@ -101,6 +121,10 @@ int DirectMemoryAlloc(int64_t searchStart, int64_t searchEnd, size_t len, size_t
 
 void DirectMemoryFree(int64_t start, size_t len) {
     PhysicalMemoryPool::Instance().Free(static_cast<uint64_t>(start), len);
+}
+
+int DirectMemoryCheckedFree(int64_t start, size_t len) {
+    return PhysicalMemoryPool::Instance().CheckedFree(static_cast<uint64_t>(start), len);
 }
 
 bool DirectMemoryFind(int64_t offset, bool findNext, int64_t* start, int64_t* end, int* memoryType) {
