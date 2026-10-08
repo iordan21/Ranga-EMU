@@ -444,6 +444,13 @@ void DepthStencilTests() {
     queue.context[0x200] = 0x00700711;
     expectFailure([&] { AgcDriver::Graphics::DecodeState(queue); }, "stencil add/subtract");
     queue.context[0x10b] = 0;
+    queue.context[0x000] = 0x22;
+    queue.context[0x00a] = 0x5a;
+    state = AgcDriver::Graphics::DecodeState(queue);
+    Require(state.stencilTest && state.stencilFront.compareOp == VK_COMPARE_OP_ALWAYS && state.stencilFront.failOp == VK_STENCIL_OP_REPLACE && state.stencilFront.passOp == VK_STENCIL_OP_REPLACE
+        && state.stencilFront.depthFailOp == VK_STENCIL_OP_REPLACE && state.stencilFront.reference == 0x5a && state.stencilFront.writeMask == 0xff
+        && std::memcmp(&state.stencilBack, &state.stencilFront, sizeof(state.stencilFront)) == 0, "stencil clear draw changed");
+    queue.context[0x00a] = 0;
     queue.context[0x000] = 1;
     expectFailure([&] { AgcDriver::Graphics::DecodeState(queue); }, "DB_RENDER_CONTROL");
     queue = makeState();
