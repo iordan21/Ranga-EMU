@@ -65,8 +65,13 @@ add_subdirectory(core/libs)
 add_subdirectory(core/relinker)
 
 if(WIN32)
-    add_executable(SonsOfSparta-PS5 WIN32 launcher/launcher.cpp launcher/launcher.rc)
-    target_compile_definitions(SonsOfSparta-PS5 PRIVATE UNICODE _UNICODE)
-    target_link_options(SonsOfSparta-PS5 PRIVATE -municode -static)
-    target_link_libraries(SonsOfSparta-PS5 PRIVATE gdiplus ole32 shell32 uuid gdi32 comctl32)
+    set(IMGUI_DIR ${CMAKE_SOURCE_DIR}/3rdparty/imgui)
+    add_executable(RangaEmu WIN32
+        launcher/Client.cpp launcher/Common.cpp launcher/Library.cpp launcher/Runner.cpp launcher/launcher.rc
+        ${IMGUI_DIR}/imgui.cpp ${IMGUI_DIR}/imgui_draw.cpp ${IMGUI_DIR}/imgui_tables.cpp ${IMGUI_DIR}/imgui_widgets.cpp
+        ${IMGUI_DIR}/backends/imgui_impl_win32.cpp ${IMGUI_DIR}/backends/imgui_impl_dx11.cpp)
+    target_include_directories(RangaEmu PRIVATE ${IMGUI_DIR} ${IMGUI_DIR}/backends ${CMAKE_SOURCE_DIR}/3rdparty/stb)
+    target_compile_definitions(RangaEmu PRIVATE UNICODE _UNICODE)
+    target_link_options(RangaEmu PRIVATE -municode -static)
+    target_link_libraries(RangaEmu PRIVATE d3d11 d3dcompiler dxgi dwmapi ole32 shell32 uuid gdi32 comctl32)
 endif()

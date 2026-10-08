@@ -8,6 +8,8 @@ inline constexpr std::uint32_t DisplayWindowMinimumWidth = 320;
 inline constexpr std::uint32_t DisplayWindowMinimumHeight = 180;
 inline constexpr std::uint32_t DisplayWindowInitialSizePercent = 60;
 inline constexpr std::uint64_t DisplayWindowCursorHideDelayMs = 5000;
+// Shown before the game's own title in the window caption.
+inline constexpr const char* DisplayWindowEmulatorName = "Ranga Emu";
 
 class DisplayWindow {
 public:
