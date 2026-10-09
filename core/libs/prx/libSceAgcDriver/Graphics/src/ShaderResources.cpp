@@ -121,6 +121,10 @@ struct TextureCache {
     // sampled again every frame, and a fresh large buffer costs the system an allocation and a zeroed page per 4 KiB.
     std::multimap<std::size_t, SnapshotBytes> spare;
     std::size_t spareBytes = 0;
+    // Textures of surfaces whose DCC keys all name one constant clear, kept apart from the entries above: a render
+    // target sampled both as its pending image and, after a fast clear, as the cleared constant would otherwise evict
+    // and re-create one of the two every frame.
+    std::unordered_map<TextureKey, std::pair<DccKeys, std::shared_ptr<Texture>>, TextureKeyHash> cleared;
 };
 
 constexpr std::size_t SpareSnapshotBudget = 512ull << 20u;
@@ -328,6 +332,12 @@ std::shared_ptr<Texture> cachedTexture(const Context& context, std::span<const s
     const auto bytes = static_cast<std::size_t>(guestBytes);
 
     auto source = StorageTexture::FindPending(address, guestBytes);
+    static const std::uint64_t traceAddress = [] { const char* text = std::getenv("APS5_TRACE_TEX_ADDR"); return text ? std::strtoull(text, nullptr, 16) : 0ull; }();
+    const bool traced = traceAddress != 0 && traceAddress == address;
+    const auto trace = [&](const char* what, const StorageTexture* found, std::optional<DccKeys> seen) {
+        if (traced) aps5::LogErr("[textrace] 0x%llx %s source=%p keys=%s dcc=0x%llx\n", static_cast<unsigned long long>(address), what, static_cast<const void*>(found), seen ? DccKeysName(*seen) : "-", static_cast<unsigned long long>(resource.dccAddress));
+    };
+    trace("pending", source.get(), std::nullopt);
     if (source != nullptr && (depthCompare || !Texture::CanCopyFrom(*source, resource) || MetadataMoved(*source, resource))) source.reset();
     std::optional<DccKeys> keys;
     bool clearThroughKeys = false;
@@ -362,6 +372,7 @@ std::shared_ptr<Texture> cachedTexture(const Context& context, std::span<const s
         if (rescan && source == nullptr) keys.reset();
     }
 
+    trace("eligible", source.get(), keys);
     auto generation = GuestMemory::CollectWrites(address, bytes);
     if (source != nullptr && !GuestMemory::UnchangedSince(address, bytes, source->Generation())) {
 
@@ -384,6 +395,22 @@ std::shared_ptr<Texture> cachedTexture(const Context& context, std::span<const s
     auto& cache = Textures();
     const auto key = MakeTextureKey(context.device, words, components, depthCompare);
     std::lock_guard lock(cache.mutex);
+    // A constant clear reads the same texels whatever guest memory holds; ClearRegister is left out, its value lives in a register.
+    static const bool clearedApart = std::getenv("APS5_NO_CLEARED_TEXTURES") == nullptr;
+    if (clearedApart && source == nullptr && *keys != DccKeys::ClearRegister && IsDccClear(*keys)) {
+        if (const auto found = cache.cleared.find(key); found != cache.cleared.end() && found->second.first == *keys) {
+            trace("hit-cleared", nullptr, keys);
+            return found->second.second;
+        }
+        SnapshotBytes filled(bytes);
+        ReadTextureSurface(resource, *keys, filled);
+        auto texture = std::make_shared<Texture>(context, *context.detiler, resource, components, filled, depthCompare);
+        if (cache.cleared.size() >= 256) cache.cleared.clear();
+        cache.cleared[key] = {*keys, texture};
+        counters.snapshots.fetch_add(1, std::memory_order_relaxed);
+        trace("made-cleared", nullptr, keys);
+        return texture;
+    }
     if (auto it = findTexture(cache, key); it != cache.entries.end()) {
         if (it->source != nullptr) {
 
@@ -421,6 +448,7 @@ std::shared_ptr<Texture> cachedTexture(const Context& context, std::span<const s
                 return it->texture;
             }
         }
+        trace(it->source != nullptr ? "erase-view" : "erase-snapshot", it->source.get(), it->keys);
         eraseTexture(cache, it);
     }
     CachedTexture entry{key, address, source != nullptr ? SnapshotBytes{} : takeSnapshotBuffer(cache, bytes), nullptr, *keys, generation};
@@ -466,6 +494,7 @@ std::shared_ptr<Texture> cachedTexture(const Context& context, std::span<const s
     cache.bytes += entry.accounted;
     auto texture = entry.texture;
     traceVideoLookup(source != nullptr ? "made-view" : "made-snapshot", resource, guestBytes, generation);
+    trace(source != nullptr ? "made-view" : "made-snapshot", source.get(), keys);
     logLookup({texture.get(), resource, guestBytes, *keys, generation, source.get()});
     cache.entries.push_front(std::move(entry));
     cache.index[key] = cache.entries.begin();
@@ -658,6 +687,7 @@ void ClearCachedTextures(VkDevice device) {
             if (it->key.device == device) eraseTexture(sampled, it++);
             else ++it;
         }
+        std::erase_if(sampled.cleared, [&](const auto& item) { return item.first.device == device; });
     }
     {
         auto& zeros = NullTextureCache();
