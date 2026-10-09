@@ -470,6 +470,7 @@ struct VulkanDevice::State {
 
             resourceCache.Clear();
             Graphics::ClearCachedTextures(device);
+            Graphics::ClearHostImports(device);
             descriptorCache.reset();
             emptyBuffer.reset();
             samplerCache.reset();

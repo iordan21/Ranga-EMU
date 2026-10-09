@@ -26,6 +26,9 @@ struct HostImport {
     VkDeviceMemory memory;
     VkDeviceAddress address;
     void* alias = nullptr;
+    // The registry range this import was made for, held weakly (a held range is a lease a remap waits for); a range
+    // mapped again at the same base and size is a different range, and its import is retired.
+    std::weak_ptr<const GuestAllocations::Range> range {};
 
     std::uint64_t serial = 0;
     bool unwatched = false;
@@ -244,6 +247,8 @@ private:
     bool uploaded = false;
     bool committed = false;
 };
+
+void ClearHostImports(VkDevice device);
 
 }
 

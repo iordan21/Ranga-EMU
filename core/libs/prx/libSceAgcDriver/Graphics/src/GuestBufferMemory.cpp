@@ -256,9 +256,19 @@ std::uint64_t retireIdleImports(const Context& context, HostImports& state, std:
     return freed;
 }
 
+std::shared_ptr<const GuestAllocations::Range> leasedRangeOwner(const GuestAllocations::Lease& lease, std::uint64_t base) {
+    const auto found = std::lower_bound(lease.begin(), lease.end(), base, [](const auto& range, std::uint64_t value) { return range->address < value; });
+    return found != lease.end() && (*found)->address == base ? *found : nullptr;
+}
+
+bool sameRange(const HostImport& entry, const GuestAllocations::Lease& lease) {
+    const auto current = leasedRangeOwner(lease, entry.base);
+    return current != nullptr && !entry.range.owner_before(current) && !current.owner_before(entry.range);
+}
+
 const HostImport* importAllocation(const Context& context, HostImports& state, std::uint64_t base, std::uint64_t bytes, const GuestAllocations::Lease& lease) {
     if (const auto found = state.imports.find(base); found != state.imports.end()) {
-        if (found->second.bytes == bytes) {
+        if (found->second.bytes == bytes && sameRange(found->second, lease)) {
             found->second.lastUseMs = importClockMs();
             return &found->second;
         }
@@ -287,6 +297,7 @@ const HostImport* importAllocation(const Context& context, HostImports& state, s
         return nullptr;
     }
     HostImport entry{base, bytes, VK_NULL_HANDLE, VK_NULL_HANDLE, 0};
+    entry.range = leasedRangeOwner(lease, base);
 #ifdef _WIN32
 
     bool writable = true;
@@ -399,11 +410,13 @@ void refreshImports(const Context& context, HostImports& state, const GuestAlloc
     state.refreshedGeneration = generation;
     for (auto it = state.imports.begin(); it != state.imports.end();) {
         const auto* range = leasedRangeAt(lease, it->first);
-        if (range != nullptr && range->bytes == it->second.bytes) {
+        if (range != nullptr && range->bytes == it->second.bytes && sameRange(it->second, lease)) {
             if (it->second.unwatched) GuestMemory::Unwatch(it->first, it->second.bytes);
             ++it;
             continue;
         }
+        static const bool trace = std::getenv("APS5_TRACE_HOST_IMPORT") != nullptr;
+        if (trace && range != nullptr && range->bytes == it->second.bytes) std::fprintf(stderr, "[gpu] host import of 0x%llx+0x%llx retired: the range was mapped again\n", static_cast<unsigned long long>(it->first), static_cast<unsigned long long>(it->second.bytes));
         const auto next = std::next(it);
         retireImport(context, state, it, lease);
         it = next;
@@ -2399,6 +2412,25 @@ HostImportsProof HostImportsIdentity(const Context& context) {
     std::lock_guard lock(state.mutex);
     if (importsStale(context, state)) return {};
     return {state.device, state.epoch, state.refreshedGeneration};
+}
+
+// Destroys the device's host imports before the device goes (they would outlive vkDestroyDevice otherwise).
+void ClearHostImports(VkDevice device) {
+    auto& state = Imports();
+    std::lock_guard lock(state.mutex);
+    if (state.device != device) return;
+    for (const auto& [address, entry] : state.imports) {
+        state.destroyBuffer(state.device, entry.buffer, nullptr);
+        state.freeMemory(state.device, entry.memory, nullptr);
+#ifdef _WIN32
+        GuestArena::GuestArenaUnmapAlias_nid_postfix(entry.alias);
+#endif
+    }
+    state.imports.clear();
+    state.failed.clear();
+    state.device = VK_NULL_HANDLE;
+    state.refreshedGeneration = 0;
+    ++state.epoch;
 }
 
 }
