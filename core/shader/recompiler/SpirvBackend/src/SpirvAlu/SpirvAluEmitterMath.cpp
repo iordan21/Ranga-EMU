@@ -160,9 +160,8 @@ std::uint32_t EmitF32ToU32(SpirvEmitterState& state, std::uint32_t src, bool sig
     return Select(state, TypeU32(state), zero, ConstantU32(state, 0u), high);
 }
 
-std::uint32_t EmitDppWriteCondition(SpirvValueEmitContext& ctx, const IrValue& inst) {
+std::uint32_t EmitDppWriteCondition(SpirvValueEmitContext& ctx, const DppMoveFlags& flags, std::uint32_t exec) {
     auto& state = ctx.state;
-    const auto flags = inst.Flags<DppMoveFlags>();
     const auto lane = EmitSubgroupLocalInvocationId(state);
     const auto bankShift = state.module.AllocateId();
     const auto rowShift = state.module.AllocateId();
@@ -192,13 +191,9 @@ std::uint32_t EmitDppWriteCondition(SpirvValueEmitContext& ctx, const IrValue& i
         const auto bounded = state.module.AllocateId();
         state.module.AddFunction(spv::OpLogicalAnd, TypeBool(state), bounded, writable, target.valid);
         writable = bounded;
-        if (!flags.fetchInactive && (flags.control & DppMoveFlags::Lanes8) == 0u) {
-            const auto sourceActive = EmitBallotLaneActiveBool(state, ctx.Ballot(inst.Argument(2)), target.lane);
-            writable = Binary(state, spv::OpLogicalAnd, TypeBool(state), writable, sourceActive);
-        }
     }
     const auto result = state.module.AllocateId();
-    state.module.AddFunction(spv::OpLogicalAnd, TypeBool(state), result, ctx.Arg(inst, 2), writable);
+    state.module.AddFunction(spv::OpLogicalAnd, TypeBool(state), result, exec, writable);
     return result;
 }
 
@@ -501,7 +496,7 @@ std::uint32_t EmitDppMoveU32(SpirvValueEmitContext& ctx, const IrValue& inst) {
     const auto target = EmitDppTargetLane(state, flags.control);
     const auto shuffled = ctx.Shuffle(inst, 0, target.lane);
     if (flags.fetchInactive) {
-        return EmitNative<spv::OpSelect, IrType::U32>(state, target.valid, shuffled, ConstantU32(state, 0u));
+        return shuffled;
     }
     const auto ballot = ctx.Ballot(inst.Argument(1));
     const auto sourceActive = EmitBallotLaneActiveBool(state, ballot, target.lane);
@@ -511,7 +506,8 @@ std::uint32_t EmitDppMoveU32(SpirvValueEmitContext& ctx, const IrValue& inst) {
 }
 
 std::uint32_t EmitDppUpdateU32(SpirvValueEmitContext& ctx, const IrValue& inst) {
-    const auto write = EmitDppWriteCondition(ctx, inst);
+    const auto flags = inst.Flags<DppMoveFlags>();
+    const auto write = EmitDppWriteCondition(ctx, flags, ctx.Arg(inst, 2));
     return EmitNative<spv::OpSelect, IrType::U32>(ctx.state, write, ctx.Arg(inst, 0), ctx.Arg(inst, 1));
 }
 
