@@ -190,7 +190,8 @@ struct ShaderPixelInputInfo {
     }
 
     [[nodiscard]] bool InputIsDefault(std::uint32_t input) const {
-        return input < inputNum && input < 32u && (interpolatorSettings[input] & 0x420u) == 0x20u;
+        // An input past SPI_PS_IN_CONTROL.NUM_INTERP was never written by the vertex stage; it reads as zero, like DEFAULT_VAL 0000.
+        return input < 32u && (input >= inputNum || (interpolatorSettings[input] & 0x420u) == 0x20u);
     }
 
     [[nodiscard]] bool InputIsPassthrough(std::uint32_t input) const {
