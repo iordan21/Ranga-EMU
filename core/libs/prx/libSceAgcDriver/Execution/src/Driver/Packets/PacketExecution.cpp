@@ -40,6 +40,20 @@ void Driver::tolerate(const char* kind, TWork&& work) {
     }
 }
 
+// A compute dispatch whose resources cannot be made sense of (descriptors the game has not filled in yet, null
+// tables) is skipped and reported, as a draw is; failures of the device itself still end the game.
+template <typename TWork>
+void Driver::tolerateDispatch(TWork&& work) {
+    static const bool strict = std::getenv("APS5_STRICT_DISPATCH") != nullptr;
+    try {
+        work();
+    } catch (const std::runtime_error& error) {
+        const std::string_view what = error.what();
+        if (strict || what.find("Vulkan result") != std::string_view::npos) throw;
+        reportSkip("dispatch", error.what());
+    }
+}
+
 void Driver::execute(const Submission& submission) {
     if (submission.suspend) {
 
@@ -239,11 +253,11 @@ void Driver::execute(const Submission& submission) {
             CaptureTrace::Log("flip frame=%llu submission=%llu offset=%zu batch=%llu unsignaled=%llu", static_cast<unsigned long long>(frameSerial), static_cast<unsigned long long>(submission.serial), cursor, static_cast<unsigned long long>(batchesAtFlip), static_cast<unsigned long long>(unsignaledAtFlip));
             submission.flips.at(cursor)->GpuReady(frame);
         } else if (opcode == 0x15) {
-            timed(&WorkerProfile::dispatchMs, [&] { dispatch(queue, packet, submission); });
+            timed(&WorkerProfile::dispatchMs, [&] { tolerateDispatch([&] { dispatch(queue, packet, submission); }); });
             Graphics::Recorder::CountRecordedWork();
             finishDispatchPacket(false);
         } else if (opcode == 0x16) {
-            timed(&WorkerProfile::dispatchMs, [&] { dispatchIndirect(queue, packet, submission); });
+            timed(&WorkerProfile::dispatchMs, [&] { tolerateDispatch([&] { dispatchIndirect(queue, packet, submission); }); });
             Graphics::Recorder::CountRecordedWork();
             finishDispatchPacket(true);
         } else if (opcode == 0x3c || opcode == 0x93) {

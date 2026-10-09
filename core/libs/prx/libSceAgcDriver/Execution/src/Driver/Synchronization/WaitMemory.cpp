@@ -17,7 +17,8 @@ void PollSleep() {
     thread_local HANDLE timer = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
     if (timer != nullptr) {
         LARGE_INTEGER due{};
-        due.QuadPart = -2000;
+        static const LONGLONG ticks = [] { const char* text = std::getenv("APS5_POLL_SLEEP_US"); return -10LL * (text ? std::atoll(text) : 200LL); }();
+        due.QuadPart = ticks;
         if (SetWaitableTimer(timer, &due, 0, nullptr, nullptr, FALSE)) {
             WaitForSingleObject(timer, INFINITE);
             return;
@@ -255,7 +256,11 @@ void Driver::waitMemory(std::span<const std::uint32_t> packet, std::uint32_t que
     if (entryTryFailed && pollService(false)) return;
 
     static const bool pauseSpin = std::getenv("APS5_NO_PAUSE_SPIN") == nullptr;
-    const auto spinLimit = queue == 0 ? std::chrono::microseconds(1500) : std::chrono::microseconds(100);
+    // How long a wait spins before it sleeps between polls; a sleep costs a timer tick, and a frame waits hundreds of
+    // times, so the spin matters. APS5_WAIT_SPIN_US / APS5_WAIT_SPIN_OTHER_US tune queue 0 and the other queues.
+    static const auto spinQueue0 = std::chrono::microseconds([] { const char* text = std::getenv("APS5_WAIT_SPIN_US"); return text ? std::atoi(text) : 1500; }());
+    static const auto spinOthers = std::chrono::microseconds([] { const char* text = std::getenv("APS5_WAIT_SPIN_OTHER_US"); return text ? std::atoi(text) : 100; }());
+    const auto spinLimit = queue == 0 ? spinQueue0 : spinOthers;
     const auto spinStart = std::chrono::steady_clock::now();
     bool spinning = pauseSpin;
     std::uint32_t polls = 0;

@@ -182,6 +182,7 @@ struct Client {
     bool logFollow = true;
     Runner::State lastState = Runner::State::Idle;
     std::function<void()> pending;
+    std::vector<Addon> addons;
 
     explicit Client(const std::wstring& root) : library(root) {}
 
@@ -191,8 +192,10 @@ struct Client {
         selected = index;
         logText.clear();
         logDirty = true;
+        addons.clear();
         if (Game* game = Current()) {
             options = LoadOptions(*game);
+            addons = LoadAddons(*game);
             library.Select(game->titleId);
         }
     }
@@ -219,7 +222,7 @@ struct Client {
     }
 
     void AddGame() {
-        const std::wstring folder = PickFolder(window, library.Root(), L"Escolha a pasta do jogo (com eboot.bin, sce_sys, sce_module e Media)");
+        const std::wstring folder = PickFolder(window, library.Root(), L"Escolha a pasta do jogo (com eboot.bin e sce_sys)");
         if (folder.empty()) return;
         std::wstring error;
         const int index = library.Add(folder, error);
@@ -382,6 +385,66 @@ struct Client {
         ImGui::TextDisabled("F8  +10 materiais de melhoria");
     }
 
+    void DlcTab(const Game& game, float scale) {
+        ImGui::Dummy(ImVec2(0, 4 * scale));
+        // The runtime reads the installed add-ons when the game starts, so they change only while it is closed.
+        const bool running = runner.Busy() && runner.TitleId() == game.titleId;
+        ImGui::BeginDisabled(running);
+        if (ImGui::Button("+  Instalar DLC...")) {
+            const std::wstring folder = PickFolder(window, game.folder, L"Escolha a pasta da DLC (a que tem sce_sys\\param.json)");
+            if (!folder.empty()) {
+                pending = [this, folder] {
+                    Game* current = Current();
+                    if (current == nullptr) return;
+                    const std::wstring error = InstallAddon(*current, folder);
+                    if (!error.empty()) MessageBoxW(window, error.c_str(), kAppName, MB_OK | MB_ICONWARNING);
+                    addons = LoadAddons(*current);
+                };
+            }
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled("%s", running ? "Feche o jogo para instalar ou remover DLC." : "A DLC precisa ter sido tirada do seu console.");
+        ImGui::Dummy(ImVec2(0, 4 * scale));
+        if (addons.empty()) {
+            ImGui::TextDisabled("Nenhuma DLC instalada.");
+            return;
+        }
+        for (size_t i = 0; i < addons.size(); ++i) {
+            const Addon& addon = addons[i];
+            ImGui::PushID(static_cast<int>(i));
+            ImGui::Separator();
+            ImGui::BeginGroup();
+            ImGui::PushFont(semibold, 0.0f);
+            ImGui::TextUnformatted(Utf8(addon.title).c_str());
+            ImGui::PopFont();
+            ImGui::TextDisabled("%s   ·   %s", Utf8(addon.label).c_str(), addon.hasData ? "com arquivos" : "só licença");
+            if (addon.hasData && !IsDirectory(addon.folder)) {
+                ImGui::SameLine();
+                ImGui::PushStyleColor(ImGuiCol_Text, Color(kRed));
+                ImGui::TextUnformatted("pasta não encontrada");
+                ImGui::PopStyleColor();
+            }
+            ImGui::EndGroup();
+            ImGui::SameLine(ImGui::GetContentRegionMax().x - 90 * scale);
+            ImGui::BeginDisabled(running);
+            if (ImGui::Button("Remover", ImVec2(90 * scale, 0))) {
+                const std::wstring question = L"Remover a DLC " + addon.title + L"?\n\nA pasta dela não é apagada.";
+                if (MessageBoxW(window, question.c_str(), kAppName, MB_YESNO | MB_ICONQUESTION) == IDYES) {
+                    pending = [this, label = addon.label] {
+                        Game* current = Current();
+                        if (current == nullptr) return;
+                        RemoveAddon(*current, label);
+                        addons = LoadAddons(*current);
+                    };
+                }
+            }
+            ImGui::EndDisabled();
+            ImGui::PopID();
+        }
+    }
+
     void LogTab(const Game& game, float scale) {
         ImGui::Dummy(ImVec2(0, 4 * scale));
         ImGui::SetNextItemWidth(160 * scale);
@@ -518,6 +581,12 @@ struct Client {
             if (profile.sonsOfSparta && ImGui::BeginTabItem("Cheats")) {
                 ImGui::BeginChild("##cheats");
                 CheatsTab(scale);
+                ImGui::EndChild();
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("DLC")) {
+                ImGui::BeginChild("##dlc");
+                DlcTab(*game, scale);
                 ImGui::EndChild();
                 ImGui::EndTabItem();
             }

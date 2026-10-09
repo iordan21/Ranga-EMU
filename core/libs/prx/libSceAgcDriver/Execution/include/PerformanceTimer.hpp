@@ -15,6 +15,8 @@
 #include <stdexcept>
 #include <string_view>
 #include <utility>
+#include "prx/common/SlowLog.hpp"
+#include "prx/common/StderrLog.hpp"
 #include "prx/libc/include/general/LogMacros.hpp"
 
 namespace AgcDriver {
@@ -102,10 +104,13 @@ public:
     void Print(std::uint32_t outputHandle, std::int32_t buffer, std::int64_t argument, Clock::time_point finished, Clock::duration interval) {
         std::lock_guard lock(mutex);
         if (firstSerial == 0 || flipSerial == 0) throw std::runtime_error("Frame timing: incomplete submission lineage");
+        // Without the timing build only slow frames are printed, and only when APS5_SLOW_FRAME_MS asks for them.
+        const bool slow = aps5::SlowLogEnabled() && milliseconds(interval) >= aps5::SlowFrameMs();
+        if (!APS5_ENABLE_TIMING_LOG && !slow) return;
         std::ostringstream output;
         output.imbue(std::locale::classic());
         output << std::fixed << std::setprecision(3);
-        output << "[FrameTiming] frame=" << id << " submissions=" << firstSerial << ':' << lastSerial;
+        output << "[FrameTiming] t_ms=" << aps5::SteadyMs(finished) << " frame=" << id << " submissions=" << firstSerial << ':' << lastSerial;
         output << " output=" << outputHandle;
         output << " flip=" << flipSerial << ':' << flipOffset << " buffer=" << buffer << " argument=" << argument;
         output << " endpoint=flip_complete display_confirmed=0";
@@ -131,7 +136,8 @@ public:
             if (metric.bytes != 0) output << ',' << metric.bytes;
             output << ')';
         }
-        APS5_LOG_TIMING("%s", output.str().c_str());
+        if (slow) aps5::LogErr("%s\n", output.str().c_str());
+        else APS5_LOG_TIMING("%s", output.str().c_str());
     }
 
 private:

@@ -77,10 +77,30 @@ TextureKey MakeTextureKey(VkDevice device, std::span<const std::uint32_t> words,
     return key;
 }
 
+// A byte vector that leaves new elements uninitialized: a snapshot is filled from guest memory right away, so
+// zeroing megabytes first is wasted.
+template <typename T>
+struct DefaultInitAllocator : std::allocator<T> {
+    template <typename U>
+    struct rebind {
+        using other = DefaultInitAllocator<U>;
+    };
+    using std::allocator<T>::allocator;
+    template <typename U>
+    void construct(U* pointer) noexcept {
+        ::new (static_cast<void*>(pointer)) U;
+    }
+    template <typename U, typename... Args>
+    void construct(U* pointer, Args&&... args) {
+        ::new (static_cast<void*>(pointer)) U(std::forward<Args>(args)...);
+    }
+};
+using SnapshotBytes = std::vector<std::byte, DefaultInitAllocator<std::byte>>;
+
 struct CachedTexture {
     TextureKey key;
     std::uint64_t address;
-    std::vector<std::byte> bytes;
+    SnapshotBytes bytes;
     std::shared_ptr<Texture> texture;
 
     DccKeys keys = DccKeys::Uncompressed;
@@ -97,7 +117,23 @@ struct TextureCache {
     std::list<CachedTexture> entries;
     std::unordered_map<TextureKey, std::list<CachedTexture>::iterator, TextureKeyHash> index;
     std::uint64_t bytes = 0;
+    // Snapshot buffers of erased entries, by size, for the next texture of that size: the same render targets are
+    // sampled again every frame, and a fresh large buffer costs the system an allocation and a zeroed page per 4 KiB.
+    std::multimap<std::size_t, SnapshotBytes> spare;
+    std::size_t spareBytes = 0;
 };
+
+constexpr std::size_t SpareSnapshotBudget = 512ull << 20u;
+
+SnapshotBytes takeSnapshotBuffer(TextureCache& cache, std::size_t bytes) {
+    if (const auto found = cache.spare.find(bytes); found != cache.spare.end()) {
+        auto buffer = std::move(found->second);
+        cache.spare.erase(found);
+        cache.spareBytes -= bytes;
+        return buffer;
+    }
+    return SnapshotBytes(bytes);
+}
 
 TextureCache& Textures() {
     static TextureCache cache;
@@ -122,6 +158,14 @@ std::list<CachedTexture>::iterator findTexture(TextureCache& cache, const Textur
 
 void eraseTexture(TextureCache& cache, std::list<CachedTexture>::iterator it) {
     cache.bytes -= it->accounted;
+    if (const auto size = it->bytes.size(); size >= 65536 && size <= SpareSnapshotBudget) {
+        while (!cache.spare.empty() && cache.spareBytes + size > SpareSnapshotBudget) {
+            cache.spareBytes -= cache.spare.begin()->first;
+            cache.spare.erase(cache.spare.begin());
+        }
+        cache.spare.emplace(size, std::move(it->bytes));
+        cache.spareBytes += size;
+    }
     cache.index.erase(it->key);
     cache.entries.erase(it);
 }
@@ -379,7 +423,7 @@ std::shared_ptr<Texture> cachedTexture(const Context& context, std::span<const s
         }
         eraseTexture(cache, it);
     }
-    CachedTexture entry{key, address, std::vector<std::byte>(source != nullptr ? 0u : bytes), nullptr, *keys, generation};
+    CachedTexture entry{key, address, source != nullptr ? SnapshotBytes{} : takeSnapshotBuffer(cache, bytes), nullptr, *keys, generation};
     entry.accounted = guestBytes;
     if (source != nullptr) {
         entry.source = source;
@@ -1973,9 +2017,15 @@ std::size_t ShaderResources::addGuestBuffer(std::span<const std::uint32_t> words
     Require(words.size() == 4, "buffer descriptor must contain four DWORDs");
     Require((words[1] & 0x40000000u) == 0, "buffer descriptor has reserved bits set");
     const ShaderRecompiler::ShaderBufferResource descriptor{{words[0], words[1], words[2], words[3]}};
-    Require(descriptor.Type() == 0u, "buffer descriptor uses an unsupported type");
-    const auto address = descriptor.Base48();
-    const auto byteSize = descriptor.GetSize();
+    // A slot whose descriptor is not a buffer (yet) is read by the shader before the game fills it in; it is bound as
+    // an empty buffer, which reads zeros and drops stores, rather than ending the game.
+    const bool notBuffer = descriptor.Type() != 0u;
+    if (notBuffer) {
+        static std::atomic<unsigned> reported{0};
+        if (reported.fetch_add(1, std::memory_order_relaxed) < 8) aps5::LogErr("[gpu] buffer descriptor of type %u (words %08x %08x %08x %08x) bound as an empty buffer\n", static_cast<unsigned>(descriptor.Type()), words[0], words[1], words[2], words[3]);
+    }
+    const auto address = notBuffer ? 0 : descriptor.Base48();
+    const auto byteSize = notBuffer ? 0 : descriptor.GetSize();
     if (byteSize == 0 || address == 0) {
         allocations.push_back({0, EmptyBufferBytes, false, nullptr, ShaderRecompiler::DescriptorRole::GuestBuffers, false});
         return allocations.size() - 1;

@@ -26,6 +26,8 @@ struct Profile {
     bool sonsOfSparta = false;
     std::vector<std::wstring> excludedModules;
     std::vector<std::wstring> deferredModules;
+    // Runtime settings this game needs, set before the game starts; debug_env.txt can still override them.
+    std::vector<std::pair<std::wstring, std::wstring>> environment;
 };
 
 Profile ProfileFor(const std::wstring& titleId);
@@ -64,6 +66,21 @@ struct Options {
 
 Options LoadOptions(const Game& game);
 void SaveOptions(const Game& game, const Options& options);
+
+// An add-on (DLC) dumped from the console. Its files stay in folder; installing it lists its entitlement label in the
+// workspace's anyps5-entitlements.ini, which the runtime reads as owned add-ons, and, when it has data beyond sce_sys,
+// links addcont\<label> in the workspace to folder, where the runtime mounts it for the game.
+struct Addon {
+    std::wstring label;
+    std::wstring title;
+    std::wstring folder;
+    bool hasData = false;
+};
+
+std::vector<Addon> LoadAddons(const Game& game);
+// Empty on success, otherwise why the folder was not installed.
+std::wstring InstallAddon(const Game& game, const std::wstring& folder);
+void RemoveAddon(const Game& game, const std::wstring& label);
 
 }
 

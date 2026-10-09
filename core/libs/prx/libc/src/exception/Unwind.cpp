@@ -1,4 +1,5 @@
 #include <cstring>
+#include <memory>
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
@@ -142,16 +143,48 @@ bool DecodeCandidate(_Unwind_Context& context, Frame& frame, const Lookup& query
     return true;
 }
 
+#ifdef _WIN32
+// The image an address lies in. A backtrace asks for one per frame and the game takes many of them, so images seen
+// once are remembered instead of asking the system (VirtualQuery) every time; modules stay loaded while frames
+// point into them.
+const Byte* ImageContaining(Word pc) {
+    struct Image { std::atomic<Word> begin{0}, end{0}; };
+    static Image images[32];
+    static std::atomic<unsigned> used{0};
+    const unsigned count = used.load(std::memory_order_acquire);
+    for (unsigned i = 0; i < count && i < 32; ++i) {
+        const Word begin = images[i].begin.load(std::memory_order_relaxed);
+        if (pc >= begin && pc < images[i].end.load(std::memory_order_relaxed)) return reinterpret_cast<const Byte*>(begin);
+    }
+    MEMORY_BASIC_INFORMATION memory{};
+    if (!VirtualQuery(reinterpret_cast<void*>(pc), &memory, sizeof(memory)) || memory.Type != MEM_IMAGE) return nullptr;
+    const auto* base = static_cast<const Byte*>(memory.AllocationBase);
+    const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE) return base;
+    const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
+    if (nt->Signature != IMAGE_NT_SIGNATURE) return base;
+    static std::atomic_flag adding = ATOMIC_FLAG_INIT;
+    if (!adding.test_and_set(std::memory_order_acquire)) {
+        const unsigned slot = used.load(std::memory_order_relaxed);
+        if (slot < 32) {
+            images[slot].begin.store(Word(base), std::memory_order_relaxed);
+            images[slot].end.store(Word(base) + nt->OptionalHeader.SizeOfImage, std::memory_order_relaxed);
+            used.store(slot + 1, std::memory_order_release);
+        }
+        adding.clear(std::memory_order_release);
+    }
+    return base;
+}
+#endif
+
 bool DecodeFrame(_Unwind_Context& context, Frame& frame) {
     Lookup query {context.registers[16] - !context.signalFrame};
 #ifdef __linux__
     dl_iterate_phdr(FindFrame, &query);
     return DecodeCandidate(context, frame, query);
 #else
-    MEMORY_BASIC_INFORMATION memory{};
-    if (!VirtualQuery(reinterpret_cast<void*>(query.pc), &memory, sizeof(memory)) || memory.Type != MEM_IMAGE)
-        return false;
-    const auto* base = static_cast<const Byte*>(memory.AllocationBase);
+    const auto* base = ImageContaining(query.pc);
+    if (base == nullptr) return false;
     const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
     if (dos->e_magic != IMAGE_DOS_SIGNATURE) return false;
     const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
@@ -316,7 +349,46 @@ bool Expression(const Byte* p, const _Unwind_Context& context, Word cfa, Word& r
     result = stack[0]; return true;
 }
 
+bool DecodeRules(_Unwind_Context& context, Frame& frame, Rules& rules);
+
+// The rules for a code address never change, and a game that takes backtraces walks the same few hundred frames
+// over and over: each thread keeps the decoded rules of the addresses it unwound through last.
+struct CachedRules {
+    Word pc = ~Word(0);
+    bool signal = false;
+    Frame frame;
+    Rules rules;
+    Word region = 0, lsda = 0, personality = 0, textBase = 0, dataBase = 0;
+};
+
 bool GetRules(_Unwind_Context& context, Frame& frame, Rules& rules) {
+    constexpr unsigned Slots = 512;
+    thread_local std::unique_ptr<CachedRules[]> cache;
+    if (!cache) cache.reset(new CachedRules[Slots]);
+    const Word pc = context.registers[16] - !context.signalFrame;
+    auto& slot = cache[(pc ^ (pc >> 9)) % Slots];
+    if (slot.pc != pc || slot.signal != context.signalFrame) {
+        if (!DecodeRules(context, frame, rules)) return false;
+        slot.pc = pc;
+        slot.signal = context.signalFrame;
+        slot.frame = frame;
+        slot.rules = rules;
+        slot.region = context.region; slot.lsda = context.lsda; slot.personality = context.personality;
+        slot.textBase = context.textBase; slot.dataBase = context.dataBase;
+    } else {
+        frame = slot.frame;
+        rules = slot.rules;
+        context.region = slot.region; context.lsda = slot.lsda; context.personality = slot.personality;
+        context.textBase = slot.textBase; context.dataBase = slot.dataBase;
+    }
+    if (rules.cfaExpression) return Expression(rules.cfaExpression, context, 0, context.cfa);
+    if (rules.cfaRegister >= 17) return false;
+    context.cfa = context.registers[rules.cfaRegister] + rules.cfaOffset;
+    return true;
+}
+
+// Decodes the frame and its rules at the context's address, without computing the CFA.
+bool DecodeRules(_Unwind_Context& context, Frame& frame, Rules& rules) {
     if (!DecodeFrame(context, frame)) return false;
     Rules initial;
     if (!Instructions(frame.cieBegin, frame.cieEnd, frame, ~Word(0), initial, {})) return false;
@@ -328,11 +400,7 @@ bool GetRules(_Unwind_Context& context, Frame& frame, Rules& rules) {
     }
 #endif
     rules = initial;
-    if (!Instructions(frame.begin, frame.end, frame, context.registers[16] - !context.signalFrame, rules, initial)) return false;
-    if (rules.cfaExpression) return Expression(rules.cfaExpression, context, 0, context.cfa);
-    if (rules.cfaRegister >= 17) return false;
-    context.cfa = context.registers[rules.cfaRegister] + rules.cfaOffset;
-    return true;
+    return Instructions(frame.begin, frame.end, frame, context.registers[16] - !context.signalFrame, rules, initial);
 }
 
 bool Step(_Unwind_Context& context) {

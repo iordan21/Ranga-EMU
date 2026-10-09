@@ -71,6 +71,24 @@ constexpr std::uint8_t BlockWritten = 1;
 constexpr std::uint8_t BlockMaybeWritten = 2;
 bool ChangedBlocks(std::uint64_t address, std::size_t bytes, std::span<const std::uint64_t> generations, std::span<std::uint8_t> changed, std::span<std::uint8_t> cpu = {});
 
+// A recursive lock on the system's slim reader/writer lock: the GPU mutex changes hands thousands of times a second,
+// and the C runtime's recursive mutex sends every contended hand-off through a kernel event.
+class RecursiveSlimLock {
+public:
+    void lock();
+    bool try_lock();
+    void unlock();
+
+private:
+#ifdef _WIN32
+    void* slim = nullptr;
+    std::atomic<unsigned long> owner{0};
+    std::uint32_t depth = 0;
+#else
+    std::recursive_mutex mutex;
+#endif
+};
+
 class GpuMutexType {
 public:
     void lock();
@@ -83,7 +101,7 @@ public:
 
 private:
     void acquired();
-    std::recursive_mutex mutex;
+    RecursiveSlimLock mutex;
 
     std::atomic<const void*> owner{nullptr};
     std::uint32_t depth = 0;

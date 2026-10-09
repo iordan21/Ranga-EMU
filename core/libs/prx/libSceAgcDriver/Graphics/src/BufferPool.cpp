@@ -19,7 +19,10 @@ bool sharedTiers() {
 
 BufferPool::BufferPool(const Context& context) : device(context.device), unmap(context.Function<PFN_vkUnmapMemory>("vkUnmapMemory")), destroyBuffer(context.Function<PFN_vkDestroyBuffer>("vkDestroyBuffer")), freeMemory(context.Function<PFN_vkFreeMemory>("vkFreeMemory")) {
     smallTier.budget = smallBudget;
-    largeTier.budget = budget;
+    // Retained host-visible buffers live in the system memory the GPU can see, which host imports of the game's memory
+    // also need (NVIDIA caps it at half the RAM); APS5_HOST_POOL_MIB lowers what is kept for reuse.
+    static const VkDeviceSize hostBudget = [] { const char* value = std::getenv("APS5_HOST_POOL_MIB"); return value != nullptr ? std::strtoull(value, nullptr, 10) << 20u : budget; }();
+    largeTier.budget = hostBudget;
     deviceTier.budget = DeviceBudget();
 }
 

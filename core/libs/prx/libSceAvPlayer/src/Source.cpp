@@ -714,11 +714,14 @@ private:
         resamplerRate = 0;
     }
 
-    void seek(std::uint64_t milliseconds) {
+    // False when neither the target nor the start of the stream could be reached.
+    bool seek(std::uint64_t milliseconds) {
         const auto target = static_cast<std::int64_t>(std::min<std::uint64_t>(milliseconds, static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max() / 1000)) * 1000);
-        if (avformat_seek_file(format, -1, std::numeric_limits<std::int64_t>::min(), target, target, 0) < 0) {
-            avformat_seek_file(format, -1, std::numeric_limits<std::int64_t>::min(), 0, 0, 0);
-        }
+        if (avformat_seek_file(format, -1, std::numeric_limits<std::int64_t>::min(), target, target, 0) >= 0) return true;
+        const int result = avformat_seek_file(format, -1, std::numeric_limits<std::int64_t>::min(), 0, 0, 0);
+        if (result >= 0) return true;
+        std::fprintf(stderr, "[avp] seek to %llu ms failed: %d\n", static_cast<unsigned long long>(milliseconds), result);
+        return false;
     }
 
     std::uint64_t frameDuration() const {
@@ -777,6 +780,9 @@ private:
         AVPacket* packet = av_packet_alloc();
         bool ended = false;
         bool skipLoop = false;
+        // Packets read since the last loop back. A loop that reads nothing again would spin on the end of the data, thousands
+        // of times a second with a LOOPING_BACK event each, so the source ends instead.
+        std::uint64_t packetsSinceLoop = 1;
         for (;;) {
             std::optional<Reposition> requested;
             {
@@ -825,6 +831,7 @@ private:
                 condition.notify_all();
                 if (requested->announce) events.OnWarning(SCE_AVPLAYER_ERROR_WAR_JUMP_COMPLETE);
                 ended = false;
+                packetsSinceLoop = 1;
                 continue;
             }
             const int result = av_read_frame(format, packet);
@@ -832,9 +839,10 @@ private:
                 if (result != AVERROR_EOF && !avio_feof(format->pb)) {
                     APS5_LOG_ERR("Could not read a packet: %d", result);
                     events.OnError();
-                } else if (looping && !skipLoop) {
+                } else if (looping && !skipLoop && packetsSinceLoop != 0) {
                     if (std::getenv("APS5_TRACE_AVP") != nullptr) std::fprintf(stderr, "[avp] end of data: last video packet pts=%llu ms, looping back\n", static_cast<unsigned long long>(lastVideoPacketMs.load()));
                     seek(0);
+                    packetsSinceLoop = 0;
                     {
                         std::lock_guard lock(mutex);
                         ++demuxEpoch;
@@ -844,6 +852,7 @@ private:
 
                     continue;
                 }
+                if (looping && !skipLoop) std::fprintf(stderr, "[avp] looping source read nothing after going back to its start; it ends here\n");
                 {
                     std::lock_guard lock(mutex);
                     pushAll(PacketKind::End, demuxEpoch, 0);
@@ -853,6 +862,7 @@ private:
                 ended = true;
                 continue;
             }
+            ++packetsSinceLoop;
             Decoder* target = packet->stream_index == video.stream ? &video : packet->stream_index == audio.stream ? &audio : nullptr;
             if (packet->stream_index == video.stream) {
                 static thread_local bool first = true;

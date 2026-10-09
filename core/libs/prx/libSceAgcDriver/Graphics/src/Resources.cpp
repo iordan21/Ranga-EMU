@@ -3,7 +3,9 @@
 #include "prx/libSceAgcDriver/Graphics/include/Recorder.hpp"
 #include "prx/libSceAgcDriver/Execution/include/PerformanceTimer.hpp"
 #include "prx/libSceAgcDriver/Execution/include/GuestMemory.hpp"
+#include "prx/common/StderrLog.hpp"
 #include <exception>
+#include <mutex>
 
 namespace AgcDriver::Graphics {
 
@@ -45,7 +47,23 @@ Buffer::Buffer(const Context& context, std::size_t size, VkBufferUsageFlags usag
         } else {
             allocation.memoryTypeIndex = context.MemoryType(requirements.memoryTypeBits, properties);
         }
-        Check(context.Function<PFN_vkAllocateMemory>("vkAllocateMemory")(context.device, &allocation, nullptr, &memory), "vkAllocateMemory buffer");
+        const auto allocate = context.Function<PFN_vkAllocateMemory>("vkAllocateMemory");
+        auto result = allocate(context.device, &allocation, nullptr, &memory);
+        // NVIDIA lets the GPU see at most half of the system RAM; once the game's mirrored heaps fill that, host-visible
+        // buffers go to video memory the CPU can map (resizable BAR), which is slower for the CPU to read but still works.
+        if ((result == VK_ERROR_OUT_OF_DEVICE_MEMORY || result == VK_ERROR_OUT_OF_HOST_MEMORY) && properties == hostDefault) {
+            try {
+                const auto fallback = context.MemoryType(requirements.memoryTypeBits, hostDefault | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+                if (fallback != allocation.memoryTypeIndex) {
+                    allocation.memoryTypeIndex = fallback;
+                    result = allocate(context.device, &allocation, nullptr, &memory);
+                    static std::once_flag reported;
+                    std::call_once(reported, [&] { aps5::LogErr("[gpu] system memory visible to the GPU is full; host-visible buffers now also go to video memory (first: %llu MiB, %s)\n", static_cast<unsigned long long>(requirements.size >> 20u), result == VK_SUCCESS ? "ok" : "failed too"); });
+                }
+            } catch (const std::runtime_error&) {
+            }
+        }
+        Check(result, "vkAllocateMemory buffer");
         Check(context.Function<PFN_vkBindBufferMemory>("vkBindBufferMemory")(context.device, buffer, memory, 0), "vkBindBufferMemory");
         initializeAddress(usage);
         if ((properties & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0) Check(context.Function<PFN_vkMapMemory>("vkMapMemory")(context.device, memory, 0, VK_WHOLE_SIZE, 0, &mapping), "vkMapMemory");

@@ -120,11 +120,14 @@ void Runner::Run(std::wstring root, Game game, Options options) {
         WriteTextLine(stampFile, stampNow);
     }
 
-    for (const wchar_t* name : {L"Media", L"sce_sys"}) LinkFolder(workspace + L"\\app0\\" + name, game.folder + L"\\" + name, logs + L"\\link.log");
+    LinkGameFiles(game.folder, workspace + L"\\app0", logs + L"\\link.log");
     if (profile.sonsOfSparta && options.resolution >= 0) WriteSosSetting(workspace, "resolutionIndex", options.resolution);
 
     // The runtime reads these choices from its environment; an option that is off has no variable, so an inherited value cannot turn it on.
     {
+        // A setting one game's profile made must not carry over to the next game started from the same client.
+        for (const wchar_t* name : {L"APS5_HOST_IMPORT", L"APS5_HOST_IMPORT_MIB", L"APS5_HOST_POOL_MIB"}) SetEnvironmentVariableW(name, nullptr);
+        for (const auto& [name, value] : profile.environment) SetEnvironmentVariableW(name.c_str(), value.c_str());
         FILE* debug = nullptr;
         if (_wfopen_s(&debug, (workspace + L"\\debug_env.txt").c_str(), L"r") == 0 && debug != nullptr) {
             wchar_t entry[512];

@@ -219,9 +219,49 @@ void decideImportWatch(const Context& context, HostImports& state) {
 #endif
 }
 
+std::uint64_t importClockMs() {
+    return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
+// Gives back imports no dispatch or draw has bound for a while, oldest first, until `wanted` bytes are free:
+// NVIDIA lets the GPU map at most half of the system memory, and a level of the game needs more than that over
+// time, though far less at once. Retiring keeps the memory alive until the GPU work using it is done.
+std::uint64_t retireIdleImports(const Context& context, HostImports& state, std::uint64_t wanted, const GuestAllocations::Lease& lease) {
+    static const std::uint64_t idleMs = [] { const char* value = std::getenv("APS5_IMPORT_IDLE_MS"); return value != nullptr ? std::strtoull(value, nullptr, 10) : 2000ull; }();
+    const auto now = importClockMs();
+    std::vector<std::pair<std::uint64_t, std::uint64_t>> idle;
+    for (const auto& [address, entry] : state.imports)
+        if (entry.lastUseMs + idleMs < now) idle.emplace_back(entry.lastUseMs, address);
+    std::sort(idle.begin(), idle.end());
+    std::uint64_t freed = 0;
+    std::size_t retired = 0;
+    for (const auto& [lastUse, address] : idle) {
+        if (freed >= wanted) break;
+        const auto found = state.imports.find(address);
+        if (found == state.imports.end()) continue;
+        freed += found->second.bytes;
+        ++retired;
+        retireImport(context, state, found, lease);
+    }
+    // Ranges refused for want of memory may fit now.
+    if (freed != 0) state.failed.clear();
+    static std::uint64_t retiredTotal = 0, freedTotal = 0;
+    static auto lastReport = std::chrono::steady_clock::now() - std::chrono::seconds(60);
+    retiredTotal += retired;
+    freedTotal += freed;
+    if (retired != 0 && std::chrono::steady_clock::now() - lastReport > std::chrono::seconds(10)) {
+        lastReport = std::chrono::steady_clock::now();
+        aps5::LogErr("[gpu] gave back %llu idle host imports (%llu MiB) so far to make room for new ones\n", static_cast<unsigned long long>(retiredTotal), static_cast<unsigned long long>(freedTotal >> 20u));
+    }
+    return freed;
+}
+
 const HostImport* importAllocation(const Context& context, HostImports& state, std::uint64_t base, std::uint64_t bytes, const GuestAllocations::Lease& lease) {
     if (const auto found = state.imports.find(base); found != state.imports.end()) {
-        if (found->second.bytes == bytes) return &found->second;
+        if (found->second.bytes == bytes) {
+            found->second.lastUseMs = importClockMs();
+            return &found->second;
+        }
         retireImport(context, state, found, lease);
     }
     const auto alignment = context.hostImportAlignment;
@@ -233,6 +273,7 @@ const HostImport* importAllocation(const Context& context, HostImports& state, s
     }();
     std::uint64_t live = 0;
     for (const auto& [address, existing] : state.imports) live += existing.bytes;
+    if (live + bytes > budget) live -= retireIdleImports(context, state, live + bytes - budget, lease);
     if (live + bytes > budget) {
 
         static std::uint64_t refused = 0, refusedBytes = 0;
@@ -287,6 +328,13 @@ const HostImport* importAllocation(const Context& context, HostImports& state, s
         step = createImport(context, entry, result);
         return step == nullptr;
     });
+    if (step != nullptr && (result == VK_ERROR_OUT_OF_DEVICE_MEMORY || result == VK_ERROR_OUT_OF_HOST_MEMORY) && retireIdleImports(context, state, std::max<std::uint64_t>(bytes, 512ull << 20u), lease) != 0) {
+        // The driver's share of system memory is full: idle imports were given back, so try once more.
+        GuestMemory::ImportWatched(base, bytes, [&] {
+            step = createImport(context, entry, result);
+            return step == nullptr;
+        });
+    }
     if (step != nullptr) {
 #ifdef _WIN32
         GuestArena::GuestArenaUnmapAlias_nid_postfix(entry.alias);
@@ -311,6 +359,7 @@ const HostImport* importAllocation(const Context& context, HostImports& state, s
     std::uint64_t liveBytes = bytes;
     for (const auto& [address, existing] : state.imports) liveBytes += existing.bytes;
     if (trace) aps5::LogErr( "[gpu] host import of 0x%llx+0x%llx ok (%zu live, %.1f MiB live, %.1f MiB ever)\n", static_cast<unsigned long long>(base), static_cast<unsigned long long>(bytes), state.imports.size() + 1, liveBytes / 1048576.0, importedBytes / 1048576.0);
+    entry.lastUseMs = importClockMs();
     return &state.imports.emplace(base, entry).first->second;
 }
 
@@ -367,7 +416,9 @@ const HostImport* findImport(HostImports& state, std::uint64_t begin, std::uint6
     if (found == state.imports.begin()) return nullptr;
     --found;
     const auto& entry = found->second;
-    return begin >= entry.base && end <= entry.base + entry.bytes ? &entry : nullptr;
+    if (begin < entry.base || end > entry.base + entry.bytes) return nullptr;
+    entry.lastUseMs = importClockMs();
+    return &entry;
 }
 
 bool importsStale(const Context& context, const HostImports& state) {
@@ -1124,6 +1175,11 @@ void GuestBufferMemory::AcquireRegistered() {
             else if (current->generation != generation) spaces.rebuiltGeneration.fetch_add(1, std::memory_order_relaxed);
             else if (current->importsEpoch != state.epoch) spaces.rebuiltEpoch.fetch_add(1, std::memory_order_relaxed);
             else hit = true;
+            if (hit) {
+                const auto now = importClockMs();
+                for (const auto& region : current->base)
+                    if (region.direct != nullptr) region.direct->lastUseMs = now;
+            }
         }
         if (hit) {
             spaces.hits.fetch_add(1, std::memory_order_relaxed);

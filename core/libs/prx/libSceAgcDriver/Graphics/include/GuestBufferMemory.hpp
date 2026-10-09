@@ -29,6 +29,9 @@ struct HostImport {
 
     std::uint64_t serial = 0;
     bool unwatched = false;
+    // When a dispatch or draw last bound this import (steady clock, ms); idle imports are given back when the
+    // system memory the GPU can map runs out.
+    mutable std::uint64_t lastUseMs = 0;
 };
 
 enum class ImportWatch : std::uint8_t { Watch, Unwatch };

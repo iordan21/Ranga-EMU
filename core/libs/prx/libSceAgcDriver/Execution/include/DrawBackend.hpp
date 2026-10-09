@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -43,6 +44,14 @@ public:
     }
 
     void Drain() {
+        if (Idle()) return;
+        // The queued draws usually finish within tens of microseconds; waking up from a condition variable costs
+        // about as much again, and a frame drains hundreds of times, so watch for a while before sleeping.
+        const auto until = std::chrono::steady_clock::now() + std::chrono::microseconds(300);
+        while (!Idle()) {
+            if (std::chrono::steady_clock::now() > until) break;
+            std::this_thread::yield();
+        }
         if (Idle()) return;
         std::unique_lock lock(mutex);
         idle.wait(lock, [&] { return pending.empty() && !busy.load(std::memory_order_relaxed); });

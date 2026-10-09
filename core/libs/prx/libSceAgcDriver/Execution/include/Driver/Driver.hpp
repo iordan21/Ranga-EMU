@@ -223,6 +223,8 @@ private:
     static void timed(double WorkerProfile::*bucket, TWork&& work);
     template <typename TWork>
     void tolerate(const char* kind, TWork&& work);
+    template <typename TWork>
+    void tolerateDispatch(TWork&& work);
     void execute(const Submission& submission);
     void markCompleted(std::uint64_t serial);
     static const std::atomic<std::uint64_t>*& workerQueued();

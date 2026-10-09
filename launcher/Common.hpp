@@ -38,7 +38,10 @@ long RunHidden(const std::wstring& command, const std::wstring& directory, const
 // A directory junction at link that points at target; an existing one that points elsewhere is replaced.
 void LinkFolder(const std::wstring& link, const std::wstring& target, const std::wstring& log);
 
-// Game files: eboot.bin or eboot.elf, sce_sys, sce_module and Media.
+// Every folder and loose file of the game, eboot and sce_module aside, made visible under app0.
+void LinkGameFiles(const std::wstring& game, const std::wstring& app0, const std::wstring& log);
+
+// Game files: eboot.bin or eboot.elf and sce_sys; Unity games also have sce_module and Media.
 std::wstring GameExecutable(const std::wstring& folder);
 bool IsGameFolder(const std::wstring& folder);
 bool IsElf(const std::wstring& path);

@@ -166,6 +166,32 @@ void LinkFolder(const std::wstring& link, const std::wstring& target, const std:
     RunHidden(L"cmd.exe /c mklink /J \"" + link + L"\" \"" + target + L"\"", parent, log);
 }
 
+void LinkGameFiles(const std::wstring& game, const std::wstring& app0, const std::wstring& log) {
+    CreateDirectoryW(app0.c_str(), nullptr);
+    WIN32_FIND_DATAW found;
+    HANDLE search = FindFirstFileW((game + L"\\*").c_str(), &found);
+    if (search == INVALID_HANDLE_VALUE) return;
+    do {
+        const std::wstring name = found.cFileName;
+        if (name == L"." || name == L"..") continue;
+        const std::wstring source = game + L"\\" + name, target = app0 + L"\\" + name;
+        if ((found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+            // sce_module in app0 holds the relinked modules, never the game's own.
+            if (_wcsicmp(name.c_str(), L"sce_module") != 0) LinkFolder(target, source, log);
+            continue;
+        }
+        if (_wcsnicmp(name.c_str(), L"eboot.", 6) == 0) continue;
+        if (Exists(target) && FileSize(target) == FileSize(source)) {
+            const FILETIME a = WriteTime(target), b = WriteTime(source);
+            if (CompareFileTime(&a, &b) == 0) continue;
+        }
+        DeleteFileW(target.c_str());
+        // A hard link costs nothing but needs the same drive; a game on another drive gets its loose files copied.
+        if (!CreateHardLinkW(target.c_str(), source.c_str(), nullptr)) CopyFileW(source.c_str(), target.c_str(), FALSE);
+    } while (FindNextFileW(search, &found));
+    FindClose(search);
+}
+
 std::wstring GameExecutable(const std::wstring& folder) {
     if (Exists(folder + L"\\eboot.bin")) return folder + L"\\eboot.bin";
     if (Exists(folder + L"\\eboot.elf")) return folder + L"\\eboot.elf";
@@ -173,7 +199,7 @@ std::wstring GameExecutable(const std::wstring& folder) {
 }
 
 bool IsGameFolder(const std::wstring& folder) {
-    return !folder.empty() && !GameExecutable(folder).empty() && IsDirectory(folder + L"\\sce_sys") && IsDirectory(folder + L"\\Media");
+    return !folder.empty() && !GameExecutable(folder).empty() && IsDirectory(folder + L"\\sce_sys");
 }
 
 bool IsElf(const std::wstring& path) {
@@ -265,7 +291,10 @@ bool ExtractSelf(const std::wstring& selfPath, const std::wstring& elfPath) {
 
 bool ConvertOrCopy(const std::wstring& from, const std::wstring& to) {
     if (IsElf(from)) return CopyFileW(from.c_str(), to.c_str(), FALSE) != 0;
-    return ExtractSelf(from, to);
+    if (ExtractSelf(from, to)) return true;
+    // Dumps re-signed for the console keep the plain ELF beside the SELF, as <name>.esbak.
+    const std::wstring backup = from + L".esbak";
+    return IsElf(backup) && CopyFileW(backup.c_str(), to.c_str(), FALSE) != 0;
 }
 
 void PrepareModules(const std::wstring& game, const std::wstring& prep, std::wstring& failed) {
@@ -277,6 +306,8 @@ void PrepareModules(const std::wstring& game, const std::wstring& prep, std::wst
         if (search == INVALID_HANDLE_VALUE) continue;
         do {
             if ((found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) continue;
+            const std::wstring name = found.cFileName;
+            if (name.size() < 4 || _wcsicmp(name.c_str() + name.size() - 4, L".prx") != 0) continue;
             const std::wstring target = prep + L"\\sce_module\\" + found.cFileName;
             const std::wstring source = game + sub + L"\\" + found.cFileName;
             if (!ConvertOrCopy(source, target)) failed += (failed.empty() ? L"" : L", ") + std::wstring(found.cFileName);

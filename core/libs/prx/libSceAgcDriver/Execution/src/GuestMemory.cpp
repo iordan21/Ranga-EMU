@@ -5,6 +5,8 @@
 #include "prx/libc/include/GuestWriteWatch.hpp"
 #include <mutex>
 #include <array>
+#include <bit>
+#include <emmintrin.h>
 #include <chrono>
 #include <atomic>
 #include <unordered_map>
@@ -1323,6 +1325,41 @@ const void* ThreadToken() {
 }
 }
 
+#ifdef _WIN32
+void RecursiveSlimLock::lock() {
+    const auto self = GetCurrentThreadId();
+    if (owner.load(std::memory_order_relaxed) == self) {
+        ++depth;
+        return;
+    }
+    AcquireSRWLockExclusive(reinterpret_cast<PSRWLOCK>(&slim));
+    owner.store(self, std::memory_order_relaxed);
+    depth = 1;
+}
+
+bool RecursiveSlimLock::try_lock() {
+    const auto self = GetCurrentThreadId();
+    if (owner.load(std::memory_order_relaxed) == self) {
+        ++depth;
+        return true;
+    }
+    if (!TryAcquireSRWLockExclusive(reinterpret_cast<PSRWLOCK>(&slim))) return false;
+    owner.store(self, std::memory_order_relaxed);
+    depth = 1;
+    return true;
+}
+
+void RecursiveSlimLock::unlock() {
+    if (--depth != 0) return;
+    owner.store(0, std::memory_order_relaxed);
+    ReleaseSRWLockExclusive(reinterpret_cast<PSRWLOCK>(&slim));
+}
+#else
+void RecursiveSlimLock::lock() { mutex.lock(); }
+bool RecursiveSlimLock::try_lock() { return mutex.try_lock(); }
+void RecursiveSlimLock::unlock() { mutex.unlock(); }
+#endif
+
 void GpuMutexType::acquired() {
     owner.store(ThreadToken(), std::memory_order_relaxed);
     ++depth;
@@ -1530,6 +1567,15 @@ void Read(std::uint64_t address, std::span<std::byte> destination, std::size_t a
     FlushGpuWrites(address, destination.size());
     const TimedAccess timed(CounterRead, destination.size());
     CountReadCaller(__builtin_return_address(0));
+    // Resources are gathered for every slot a shader may touch, also through table pointers it reads only on some
+    // paths; one the game left null points into the first 64 KiB, which nothing maps. Those reads see zeros.
+    constexpr std::uint64_t NullPageEnd = 0x10000;
+    if (address < NullPageEnd && destination.size() <= NullPageEnd - address) {
+        static std::atomic<unsigned> reported{0};
+        if (reported.fetch_add(1, std::memory_order_relaxed) < 8) aps5::LogErr("[agc] read of 0x%llx+0x%zx near null returns zeros (from +0x%llx)\n", static_cast<unsigned long long>(address), destination.size(), ModuleOffset(__builtin_return_address(0)));
+        std::memset(destination.data(), 0, destination.size());
+        return;
+    }
     const auto* source = reinterpret_cast<const void*>(address);
     try {
         CheckRange(source, destination.size(), alignment);
@@ -1628,7 +1674,29 @@ void WriteChanged(std::uint64_t address, std::span<const std::byte> current, std
     for (std::size_t at = 0; at < size; at += block) {
         if (!differs(at)) continue;
         const auto blockEnd = std::min(at + block, size);
-        for (std::size_t run = at; run < blockEnd;) {
+        // Only the bytes the GPU changed are stored, so CPU writes to their neighbours since the snapshot survive.
+        // Sixteen bytes are compared at once: a chunk that changed entirely is stored whole, one that did not is
+        // skipped, and only a mixed chunk is merged byte by byte.
+        std::size_t chunk = at;
+        for (; chunk + 16 <= blockEnd; chunk += 16) {
+            const __m128i now = _mm_loadu_si128(reinterpret_cast<const __m128i*>(current.data() + chunk));
+            const __m128i was = _mm_loadu_si128(reinterpret_cast<const __m128i*>(original.data() + chunk));
+            const unsigned same = static_cast<unsigned>(_mm_movemask_epi8(_mm_cmpeq_epi8(now, was)));
+            if (same == 0xffffu) continue;
+            if (same == 0) {
+                _mm_storeu_si128(reinterpret_cast<__m128i*>(destination + chunk), now);
+            } else {
+                for (unsigned bit = 0; bit < 16; ++bit) {
+                    if ((same & (1u << bit)) == 0) destination[chunk + bit] = current[chunk + bit];
+                }
+            }
+            const auto mask = static_cast<std::uint16_t>(same);
+            const auto low = static_cast<std::size_t>(std::countr_one(mask));
+            const auto high = 16 - static_cast<std::size_t>(std::countl_one(mask));
+            firstChanged = std::min(firstChanged, chunk + low);
+            lastChanged = std::max(lastChanged, chunk + high);
+        }
+        for (std::size_t run = chunk; run < blockEnd;) {
             if (current[run] == original[run]) { ++run; continue; }
             auto runEnd = run + 1;
             while (runEnd < blockEnd && current[runEnd] != original[runEnd]) ++runEnd;

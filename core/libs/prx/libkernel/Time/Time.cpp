@@ -73,7 +73,9 @@ static const bool g_timerResolutionRaised = [] {
     const bool raised = setResolution != nullptr && setResolution(5000, TRUE, &previous) >= 0;
     PROCESS_POWER_THROTTLING_STATE throttling{};
     throttling.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
-    throttling.ControlMask = PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION;
+    // Opt out of both kinds of background throttling: coarser timers, and EcoQoS (lower clocks) when the window is
+    // hidden or the display is off; a game keeps its pace either way.
+    throttling.ControlMask = PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION | PROCESS_POWER_THROTTLING_EXECUTION_SPEED;
     throttling.StateMask = 0;
     SetProcessInformation(GetCurrentProcess(), ProcessPowerThrottling, &throttling, sizeof(throttling));
     using NtQueryTimerResolutionFn = LONG(WINAPI*)(PULONG, PULONG, PULONG);

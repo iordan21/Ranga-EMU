@@ -130,6 +130,10 @@ static std::uint64_t JobWorkerMask() {
 
 static void ApplyJobAffinity(PthreadPrivate& thread, void* handle) {
     if (thread.name.compare(0, std::strlen(JOB_WORKER_PREFIX), JOB_WORKER_PREFIX) != 0) return;
+    // The job workers spin while they wait for work, one per PS5 core. A PC with fewer cores than workers would hand
+    // them the time the game's main thread and the GPU command threads need, so they yield to those.
+    static const bool lower = std::getenv("APS5_JOB_NORMAL_PRIORITY") == nullptr;
+    if (lower) SetThreadPriority(handle != nullptr ? static_cast<HANDLE>(handle) : GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
     const auto mask = JobWorkerMask();
     if (mask == 0) return;
     static std::once_flag summary;

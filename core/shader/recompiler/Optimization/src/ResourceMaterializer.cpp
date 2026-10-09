@@ -485,10 +485,9 @@ void buildResourceSpecialization(const IrResourcePlan& plan, ResourceSnapshot& s
     ResourceSpecialization result;
     result.buffers.reserve(plan.info.buffers.size());
     for (std::uint32_t i = 0; i < plan.info.buffers.size(); i++) {
+        // A slot the game has not filled with a buffer yet is bound empty, as an invalid image descriptor is above.
+        if (decodeBufferDescriptor(snapshot.buffers[i]).Type() != 0u) snapshot.buffers[i].dwords.fill(0u);
         const ShaderBufferResource decoded = decodeBufferDescriptor(snapshot.buffers[i]);
-        if (decoded.Type() != 0u) {
-            throw std::runtime_error("buffer descriptor uses an unsupported type");
-        }
         auto packedStride = decoded.PackedStride();
         const auto stride = packedStride & 0x3fffu;
         const bool swizzleActive = stride != 0u && ((packedStride >> 14u) & 1u) != 0u;

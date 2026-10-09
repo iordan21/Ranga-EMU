@@ -71,6 +71,16 @@ Profile ProfileFor(const std::wstring& titleId) {
         profile.tested = true;
         profile.sonsOfSparta = true;
     }
+    if (titleId == L"PPSA01342") {
+        // Demon's Souls: the GPU reads the game's memory in place instead of from copies (1-2 FPS without it). On
+        // NVIDIA every buffer the GPU maps from system memory, imports included, shares a heap of half the RAM, and
+        // the menu alone imports about 7.3 GB, so the budget leaves the driver to say when that heap is full (idle
+        // imports are given back then) and the emulator keeps few spare host buffers in it.
+        MEMORYSTATUSEX memory{sizeof(memory)};
+        GlobalMemoryStatusEx(&memory);
+        const auto importMib = std::max<unsigned long long>(4096, memory.ullTotalPhys / (1024 * 1024) * 7 / 10);
+        profile.environment = {{L"APS5_HOST_IMPORT", L"1"}, {L"APS5_HOST_IMPORT_MIB", std::to_wstring(importMib)}, {L"APS5_HOST_POOL_MIB", L"96"}};
+    }
     return profile;
 }
 
@@ -120,7 +130,7 @@ void Library::Load() {
 int Library::Add(const std::wstring& folder, std::wstring& error) {
     Game game;
     if (!IsGameFolder(folder)) {
-        error = L"Esta pasta não tem os arquivos do jogo:\n\n" + folder + L"\n\nEscolha a pasta que tem eboot.bin (ou eboot.elf), sce_sys, sce_module e Media.";
+        error = L"Esta pasta não tem os arquivos do jogo:\n\n" + folder + L"\n\nEscolha a pasta que tem eboot.bin (ou eboot.elf) e sce_sys.";
         return -1;
     }
     if (!ReadGameInfo(folder, game)) {
@@ -171,6 +181,97 @@ Options LoadOptions(const Game& game) {
     const int damage = _wtoi(ReadIni(path, L"Cheats", L"damage_multiplier", L"1").c_str());
     options.damageMultiplier = damage == 2 || damage == 4 || damage == 6 ? damage : 1;
     return options;
+}
+
+namespace {
+
+std::wstring AddonIni(const Game& game) { return game.workspace + L"\\dlc.ini"; }
+
+// The runtime reads one entitlement label per line; the file is rewritten from dlc.ini so the two always agree.
+void WriteEntitlements(const Game& game, const std::vector<Addon>& addons) {
+    FILE* file = nullptr;
+    if (_wfopen_s(&file, (game.workspace + L"\\anyps5-entitlements.ini").c_str(), L"wb") != 0 || file == nullptr) return;
+    std::fputs("# Add-ons installed with Ranga Emu, one entitlement label per line. Edit them in the DLC tab.\r\n", file);
+    for (const auto& addon : addons) std::fprintf(file, "%s\r\n", Utf8(addon.label).c_str());
+    fclose(file);
+}
+
+bool HasDataBesideSceSys(const std::wstring& folder) {
+    WIN32_FIND_DATAW found;
+    HANDLE search = FindFirstFileW((folder + L"\\*").c_str(), &found);
+    if (search == INVALID_HANDLE_VALUE) return false;
+    bool data = false;
+    do {
+        const std::wstring name = found.cFileName;
+        if (name != L"." && name != L".." && _wcsicmp(name.c_str(), L"sce_sys") != 0) data = true;
+    } while (!data && FindNextFileW(search, &found));
+    FindClose(search);
+    return data;
+}
+
+}
+
+std::vector<Addon> LoadAddons(const Game& game) {
+    std::vector<Addon> addons;
+    std::vector<wchar_t> names(32768);
+    const DWORD length = GetPrivateProfileSectionNamesW(names.data(), static_cast<DWORD>(names.size()), AddonIni(game).c_str());
+    for (const wchar_t* name = names.data(); name < names.data() + length && *name != L'\0'; name += wcslen(name) + 1) {
+        Addon addon;
+        addon.label = name;
+        addon.title = ReadIni(AddonIni(game), name, L"title", name);
+        addon.folder = ReadIni(AddonIni(game), name, L"folder", L"");
+        addon.hasData = ReadFlag(AddonIni(game), name, L"data");
+        addons.push_back(addon);
+    }
+    return addons;
+}
+
+std::wstring InstallAddon(const Game& game, const std::wstring& folder) {
+    const std::string text = ReadBytes(folder + L"\\sce_sys\\param.json");
+    if (text.empty()) return L"Esta pasta não tem sce_sys\\param.json, então não parece uma DLC tirada do console:\n\n" + folder;
+    const std::wstring titleId = Wide(JsonString(text, "titleId"));
+    const std::wstring contentId = Wide(JsonString(text, "contentId"));
+    // A content id is <service>-<title id>_<nn>-<entitlement label>, and the label has 16 characters.
+    const size_t dash = contentId.find_last_of(L'-');
+    const std::wstring label = dash == std::wstring::npos ? L"" : contentId.substr(dash + 1);
+    if (label.size() != 16 || label.find_first_of(L"/\\.") != std::wstring::npos) return L"Não deu para ler o código da DLC (contentId) no param.json:\n\n" + folder;
+    if (!titleId.empty() && titleId != game.titleId) return L"Esta DLC é de outro jogo (" + titleId + L"), não de " + game.title + L" (" + game.titleId + L").";
+    if (IsGameFolder(folder)) return L"Esta pasta é um jogo, não uma DLC. Use \"Adicionar jogo\" para ela.";
+    std::string title;
+    const std::string language = JsonString(text, "defaultLanguage");
+    const size_t localized = text.find("\"localizedParameters\"");
+    if (!language.empty() && localized != std::string::npos) {
+        const size_t block = text.find("\"" + language + "\"", localized);
+        if (block != std::string::npos) title = JsonString(text, "titleName", block);
+    }
+    if (title.empty()) title = JsonString(text, "titleName");
+    const bool data = HasDataBesideSceSys(folder);
+    CreateDirectoryW((game.workspace.substr(0, game.workspace.find_last_of(L'\\'))).c_str(), nullptr);
+    CreateDirectoryW(game.workspace.c_str(), nullptr);
+    EnsureUnicodeIni(AddonIni(game));
+    const std::wstring ini = AddonIni(game);
+    if (!WritePrivateProfileStringW(label.c_str(), L"folder", folder.c_str(), ini.c_str()) ||
+        !WritePrivateProfileStringW(label.c_str(), L"title", (title.empty() ? label : Wide(title)).c_str(), ini.c_str())) {
+        return L"Não deu para salvar dlc.ini em:\n\n" + game.workspace;
+    }
+    WriteFlag(ini, label.c_str(), L"data", data);
+    if (data) {
+        CreateDirectoryW((game.workspace + L"\\logs").c_str(), nullptr);
+        LinkFolder(game.workspace + L"\\addcont\\" + label, folder, game.workspace + L"\\logs\\link.log");
+        if (FinalPath(game.workspace + L"\\addcont\\" + label) != FinalPath(folder)) {
+            WritePrivateProfileStringW(label.c_str(), nullptr, nullptr, ini.c_str());
+            return L"Não deu para ligar a pasta da DLC em addcont. Veja link.log na aba Log.";
+        }
+    }
+    WriteEntitlements(game, LoadAddons(game));
+    return L"";
+}
+
+void RemoveAddon(const Game& game, const std::wstring& label) {
+    // Only the junction goes; the add-on's own folder is left alone.
+    RemoveDirectoryW((game.workspace + L"\\addcont\\" + label).c_str());
+    WritePrivateProfileStringW(label.c_str(), nullptr, nullptr, AddonIni(game).c_str());
+    WriteEntitlements(game, LoadAddons(game));
 }
 
 void SaveOptions(const Game& game, const Options& options) {

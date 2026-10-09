@@ -5,7 +5,9 @@
 #include "prx/libc/include/General.hpp"
 #include "prx/libkernel/AppMetadata/include/AppMetadata.hpp"
 #include <algorithm>
+#include <array>
 #include <cstring>
+#include <mutex>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
@@ -27,20 +29,67 @@ static void ClearDirectory(const std::filesystem::path& directory) {
     for (const auto& entry : std::filesystem::directory_iterator(directory)) std::filesystem::remove_all(entry.path());
 }
 
+// Error codes as the PS4 and PS5 AppContent libraries number them.
+static constexpr int SCE_APP_CONTENT_ERROR_NOT_MOUNTED = static_cast<int>(0x80D90004);
+static constexpr int SCE_APP_CONTENT_ERROR_NOT_FOUND = static_cast<int>(0x80D90005);
+static constexpr int SCE_APP_CONTENT_ERROR_MOUNT_FULL = static_cast<int>(0x80D90006);
+
+// An installed add-on with data lives in addcont/<entitlement label> beside the runtime, usually a junction the client made
+// to the add-on's own folder. A mount gives it the guest path /addcont<n>.
+static constexpr char ADDCONT_DIRECTORY[] = "/addcont";
+static constexpr std::size_t ADDCONT_MOUNT_MAX = 64;
+
+static std::mutex& AddcontMutex() {
+    static std::mutex mutex;
+    return mutex;
+}
+
+// The entitlement label mounted at each /addcont<n>, empty for a free one.
+static std::array<std::string, ADDCONT_MOUNT_MAX>& MountedAddcont() {
+    static std::array<std::string, ADDCONT_MOUNT_MAX> mounted;
+    return mounted;
+}
+
+static std::string AddcontMountPoint(std::size_t index) { return std::string(ADDCONT_DIRECTORY) + std::to_string(index); }
+
 extern "C" {
 
 int APS5_VABI sceAppContentAddcontMount(uint32_t service_label, const NpUnifiedEntitlementLabel* entitlement_label, AppContentMountPoint* mount_point) {
- (void)service_label;
- (void)entitlement_label;
- (void)mount_point;
- NotImplemented_nid_no_patch(__func__);
- return 0;
+    (void)service_label;
+    if (!entitlement_label || !mount_point) return SCE_APP_CONTENT_ERROR_PARAMETER;
+    const std::string label(entitlement_label->data, strnlen(entitlement_label->data, sizeof(entitlement_label->data)));
+    if (label.empty() || label.find_first_of("/\\.") != std::string::npos) return SCE_APP_CONTENT_ERROR_PARAMETER;
+    const auto directory = ResolvePath_nid_no_patch(ADDCONT_DIRECTORY) / label;
+    std::error_code error;
+    if (!std::filesystem::is_directory(directory, error)) return SCE_APP_CONTENT_ERROR_NOT_FOUND;
+    std::lock_guard lock(AddcontMutex());
+    auto& mounted = MountedAddcont();
+    auto slot = std::find(mounted.begin(), mounted.end(), label);
+    if (slot == mounted.end()) slot = std::find(mounted.begin(), mounted.end(), std::string{});
+    if (slot == mounted.end()) return SCE_APP_CONTENT_ERROR_MOUNT_FULL;
+    const auto point = AddcontMountPoint(static_cast<std::size_t>(slot - mounted.begin()));
+    if (slot->empty()) {
+        AddPathAlias_nid_no_patch(point.c_str(), std::filesystem::absolute(directory).string().c_str());
+        *slot = label;
+        aps5::LogErr("[appcontent] add-on %s mounted at %s\n", label.c_str(), point.c_str());
+    }
+    std::memset(mount_point->data, 0, sizeof(mount_point->data));
+    std::memcpy(mount_point->data, point.c_str(), point.size());
+    return 0;
 }
 
 int APS5_VABI sceAppContentAddcontUnmount(const AppContentMountPoint* mount_point) {
- (void)mount_point;
- NotImplemented_nid_no_patch(__func__);
- return 0;
+    if (!mount_point) return SCE_APP_CONTENT_ERROR_PARAMETER;
+    const std::string point(mount_point->data, strnlen(mount_point->data, sizeof(mount_point->data)));
+    std::lock_guard lock(AddcontMutex());
+    auto& mounted = MountedAddcont();
+    for (std::size_t index = 0; index < mounted.size(); ++index) {
+        if (mounted[index].empty() || AddcontMountPoint(index) != point) continue;
+        RemovePathAlias_nid_no_patch(point.c_str());
+        mounted[index].clear();
+        return 0;
+    }
+    return SCE_APP_CONTENT_ERROR_NOT_MOUNTED;
 }
 
 int APS5_VABI sceAppContentAppParamGetInt(uint32_t param_id, int32_t* value) {

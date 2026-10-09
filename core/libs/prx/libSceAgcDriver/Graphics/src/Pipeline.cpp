@@ -1,6 +1,7 @@
 #include <set>
 #include "prx/libSceAgcDriver/Graphics/include/Pipeline.hpp"
 #include "prx/common/StderrLog.hpp"
+#include "prx/common/SlowLog.hpp"
 #include "prx/libSceAgcDriver/Graphics/include/VertexInput.hpp"
 #include <algorithm>
 #include <array>
@@ -211,6 +212,7 @@ Pipeline::Pipeline(const Context& context, const State& state, const VertexInput
             static const bool trace = std::getenv("APS5_TRACE_PIPELINES") != nullptr;
             const auto ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - buildStart).count();
             if (trace && ms >= 2.0) std::fprintf(stderr, "[pipeline] graphics pipeline built in %.1f ms\n", ms);
+            if (aps5::SlowLogEnabled() && ms >= aps5::SlowStallMs) aps5::LogErr("[slow] t_ms=%.3f pipeline-build %.3f ms\n", aps5::SteadyMs(), ms);
         }
     } catch (...) {
         release();

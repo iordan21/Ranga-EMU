@@ -360,6 +360,26 @@ void Driver::dispatch(QueueState& queue, std::span<const std::uint32_t> packet, 
         pending.ms = phaseMs;
         pending.tailAt = phaseLap;
     }
+    if (profile) {
+        // Where the time after a dispatch goes: the locals it releases, timed one by one.
+        static thread_local std::array<double, 10> releaseMs{};
+        static thread_local std::uint64_t releases = 0;
+        auto at = std::chrono::steady_clock::now();
+        std::size_t slot = 0;
+        const auto step = [&] { const auto now = std::chrono::steady_clock::now(); releaseMs[slot++] += std::chrono::duration<double, std::milli>(now - at).count(); at = now; };
+        recipeHit.reset(); step();
+        builtRecipe.reset(); step();
+        snapshots = {}; step();
+        captured = {}; step();
+        keepVariant.reset(); attachVariant.reset(); step();
+        compiledResult.reset(); step();
+        shaderMemory.reset(); capture.reset(); missedEntry.reset(); step();
+        localDevice.reset(); step();
+        if (++releases % 3000 == 0) {
+            std::fprintf(stderr, "[epilogue] queue 0x%x, us per dispatch over %llu: recipeHit %.1f builtRecipe %.1f snapshots %.1f captured %.1f variants %.1f compiled %.1f memory %.1f device %.1f\n", submission.queue, static_cast<unsigned long long>(releases),
+                releaseMs[0] * 1000 / releases, releaseMs[1] * 1000 / releases, releaseMs[2] * 1000 / releases, releaseMs[3] * 1000 / releases, releaseMs[4] * 1000 / releases, releaseMs[5] * 1000 / releases, releaseMs[6] * 1000 / releases, releaseMs[7] * 1000 / releases);
+        }
+    }
     if (profile && ++dispatches % 100 == 0) std::fprintf(stderr, "[gpu] %llu dispatches (%llu dispatch cache hits, %llu evictions, %llu recompile cache hits): capture %.1f s, cache key %.1f s, recompile %.1f s, device %.1f s\n", static_cast<unsigned long long>(dispatches), static_cast<unsigned long long>(dispatchCacheHits), static_cast<unsigned long long>(dispatchCacheEvictions), static_cast<unsigned long long>(cacheHits), captureMs / 1000, keyMs / 1000, recompileMs / 1000, deviceMs / 1000);
 }
 
