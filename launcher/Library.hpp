@@ -22,6 +22,8 @@ struct Game {
 // game gets the generic profile and is shown as experimental.
 struct Profile {
     bool tested = false;
+    // Bloodborne (PS4, CUSA03173) does not run in the PS5 runtime: the native port in engines\bloodborne runs it.
+    bool bloodborne = false;
     // Sons of Sparta's own options: resolution in its save, skip intro and dialogue, cheats.
     bool sonsOfSparta = false;
     std::vector<std::wstring> excludedModules;
@@ -32,7 +34,11 @@ struct Profile {
 
 Profile ProfileFor(const std::wstring& titleId);
 
-// Reads title id, title and version from sce_sys\param.json; false when the folder has no readable param.json.
+// The folder of the Bloodborne port beside this program, with its run.bat, scripts and out\bbport.exe.
+std::wstring BloodborneEngine(const std::wstring& root);
+
+// Reads title id, title and version from sce_sys\param.json, or from sce_sys\param.sfo for a PS4 game; false when the
+// folder has neither.
 bool ReadGameInfo(const std::wstring& folder, Game& game);
 
 class Library {
@@ -62,6 +68,9 @@ struct Options {
     bool skipDialogue = false;
     bool godMode = false, infiniteSpirit = false, infiniteMagic = false, movementSpeed = false, jumpHeight = false;
     int damageMultiplier = 1;
+    // Bloodborne port: BB_FPS (30, 60, 90 or uncap) and BB_RENDER_RES (empty is its native 1920x1080).
+    std::wstring fps = L"60";
+    std::wstring renderResolution;
 };
 
 Options LoadOptions(const Game& game);

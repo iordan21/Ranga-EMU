@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <cwchar>
 
 namespace Ranga {
@@ -9,6 +10,26 @@ namespace Ranga {
 namespace {
 
 constexpr const wchar_t* kSonsOfSparta = L"PPSA28997";
+constexpr const wchar_t* kBloodborne = L"CUSA03173";
+
+// The UTF-8 string value of key in a PS4 param.sfo (a PSF table: header, 16-byte index entries, key and data tables).
+std::string SfoString(const std::string& sfo, const char* key) {
+    const auto u16 = [&](size_t at) { return at + 2 <= sfo.size() ? static_cast<unsigned>(static_cast<unsigned char>(sfo[at]) | static_cast<unsigned char>(sfo[at + 1]) << 8) : 0u; };
+    const auto u32 = [&](size_t at) { return at + 4 <= sfo.size() ? static_cast<size_t>(u16(at) | u16(at + 2) << 16) : size_t{0}; };
+    if (sfo.size() < 20 || sfo.compare(0, 4, std::string("\0PSF", 4)) != 0) return {};
+    const size_t keys = u32(8), data = u32(12), count = u32(16);
+    for (size_t i = 0; i < count && 20 + i * 16 + 16 <= sfo.size(); ++i) {
+        const size_t entry = 20 + i * 16;
+        const size_t name = keys + u16(entry);
+        if (name >= sfo.size() || sfo.compare(name, std::char_traits<char>::length(key) + 1, std::string(key, std::char_traits<char>::length(key) + 1)) != 0) continue;
+        const size_t value = data + u32(entry + 12), length = u32(entry + 4);
+        if (u16(entry + 2) != 0x0204 || value + length > sfo.size()) return {};
+        std::string text = sfo.substr(value, length);
+        text.resize(std::strlen(text.c_str()));
+        return text;
+    }
+    return {};
+}
 
 // The string value of the first "key" at or after from, with the JSON escapes param.json uses; empty when there is none.
 std::string JsonString(const std::string& text, const std::string& key, size_t from = 0) {
@@ -71,6 +92,7 @@ Profile ProfileFor(const std::wstring& titleId) {
         profile.tested = true;
         profile.sonsOfSparta = true;
     }
+    if (titleId == kBloodborne) profile.bloodborne = true;
     if (titleId == L"PPSA01342") {
         // Demon's Souls: the GPU reads the game's memory in place instead of from copies (1-2 FPS without it). On
         // NVIDIA every buffer the GPU maps from system memory, imports included, shares a heap of half the RAM, and
@@ -84,10 +106,23 @@ Profile ProfileFor(const std::wstring& titleId) {
     return profile;
 }
 
+std::wstring BloodborneEngine(const std::wstring& root) { return root + L"\\engines\\bloodborne"; }
+
 bool ReadGameInfo(const std::wstring& folder, Game& game) {
     const std::string text = ReadBytes(folder + L"\\sce_sys\\param.json");
     const std::string titleId = JsonString(text, "titleId");
-    if (titleId.empty()) return false;
+    if (titleId.empty()) {
+        // A PS4 game: the title in param.sfo, the version of its merged update in APP_VER.
+        const std::string sfo = ReadBytes(folder + L"\\sce_sys\\param.sfo");
+        const std::string ps4Id = SfoString(sfo, "TITLE_ID");
+        if (ps4Id.empty()) return false;
+        const std::string title = SfoString(sfo, "TITLE");
+        game.titleId = Wide(ps4Id);
+        game.title = title.empty() ? game.titleId : Wide(title);
+        game.version = Wide(SfoString(sfo, "APP_VER"));
+        game.folder = folder;
+        return true;
+    }
     std::string title;
     const std::string language = JsonString(text, "defaultLanguage");
     const size_t localized = text.find("\"localizedParameters\"");
@@ -134,7 +169,11 @@ int Library::Add(const std::wstring& folder, std::wstring& error) {
         return -1;
     }
     if (!ReadGameInfo(folder, game)) {
-        error = L"Não deu para ler sce_sys\\param.json em:\n\n" + folder;
+        error = L"Não deu para ler sce_sys\\param.json (PS5) nem sce_sys\\param.sfo (PS4) em:\n\n" + folder;
+        return -1;
+    }
+    if (game.titleId.rfind(L"CUSA", 0) == 0 && game.titleId != kBloodborne) {
+        error = L"" + game.title + L" (" + game.titleId + L") é um jogo de PS4. O Ranga Emu roda jogos de PS5 e, de PS4, só o Bloodborne (CUSA03173) pelo port nativo.";
         return -1;
     }
     EnsureUnicodeIni(IniPath());
@@ -180,6 +219,10 @@ Options LoadOptions(const Game& game) {
     options.jumpHeight = ReadFlag(path, L"Cheats", L"jump_height");
     const int damage = _wtoi(ReadIni(path, L"Cheats", L"damage_multiplier", L"1").c_str());
     options.damageMultiplier = damage == 2 || damage == 4 || damage == 6 ? damage : 1;
+    const std::wstring fps = ReadIni(path, L"Bloodborne", L"fps", L"60");
+    options.fps = fps == L"30" || fps == L"90" || fps == L"uncap" ? fps : L"60";
+    const std::wstring render = ReadIni(path, L"Bloodborne", L"render_resolution", L"");
+    options.renderResolution = render == L"1280x720" || render == L"2560x1440" || render == L"3840x2160" ? render : L"";
     return options;
 }
 
@@ -288,6 +331,10 @@ void SaveOptions(const Game& game, const Options& options) {
     WriteFlag(path, L"Cheats", L"movement_speed", options.movementSpeed);
     WriteFlag(path, L"Cheats", L"jump_height", options.jumpHeight);
     WritePrivateProfileStringW(L"Cheats", L"damage_multiplier", options.damageMultiplier == 1 ? nullptr : std::to_wstring(options.damageMultiplier).c_str(), path.c_str());
+    if (ProfileFor(game.titleId).bloodborne) {
+        WritePrivateProfileStringW(L"Bloodborne", L"fps", options.fps.c_str(), path.c_str());
+        WritePrivateProfileStringW(L"Bloodborne", L"render_resolution", options.renderResolution.c_str(), path.c_str());
+    }
 }
 
 }

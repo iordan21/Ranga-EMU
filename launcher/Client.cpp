@@ -197,6 +197,8 @@ struct Client {
             options = LoadOptions(*game);
             addons = LoadAddons(*game);
             library.Select(game->titleId);
+            // The Bloodborne port writes everything to game.log; PS5 games put their errors in game.err.
+            logFile = ProfileFor(game->titleId).bloodborne ? 1 : 0;
         }
     }
 
@@ -217,7 +219,8 @@ struct Client {
 
     const Texture& Banner(const Game& game) {
         auto found = banners.find(game.folder);
-        if (found == banners.end()) found = banners.emplace(game.folder, LoadTexture(game.folder + L"\\sce_sys\\pic0.png")).first;
+        // PS4 games have their background in pic1.png.
+        if (found == banners.end()) found = banners.emplace(game.folder, LoadTexture(game.folder + (Exists(game.folder + L"\\sce_sys\\pic0.png") ? L"\\sce_sys\\pic0.png" : L"\\sce_sys\\pic1.png"))).first;
         return found->second;
     }
 
@@ -272,10 +275,11 @@ struct Client {
             ImGui::PushClipRect(ImVec2(textX, min.y), ImVec2(textX + textWidth, min.y + row), true);
             draw->AddText(semibold, ImGui::GetFontSize(), ImVec2(textX, min.y + 12 * scale), Packed(kText), title.c_str());
             ImGui::PopClipRect();
-            const bool tested = ProfileFor(game.titleId).tested;
+            const Profile gameProfile = ProfileFor(game.titleId);
+            const bool tested = gameProfile.tested;
             const bool missing = !IsGameFolder(game.folder);
             const unsigned dot = missing ? kRed : tested ? kGreen : kAmber;
-            const char* label = missing ? "pasta não encontrada" : tested ? "testado" : "experimental";
+            const char* label = missing ? "pasta não encontrada" : gameProfile.bloodborne ? "port nativo (PS4)" : tested ? "testado" : "experimental";
             const float small = ImGui::GetFontSize() * 0.85f;
             draw->AddCircleFilled(ImVec2(textX + 4 * scale, min.y + row - 20 * scale), 3.5f * scale, Packed(dot));
             draw->AddText(nullptr, small, ImVec2(textX + 14 * scale, min.y + row - 20 * scale - small / 2), Packed(kDim), label);
@@ -324,6 +328,26 @@ struct Client {
                 ImGui::SameLine();
                 ImGui::TextDisabled("X / A / Enter pula a fala atual");
             }
+        } else if (profile.bloodborne) {
+            const char* rates[] = {"30 FPS (original)", "60 FPS", "90 FPS", "Sem limite"};
+            const wchar_t* rateValues[] = {L"30", L"60", L"90", L"uncap"};
+            int rate = 1;
+            for (int i = 0; i < 4; ++i) if (options.fps == rateValues[i]) rate = i;
+            label("Quadros");
+            if (ImGui::Combo("##fps", &rate, rates, 4)) { options.fps = rateValues[rate]; Save(); }
+            const char* renders[] = {"Nativa (1920 x 1080)", "1280 x 720 (mais leve)", "2560 x 1440", "3840 x 2160 (4K)"};
+            const wchar_t* renderValues[] = {L"", L"1280x720", L"2560x1440", L"3840x2160"};
+            int render = 0;
+            for (int i = 0; i < 4; ++i) if (options.renderResolution == renderValues[i]) render = i;
+            label("Resolução");
+            if (ImGui::Combo("##render", &render, renders, 4)) { options.renderResolution = renderValues[render]; Save(); }
+            ImGui::Dummy(ImVec2(0, 2 * scale));
+            if (ImGui::Checkbox("Pular a intro", &options.skipIntro)) Save();
+            ImGui::Dummy(ImVec2(0, 4 * scale));
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextDisabled("Roda pelo port nativo do Bloodborne (deadinside28, Mrsuss60 e shadPS4, licença GPL), não pelo emulador de PS5. Precisa da versão 1.09 com a atualização mesclada na pasta do jogo e do Python 3.10 ou mais novo.");
+            ImGui::TextDisabled("No jogo, Insert ou L3 + R3 abre o menu de gráficos e FSR.");
+            ImGui::PopTextWrapPos();
         } else {
             ImGui::Dummy(ImVec2(0, 2 * scale));
             ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
@@ -528,7 +552,7 @@ struct Client {
         if (!game->version.empty()) meta += "   ·   v" + Utf8(game->version);
         ImGui::TextDisabled("%s", meta.c_str());
         ImGui::SameLine();
-        const char* tag = profile.tested ? "testado" : "experimental";
+        const char* tag = profile.bloodborne ? "port nativo (PS4)" : profile.tested ? "testado" : "experimental";
         ImGui::PushStyleColor(ImGuiCol_Text, Color(profile.tested ? kGreen : kAmber));
         ImGui::TextUnformatted(tag);
         ImGui::PopStyleColor();
@@ -584,7 +608,8 @@ struct Client {
                 ImGui::EndChild();
                 ImGui::EndTabItem();
             }
-            if (ImGui::BeginTabItem("DLC")) {
+            // Add-ons are mounted by the PS5 runtime; the Bloodborne port has no such mount.
+            if (!profile.bloodborne && ImGui::BeginTabItem("DLC")) {
                 ImGui::BeginChild("##dlc");
                 DlcTab(*game, scale);
                 ImGui::EndChild();

@@ -2,6 +2,8 @@
 
 #include <cstdio>
 #include <cwchar>
+#include <utility>
+#include <vector>
 
 namespace Ranga {
 
@@ -40,6 +42,10 @@ void Runner::Start(const std::wstring& root, const Game& game, const Options& op
 
 void Runner::Run(std::wstring root, Game game, Options options) {
     const Profile profile = ProfileFor(game.titleId);
+    if (profile.bloodborne) {
+        RunBloodborne(root, game, options);
+        return;
+    }
     const std::wstring workspace = game.workspace;
     const std::wstring prep = workspace + L"\\prep";
     const std::wstring logs = workspace + L"\\logs";
@@ -172,27 +178,123 @@ void Runner::Run(std::wstring root, Game game, Options options) {
     }
     AllowSetForegroundWindow(process.dwProcessId);
     Report(State::Running, L"Rodando " + game.title + L"...");
-    const DWORD begun = GetTickCount();
     if (options.borderless) RequestFullscreen(process);
+    Await(process, logs, game, L"game.err");
+    SetFileAttributesW(pipelineCache.c_str(), FILE_ATTRIBUTE_HIDDEN);
+}
+
+void Runner::Await(PROCESS_INFORMATION& process, const std::wstring& logs, const Game& game, const wchar_t* errorLog) {
+    const DWORD begun = GetTickCount();
     WaitForSingleObject(process.hProcess, INFINITE);
     DWORD code = 0;
     GetExitCodeProcess(process.hProcess, &code);
     CloseHandle(process.hProcess);
     CloseHandle(process.hThread);
-    SetFileAttributesW(pipelineCache.c_str(), FILE_ATTRIBUTE_HIDDEN);
     const DWORD seconds = (GetTickCount() - begun) / 1000;
     {
         char line[160];
-        const int length = std::snprintf(line, sizeof(line), "ended, exit code 0x%lx after %lu s\r\n", code, seconds);
+        const int length = std::snprintf(line, sizeof(line), "%s ended, exit code 0x%lx after %lu s\r\n", Utf8(game.titleId).c_str(), code, seconds);
         HANDLE journal = CreateFileW((logs + L"\\launcher.log").c_str(), FILE_APPEND_DATA, FILE_SHARE_READ, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
         if (journal != INVALID_HANDLE_VALUE) { DWORD put = 0; WriteFile(journal, line, static_cast<DWORD>(length), &put, nullptr); CloseHandle(journal); }
-        if (code != 0) CopyFileW((logs + L"\\game.err").c_str(), (logs + L"\\game.err.last-error").c_str(), FALSE);
+        if (code != 0) CopyFileW((logs + L"\\" + errorLog).c_str(), (logs + L"\\" + errorLog + L".last-error").c_str(), FALSE);
     }
     const bool crashed = (code & 0xf0000000u) == 0xc0000000u && code != 0xcfffffffu;
     wchar_t hex[16];
     std::swprintf(hex, 16, L"0x%lx", code);
-    if (crashed) Report(State::Failed, L"O jogo parou de repente (código " + std::wstring(hex) + L") depois de " + std::to_wstring(seconds) + L" s. Veja game.err na aba Log.");
+    if (crashed) Report(State::Failed, L"O jogo parou de repente (código " + std::wstring(hex) + L") depois de " + std::to_wstring(seconds) + L" s. Veja " + errorLog + L" na aba Log.");
+    else if (code != 0 && seconds < 90 && ProfileFor(game.titleId).bloodborne) Report(State::Failed, L"O port do Bloodborne parou ao preparar o jogo (código " + std::to_wstring(code) + L"). Veja game.log na aba Log.");
     else Report(State::Finished, L"Jogo fechado depois de " + std::to_wstring(seconds / 60) + L" min " + std::to_wstring(seconds % 60) + L" s.");
+}
+
+namespace {
+
+// Python 3.10 or newer, which the port's scripts need. Each candidate is asked for its version: the Microsoft Store's
+// python.exe in WindowsApps is a real Python once installed from the Store, and only a stub that opens the Store before.
+std::wstring FindPython(const std::wstring& logs) {
+    std::vector<std::wstring> candidates;
+    wchar_t local[MAX_PATH] = {};
+    GetEnvironmentVariableW(L"LOCALAPPDATA", local, MAX_PATH);
+    for (int minor = 20; minor >= 10; --minor) {
+        for (const std::wstring base : {std::wstring(L"C:\\Program Files\\Python3"), std::wstring(local) + L"\\Programs\\Python\\Python3"}) {
+            const std::wstring path = base + std::to_wstring(minor) + L"\\python.exe";
+            if (Exists(path)) candidates.push_back(path);
+        }
+    }
+    wchar_t found[MAX_PATH * 2] = {};
+    for (const wchar_t* name : {L"python.exe", L"py.exe"}) {
+        if (SearchPathW(nullptr, name, nullptr, MAX_PATH * 2, found, nullptr) != 0) candidates.push_back(found);
+    }
+    for (const auto& path : candidates) {
+        const std::wstring check = L"\"" + path + L"\" -c \"import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)\"";
+        if (RunHidden(check, logs, logs + L"\\python-check.log") == 0) return path;
+    }
+    return L"";
+}
+
+}
+
+void Runner::RunBloodborne(const std::wstring& root, const Game& game, const Options& options) {
+    const std::wstring engine = BloodborneEngine(root);
+    const std::wstring workspace = game.workspace;
+    const std::wstring logs = workspace + L"\\logs";
+    if (!Exists(game.folder + L"\\eboot.bin")) {
+        Report(State::Failed, L"Não há eboot.bin em " + game.folder + L". Use \"Trocar pasta\" nas opções.");
+        return;
+    }
+    if (!Exists(engine + L"\\run.bat") || !Exists(engine + L"\\out\\bbport.exe")) {
+        Report(State::Failed, L"Falta o port do Bloodborne em " + engine + L" (run.bat e out\\bbport.exe).");
+        return;
+    }
+    CreateDirectoryW((root + L"\\games").c_str(), nullptr);
+    CreateDirectoryW(workspace.c_str(), nullptr);
+    CreateDirectoryW(logs.c_str(), nullptr);
+    const std::wstring python = FindPython(logs);
+    if (python.empty()) {
+        Report(State::Failed, L"O port do Bloodborne precisa do Python 3.10 ou mais novo (python.org ou Microsoft Store). Instale e tente de novo.");
+        return;
+    }
+    // Its saves, settings and the files it makes from the eboot live in the workspace; the port's own folder is only read.
+    const std::wstring config = workspace + L"\\bbport.ini";
+    if (!Exists(config)) CopyFileW((engine + L"\\bbport.ini").c_str(), config.c_str(), TRUE);
+
+    const std::vector<std::pair<const wchar_t*, std::wstring>> environment = {
+        {L"PYTHON", python},
+        {L"BB_DATA_DIR", workspace},
+        {L"BB_CONFIG", config},
+        {L"BB_GAME_DIR", game.folder},
+        {L"BB_FPS", options.fps},
+        {L"BB_RENDER_RES", options.renderResolution},
+        {L"BB_FULLSCREEN", options.borderless ? L"1" : L"0"},
+        {L"BB_FRAMES_AHEAD", L"2"},
+        {L"BB_MODS_ENABLED", L"0"},
+        {L"BB_PATCHES", options.skipIntro ? L"Skip Intro" : L""},
+    };
+    for (const auto& [name, value] : environment) SetEnvironmentVariableW(name, value.empty() ? nullptr : value.c_str());
+
+    // The port's scripts and bbport.exe write progress and errors to both streams; one log keeps them in order.
+    SECURITY_ATTRIBUTES inherit{sizeof(inherit), nullptr, TRUE};
+    HANDLE out = CreateFileW((logs + L"\\game.log").c_str(), GENERIC_WRITE, FILE_SHARE_READ, &inherit, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    DeleteFileW((logs + L"\\game.err").c_str());
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    startup.dwFlags = STARTF_USESTDHANDLES;
+    startup.hStdOutput = out;
+    startup.hStdError = out;
+    startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    wchar_t system[MAX_PATH] = {};
+    GetSystemDirectoryW(system, MAX_PATH);
+    // run.bat works from its own folder; the game folder goes as its argument too, as its own launcher passes it.
+    std::wstring command = L"\"" + std::wstring(system) + L"\\cmd.exe\" /d /c \"\"" + engine + L"\\run.bat\" \"" + game.folder + L"\"\"";
+    PROCESS_INFORMATION process{};
+    const BOOL started = CreateProcessW(nullptr, command.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, engine.c_str(), &startup, &process);
+    if (out != INVALID_HANDLE_VALUE) CloseHandle(out);
+    if (!started) {
+        Report(State::Failed, L"O port do Bloodborne não pôde ser iniciado.");
+        return;
+    }
+    AllowSetForegroundWindow(ASFW_ANY);
+    Report(State::Running, L"Rodando " + game.title + L" pelo port nativo...");
+    Await(process, logs, game, L"game.log");
 }
 
 }
