@@ -1,4 +1,5 @@
 #include "Runner.hpp"
+#include "Dlss5.hpp"
 
 #include <cstdio>
 #include <cwchar>
@@ -128,6 +129,17 @@ void Runner::Run(std::wstring root, Game game, Options options) {
 
     LinkGameFiles(game.folder, workspace + L"\\app0", logs + L"\\link.log");
     if (profile.sonsOfSparta && options.resolution >= 0) WriteSosSetting(workspace, "resolutionIndex", options.resolution);
+    // DLSS 5 comes and goes with its option, so a game started with it off has nothing of it beside the runtime. Its layer
+    // variables are set before debug_env.txt is read, which can still override them.
+    if (options.dlss5) {
+        const std::wstring error = EnableDlss5(root, workspace, workspace, logs + L"\\dlss5.log");
+        if (!error.empty()) {
+            Report(State::Failed, error);
+            return;
+        }
+    } else {
+        DisableDlss5(workspace, workspace);
+    }
 
     // The runtime reads these choices from its environment; an option that is off has no variable, so an inherited value cannot turn it on.
     {
@@ -256,6 +268,17 @@ void Runner::RunBloodborne(const std::wstring& root, const Game& game, const Opt
     // Its saves, settings and the files it makes from the eboot live in the workspace; the port's own folder is only read.
     const std::wstring config = workspace + L"\\bbport.ini";
     if (!Exists(config)) CopyFileW((engine + L"\\bbport.ini").c_str(), config.c_str(), TRUE);
+    // ReShade and the add-ons have to sit beside bbport.exe, the one place this goes into the port's folder; what goes in
+    // is listed in the workspace and taken out when the option is off.
+    if (options.dlss5) {
+        const std::wstring error = EnableDlss5(root, engine + L"\\out", workspace, logs + L"\\dlss5.log");
+        if (!error.empty()) {
+            Report(State::Failed, error);
+            return;
+        }
+    } else {
+        DisableDlss5(engine + L"\\out", workspace);
+    }
 
     const std::vector<std::pair<const wchar_t*, std::wstring>> environment = {
         {L"PYTHON", python},

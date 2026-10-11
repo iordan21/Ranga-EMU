@@ -31,8 +31,32 @@ std::string SfoString(const std::string& sfo, const char* key) {
     return {};
 }
 
+// The profile API writes Unicode only into a file that already starts with a UTF-16 byte order mark.
+void EnsureUnicodeIni(const std::wstring& path) {
+    if (Exists(path)) return;
+    FILE* file = nullptr;
+    if (_wfopen_s(&file, path.c_str(), L"wb") != 0 || file == nullptr) return;
+    const unsigned char bom[2] = {0xFF, 0xFE};
+    fwrite(bom, 1, sizeof(bom), file);
+    fclose(file);
+}
+
+std::wstring ReadIni(const std::wstring& path, const wchar_t* section, const wchar_t* key, const wchar_t* fallback) {
+    wchar_t value[MAX_PATH * 2] = {};
+    GetPrivateProfileStringW(section, key, fallback, value, MAX_PATH * 2, path.c_str());
+    return value;
+}
+
+bool ReadFlag(const std::wstring& path, const wchar_t* section, const wchar_t* key) { return ReadIni(path, section, key, L"0") == L"1"; }
+
+void WriteFlag(const std::wstring& path, const wchar_t* section, const wchar_t* key, bool value) {
+    WritePrivateProfileStringW(section, key, value ? L"1" : L"0", path.c_str());
+}
+
+}
+
 // The string value of the first "key" at or after from, with the JSON escapes param.json uses; empty when there is none.
-std::string JsonString(const std::string& text, const std::string& key, size_t from = 0) {
+std::string JsonString(const std::string& text, const std::string& key, size_t from) {
     size_t at = text.find("\"" + key + "\"", from);
     if (at == std::string::npos) return {};
     at = text.find(':', at + key.size() + 2);
@@ -57,30 +81,6 @@ std::string JsonString(const std::string& text, const std::string& key, size_t f
         }
     }
     return {};
-}
-
-// The profile API writes Unicode only into a file that already starts with a UTF-16 byte order mark.
-void EnsureUnicodeIni(const std::wstring& path) {
-    if (Exists(path)) return;
-    FILE* file = nullptr;
-    if (_wfopen_s(&file, path.c_str(), L"wb") != 0 || file == nullptr) return;
-    const unsigned char bom[2] = {0xFF, 0xFE};
-    fwrite(bom, 1, sizeof(bom), file);
-    fclose(file);
-}
-
-std::wstring ReadIni(const std::wstring& path, const wchar_t* section, const wchar_t* key, const wchar_t* fallback) {
-    wchar_t value[MAX_PATH * 2] = {};
-    GetPrivateProfileStringW(section, key, fallback, value, MAX_PATH * 2, path.c_str());
-    return value;
-}
-
-bool ReadFlag(const std::wstring& path, const wchar_t* section, const wchar_t* key) { return ReadIni(path, section, key, L"0") == L"1"; }
-
-void WriteFlag(const std::wstring& path, const wchar_t* section, const wchar_t* key, bool value) {
-    WritePrivateProfileStringW(section, key, value ? L"1" : L"0", path.c_str());
-}
-
 }
 
 Profile ProfileFor(const std::wstring& titleId) {
@@ -223,6 +223,7 @@ Options LoadOptions(const Game& game) {
     options.fps = fps == L"30" || fps == L"90" || fps == L"uncap" ? fps : L"60";
     const std::wstring render = ReadIni(path, L"Bloodborne", L"render_resolution", L"");
     options.renderResolution = render == L"1280x720" || render == L"2560x1440" || render == L"3840x2160" ? render : L"";
+    options.dlss5 = ReadFlag(path, L"Enhancements", L"dlss5");
     return options;
 }
 
@@ -331,6 +332,7 @@ void SaveOptions(const Game& game, const Options& options) {
     WriteFlag(path, L"Cheats", L"movement_speed", options.movementSpeed);
     WriteFlag(path, L"Cheats", L"jump_height", options.jumpHeight);
     WritePrivateProfileStringW(L"Cheats", L"damage_multiplier", options.damageMultiplier == 1 ? nullptr : std::to_wstring(options.damageMultiplier).c_str(), path.c_str());
+    WriteFlag(path, L"Enhancements", L"dlss5", options.dlss5);
     if (ProfileFor(game.titleId).bloodborne) {
         WritePrivateProfileStringW(L"Bloodborne", L"fps", options.fps.c_str(), path.c_str());
         WritePrivateProfileStringW(L"Bloodborne", L"render_resolution", options.renderResolution.c_str(), path.c_str());

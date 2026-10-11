@@ -41,6 +41,9 @@ std::wstring BloodborneEngine(const std::wstring& root);
 // folder has neither.
 bool ReadGameInfo(const std::wstring& folder, Game& game);
 
+// The string value of the first "key" at or after from, with the JSON escapes param.json uses; empty when there is none.
+std::string JsonString(const std::string& text, const std::string& key, size_t from = 0);
+
 class Library {
 public:
     explicit Library(std::wstring root);
@@ -71,6 +74,8 @@ struct Options {
     // Bloodborne port: BB_FPS (30, 60, 90 or uncap) and BB_RENDER_RES (empty is its native 1920x1080).
     std::wstring fps = L"60";
     std::wstring renderResolution;
+    // DLSS 5 through ReShade, with the files the user put in addons\dlss5 (see Dlss5.hpp).
+    bool dlss5 = false;
 };
 
 Options LoadOptions(const Game& game);

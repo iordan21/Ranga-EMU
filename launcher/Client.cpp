@@ -1,5 +1,6 @@
 // Ranga Emu client: a library of PS5 games on the left, the chosen game on the right, with Play and its options, cheats and logs.
 #include "Common.hpp"
+#include "Dlss5.hpp"
 #include "Library.hpp"
 #include "Runner.hpp"
 
@@ -165,7 +166,7 @@ void ApplyTheme(float scale) {
     style.FontScaleDpi = scale;
 }
 
-const char* kLogFiles[] = {"game.err", "game.log", "prepare.log", "launcher.log"};
+const char* kLogFiles[] = {"game.err", "game.log", "prepare.log", "launcher.log", "dlss5.log"};
 
 struct Client {
     HWND window = nullptr;
@@ -183,6 +184,7 @@ struct Client {
     Runner::State lastState = Runner::State::Idle;
     std::function<void()> pending;
     std::vector<Addon> addons;
+    Dlss5Kit dlss5Kit;
 
     explicit Client(const std::wstring& root) : library(root) {}
 
@@ -196,6 +198,7 @@ struct Client {
         if (Game* game = Current()) {
             options = LoadOptions(*game);
             addons = LoadAddons(*game);
+            dlss5Kit = InspectDlss5(library.Root());
             library.Select(game->titleId);
             // The Bloodborne port writes everything to game.log; PS5 games put their errors in game.err.
             logFile = ProfileFor(game->titleId).bloodborne ? 1 : 0;
@@ -357,6 +360,10 @@ struct Client {
         ImGui::Dummy(ImVec2(0, 6 * scale));
         ImGui::Separator();
         ImGui::Dummy(ImVec2(0, 2 * scale));
+        Dlss5Section(game);
+        ImGui::Dummy(ImVec2(0, 6 * scale));
+        ImGui::Separator();
+        ImGui::Dummy(ImVec2(0, 2 * scale));
         ImGui::TextDisabled("Pasta do jogo");
         ImGui::TextWrapped("%s", Utf8(game.folder).c_str());
         if (ImGui::Button("Abrir pasta")) ShellExecuteW(window, L"open", game.folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
@@ -382,6 +389,39 @@ struct Client {
                 };
             }
         }
+    }
+
+    void Dlss5Section(const Game& game) {
+        // Its files go in and out when the game starts, so the switch only changes while the game is closed.
+        const bool running = runner.Busy() && runner.TitleId() == game.titleId;
+        ImGui::BeginDisabled(running);
+        if (ImGui::Checkbox("DLSS 5 (experimental)", &options.dlss5)) {
+            dlss5Kit = InspectDlss5(library.Root());
+            Save();
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (running) {
+            ImGui::TextDisabled("Feche o jogo para ligar ou desligar.");
+        } else if (dlss5Kit.ready) {
+            ImGui::PushStyleColor(ImGuiCol_Text, Color(kGreen));
+            ImGui::TextUnformatted(options.dlss5 ? "ligado, arquivos prontos" : "arquivos prontos");
+            ImGui::PopStyleColor();
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_Text, Color(options.dlss5 ? kAmber : kDim));
+            ImGui::TextWrapped("Ainda não dá: %s", Utf8(dlss5Kit.problem).c_str());
+            ImGui::PopStyleColor();
+        }
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("Como o DLSS 5 Swapper faz com emuladores: ReShade + DLSS5-Feeder + um add-on neural, com os arquivos que você colocar na pasta do DLSS 5. O Ranga não baixa nenhum deles. Só placa RTX 50, e pesa: o FPS pode cair perto da metade.");
+        ImGui::PopTextWrapPos();
+        if (ImGui::Button("Abrir pasta do DLSS 5")) {
+            CreateDlss5Folder(library.Root());
+            ShellExecuteW(window, L"open", Dlss5Folder(library.Root()).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+            dlss5Kit = InspectDlss5(library.Root());
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Verificar de novo")) dlss5Kit = InspectDlss5(library.Root());
     }
 
     void CheatsTab(float scale) {
