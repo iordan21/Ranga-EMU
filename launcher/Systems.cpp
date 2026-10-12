@@ -95,7 +95,8 @@ std::vector<System> MakeSystems() {
          "Precisa das prod.keys e do firmware tirados do seu Switch, instalados no emulador."},
         {L"WIIU", "Wii U", {L".wua", L".wud", L".wux", L".rpx", L".wuhb"}, true,
          {{L"Cemu", L"cemu", L"{fullscreen} -g \"{rom}\"", L"-f", {}, L"", true}},
-         "WUD e WUX precisam das chaves do seu console no keys.txt do Cemu. Jogo em pasta: a que tem code, content e meta."},
+         "Nativo (core do Cemu): WUD e WUX precisam das chaves do seu console em bios\\retroarch\\Cemu\\keys.txt; não tem "
+         "save state. Jogo em pasta: a que tem code, content e meta."},
         {L"WII", "Wii", {L".wbfs", L".rvz", L".wia", L".iso", L".gcz", L".ciso", L".wad", L".dol", L".elf"}, false,
          {kDolphin, RetroArch(L"dolphin")},
          "Não precisa de BIOS."},
@@ -155,7 +156,8 @@ std::vector<System> MakeSystems() {
             {L"xemu.toml", "display.quality", "surface_scale", "2"},
             {L"xemu.toml", "display.ui", "show_menubar", "false"}},
            L"", true}},
-         "O xemu precisa da BIOS, da MCPX e do HD do seu Xbox. O jogo tem que ser XISO."},
+         "Precisa da BIOS, da MCPX, da EEPROM e do HD do seu Xbox; no nativo (core do xemu, experimental) ficam em "
+         "bios\\retroarch\\xemu, sem save state e só com o controle 1. O jogo tem que ser ISO ou XISO."},
         {L"X360", "Xbox 360", {L".iso", L".xex", L".zar"}, true,
          {{L"Xenia Canary", L"xenia", L"{fullscreen} \"{rom}\"", L"--fullscreen=true", {}, L"", true}},
          "Jogo em ISO, ou pasta com default.xex."},
@@ -170,13 +172,14 @@ std::vector<System> MakeSystems() {
          "O .zip tem que ser da versão de romset que o core ou o MAME pede."},
     };
     // What Ranga Retro runs itself, by the core it loads; cores that draw with the GPU get Vulkan or OpenGL. Consoles with
-    // no core here (PS3, PS4, Switch, Wii U, Xbox, Xbox 360) stay with their emulator in Ranga's window.
+    // no core here (PS3, PS4, Switch, Xbox 360) stay with their emulator in Ranga's window. Wii U (Cemu) and Xbox (xemu)
+    // have no save states natively; mode=external gives them back to the full emulator.
     const std::pair<const wchar_t*, const wchar_t*> native[] = {
         {L"SNES", L"snes9x"}, {L"NES", L"mesen"}, {L"MD", L"genesis_plus_gx"}, {L"SMS", L"genesis_plus_gx"},
         {L"SEGACD", L"genesis_plus_gx"}, {L"SATURN", L"mednafen_saturn"}, {L"PCE", L"mednafen_pce_fast"},
         {L"A2600", L"stella"}, {L"ARCADE", L"fbneo"}, {L"GBA", L"mgba"}, {L"GB", L"gambatte"}, {L"PS1", L"swanstation"},
         {L"NDS", L"melondsds"}, {L"PSP", L"ppsspp"}, {L"DC", L"flycast"}, {L"PS2", L"pcsx2"}, {L"GC", L"dolphin"}, {L"WII", L"dolphin"},
-        {L"3DS", L"azahar"}, {L"N64", L"mupen64plus_next"},
+        {L"3DS", L"azahar"}, {L"N64", L"mupen64plus_next"}, {L"WIIU", L"cemu"}, {L"XBOX", L"xemu"},
     };
     for (auto& system : systems) {
         for (const auto& [id, core] : native) {

@@ -1183,6 +1183,9 @@ void ApplyCoreDefaults(const std::wstring& corePath) {
         {L"flycast", "reicast_internal_resolution", "1920x1440"},
         {L"pcsx2", "pcsx2_upscale_multiplier", "2x"},
         {L"azahar", "citra_resolution_factor", "3"},
+        {L"cemu", "cemu_internal_resolution", "1.5x"},
+        {L"xemu", "xemu_surface_scale", "2"},
+        {L"xemu", "xemu_skip_boot_anim", "enabled"},
         {L"swanstation", "swanstation_BIOS_PathNTSCU", "ps1_rom.bin"},
         {L"swanstation", "swanstation_BIOS_PathNTSCJ", "ps1_rom.bin"},
         {L"swanstation", "swanstation_BIOS_PathPAL", "ps1_rom.bin"},
@@ -1194,6 +1197,8 @@ void ApplyCoreDefaults(const std::wstring& corePath) {
     // Vulkan; with OpenGL, GLideN64.
     if (name.rfind(L"swanstation", 0) == 0) g.overrides["swanstation_GPU_Renderer"] = g_preferVulkan ? "Vulkan" : "OpenGL";
     if (name.rfind(L"mupen64plus_next", 0) == 0) g.overrides["mupen64plus-rdp-plugin"] = g_preferVulkan ? "parallel" : "gliden64";
+    // Cemu starts in OpenGL; with Vulkan it shares Ranga's device. xemu hands over a finished picture either way.
+    if (name.rfind(L"cemu", 0) == 0) g.overrides["cemu_gpu_api"] = g_preferVulkan ? "Vulkan" : "OpenGL";
 }
 
 void ReadOptionsFile(const std::wstring& path) {
@@ -1273,6 +1278,15 @@ int RetroMain(int argc, wchar_t** argv) {
     retro_system_info info{};
     g.core.getSystemInfo(&info);
     Log("[retro] core %s %s\n", info.library_name, info.library_version);
+    // RANGA_RETRO_LIST_OPTIONS=1 logs every option the core declared, its value now and the values it accepts, so the
+    // defaults Ranga sets for a core come from the core and not from a guess.
+    if (std::getenv("RANGA_RETRO_LIST_OPTIONS") != nullptr) {
+        for (const auto& key : g.optionOrder) {
+            std::string accepted;
+            for (const auto& [value, label] : g.optionInfo[key].values) accepted += (accepted.empty() ? "" : "|") + value;
+            Log("[option] %s = %s  [%s]\n", key.c_str(), g.options[key].c_str(), accepted.c_str());
+        }
+    }
 
     // A core that reads the file itself gets the path; otherwise it gets the bytes.
     const std::string romUtf8 = Utf8(romPath);

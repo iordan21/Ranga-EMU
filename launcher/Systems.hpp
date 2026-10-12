@@ -36,8 +36,8 @@ struct Preset {
     std::vector<Tweak> tweaks = {};
     // Its BIOS folder under bios beside this program, which the tweaks point it at; empty when it needs none.
     std::wstring bios = L"";
-    // No libretro core runs its console, so its game window is shown inside Ranga's own window (Embed.hpp), which also
-    // takes over fullscreen.
+    // Ranga Retro does not run its console (or runs it with fewer features), so its game window is shown inside Ranga's
+    // own window (Embed.hpp), which also takes over fullscreen.
     bool embed = false;
 };
 
