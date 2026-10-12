@@ -98,6 +98,7 @@ struct Core {
     size_t (*serializeSize)() = nullptr;
     bool (*serialize)(void*, size_t) = nullptr;
     bool (*unserialize)(const void*, size_t) = nullptr;
+    void (*reset)() = nullptr;
     void* (*memoryData)(unsigned) = nullptr;
     size_t (*memorySize)(unsigned) = nullptr;
 
@@ -117,7 +118,7 @@ struct Core {
                Bind(setInputState, "retro_set_input_state") & Bind(setControllerPort, "retro_set_controller_port_device") &
                Bind(run, "retro_run") & Bind(loadGame, "retro_load_game") & Bind(unloadGame, "retro_unload_game") &
                Bind(serializeSize, "retro_serialize_size") & Bind(serialize, "retro_serialize") &
-               Bind(unserialize, "retro_unserialize") & Bind(memoryData, "retro_get_memory_data") & Bind(memorySize, "retro_get_memory_size");
+               Bind(unserialize, "retro_unserialize") & Bind(reset, "retro_reset") & Bind(memoryData, "retro_get_memory_data") & Bind(memorySize, "retro_get_memory_size");
     }
 };
 
@@ -129,6 +130,14 @@ struct State {
     retro_system_av_info av{};
     // Core options: the core's defaults, then what the options file sets.
     std::map<std::string, std::string> options, overrides;
+    // What the in-game menu shows of each option: its description and its values with their labels, in the core's order.
+    struct OptionInfo {
+        std::string description;
+        std::vector<std::pair<std::string, std::string>> values;
+    };
+    std::map<std::string, OptionInfo> optionInfo;
+    std::vector<std::string> optionOrder;
+    std::wstring optionsPath;
     bool optionsChanged = false;
     retro_frame_time_callback frameTime{};
     // The latest frame, as BGRA.
@@ -279,6 +288,15 @@ void RETRO_CALLCONV CoreLog(retro_log_level level, const char* format, ...) {
     std::fflush(stderr);
 }
 
+template <typename Value> void DescribeOption(const char* key, const char* description, const Value* values) {
+    if (key == nullptr) return;
+    auto& info = g.optionInfo[key];
+    if (info.description.empty() && info.values.empty()) g.optionOrder.push_back(key);
+    info.description = description != nullptr ? description : "";
+    info.values.clear();
+    for (const Value* value = values; value->value != nullptr; ++value) info.values.push_back({value->value, value->label != nullptr ? value->label : ""});
+}
+
 void SetOption(const char* key, const char* defaultValue) {
     if (key == nullptr) return;
     const auto found = g.overrides.find(key);
@@ -360,21 +378,43 @@ bool RETRO_CALLCONV Environment(unsigned command, void* data) {
                 // "Description; first|second|third": the first value is the default.
                 std::string values = variable->value != nullptr ? variable->value : "";
                 const size_t semicolon = values.find("; ");
+                const std::string description = semicolon == std::string::npos ? "" : values.substr(0, semicolon);
                 values = semicolon == std::string::npos ? values : values.substr(semicolon + 2);
                 SetOption(variable->key, values.substr(0, values.find('|')).c_str());
+                auto& info = g.optionInfo[variable->key];
+                if (info.values.empty()) g.optionOrder.push_back(variable->key);
+                info.description = description;
+                for (size_t start = 0; start <= values.size();) {
+                    size_t end = values.find('|', start);
+                    if (end == std::string::npos) end = values.size();
+                    info.values.push_back({values.substr(start, end - start), ""});
+                    start = end + 1;
+                }
             }
             return true;
         case RETRO_ENVIRONMENT_SET_CORE_OPTIONS:
-            for (const auto* option = static_cast<const retro_core_option_definition*>(data); option->key != nullptr; ++option) SetOption(option->key, option->default_value);
+            for (const auto* option = static_cast<const retro_core_option_definition*>(data); option->key != nullptr; ++option) {
+                SetOption(option->key, option->default_value);
+                DescribeOption(option->key, option->desc, option->values);
+            }
             return true;
         case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_INTL:
-            for (const auto* option = static_cast<const retro_core_options_intl*>(data)->us; option->key != nullptr; ++option) SetOption(option->key, option->default_value);
+            for (const auto* option = static_cast<const retro_core_options_intl*>(data)->us; option->key != nullptr; ++option) {
+                SetOption(option->key, option->default_value);
+                DescribeOption(option->key, option->desc, option->values);
+            }
             return true;
         case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2:
-            for (const auto* option = static_cast<const retro_core_options_v2*>(data)->definitions; option->key != nullptr; ++option) SetOption(option->key, option->default_value);
+            for (const auto* option = static_cast<const retro_core_options_v2*>(data)->definitions; option->key != nullptr; ++option) {
+                SetOption(option->key, option->default_value);
+                DescribeOption(option->key, option->desc, option->values);
+            }
             return true;
         case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2_INTL:
-            for (const auto* option = static_cast<const retro_core_options_v2_intl*>(data)->us->definitions; option->key != nullptr; ++option) SetOption(option->key, option->default_value);
+            for (const auto* option = static_cast<const retro_core_options_v2_intl*>(data)->us->definitions; option->key != nullptr; ++option) {
+                SetOption(option->key, option->default_value);
+                DescribeOption(option->key, option->desc, option->values);
+            }
             return true;
         case RETRO_ENVIRONMENT_GET_VARIABLE: {
             auto* variable = static_cast<retro_variable*>(data);
@@ -488,6 +528,7 @@ public:
     }
     ~Audio() { if (device != 0) SDL_CloseAudioDevice(device); }
     unsigned Queued() const { return device != 0 ? SDL_GetQueuedAudioSize(device) : 0; }
+    void Clear() { if (device != 0) SDL_ClearQueuedAudio(device); }
 
     void Push(const std::vector<int16_t>& in, double inputRate) {
         if (device == 0 || in.size() < 4 || inputRate <= 0) return;
@@ -882,8 +923,11 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
         case WM_SYSKEYDOWN:
             if ((lParam & (1 << 30)) != 0) break;
             if (wParam == VK_F11 || (wParam == VK_RETURN && (GetKeyState(VK_MENU) & 0x8000))) { ToggleFullscreen(); return 0; }
-            if (wParam == VK_F5 || wParam == VK_F7) { g_hotkey = static_cast<int>(wParam); return 0; }
+            if (wParam == VK_F5 || wParam == VK_F7 || wParam == VK_ESCAPE) { g_hotkey = static_cast<int>(wParam); return 0; }
             if (message == WM_SYSKEYDOWN) break;
+            return 0;
+        case WM_RBUTTONUP:
+            g_hotkey = VK_ESCAPE;
             return 0;
         case WM_SYSCOMMAND:
             if ((wParam & 0xfff0) == SC_KEYMENU) return 0;
@@ -930,6 +974,9 @@ double DisplayRefresh() {
 struct Saves {
     std::wstring sram, state;
     std::vector<unsigned char> written;
+    // Position 1 keeps the old name (<game>.state); positions 2 to 5 add their number.
+    int slot = 0;
+    std::wstring StatePath() const { return slot == 0 ? state : state + std::to_wstring(slot + 1); }
 
     void LoadSram() {
         const size_t size = g.core.memorySize(RETRO_MEMORY_SAVE_RAM);
@@ -955,16 +1002,137 @@ struct Saves {
     void SaveState() {
         const size_t size = g.core.serializeSize();
         std::vector<unsigned char> data(size);
-        const bool saved = size != 0 && g.core.serialize(data.data(), size) && WriteFile(state, data.data(), size);
-        ShowMessage(saved ? L"Estado salvo (F7 carrega)" : L"Este core não salva estado", 0);
+        const bool saved = size != 0 && g.core.serialize(data.data(), size) && WriteFile(StatePath(), data.data(), size);
+        ShowMessage(saved ? L"Estado salvo na posição " + std::to_wstring(slot + 1) : L"Este core não salva estado", 0);
     }
 
     void LoadState() {
-        const auto data = ReadFile(state);
+        const auto data = ReadFile(StatePath());
         const bool loaded = !data.empty() && g.core.unserialize(data.data(), data.size());
-        ShowMessage(loaded ? L"Estado carregado" : L"Nenhum estado salvo ainda (F5 salva)", 0);
+        ShowMessage(loaded ? L"Estado carregado da posição " + std::to_wstring(slot + 1) : L"Nenhum estado na posição " + std::to_wstring(slot + 1), 0);
     }
 };
+
+// ------------------------------------------------------------------------------------------------------------ menu
+
+// The in-game menu: Esc, a right click or the gamepad's PS/Guide button opens it, and the game waits while it is open.
+// It is a Windows popup menu; a timer turns the gamepad's D-pad, A/Cross and B/Circle into the arrow, Enter and Esc
+// keys it understands.
+enum MenuCommand { kContinue = 1, kSave, kLoad, kReset, kFullscreen, kQuit, kSlot = 10, kOption = 1000 };
+
+void SendKey(WORD key) {
+    INPUT input[2]{};
+    input[0].type = input[1].type = INPUT_KEYBOARD;
+    input[0].ki.wVk = input[1].ki.wVk = key;
+    input[1].ki.dwFlags = KEYEVENTF_KEYUP;
+    SendInput(2, input, sizeof(INPUT));
+}
+
+void CALLBACK MenuPadTimer(HWND, UINT, UINT_PTR, DWORD) {
+    static bool held[8];
+    SDL_GameControllerUpdate();
+    const SDL_GameControllerButton buttons[8] = {SDL_CONTROLLER_BUTTON_DPAD_UP, SDL_CONTROLLER_BUTTON_DPAD_DOWN, SDL_CONTROLLER_BUTTON_DPAD_LEFT,
+                                                 SDL_CONTROLLER_BUTTON_DPAD_RIGHT, SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_B,
+                                                 SDL_CONTROLLER_BUTTON_GUIDE, SDL_CONTROLLER_BUTTON_START};
+    const WORD keys[8] = {VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT, VK_RETURN, VK_ESCAPE, VK_ESCAPE, VK_ESCAPE};
+    for (int i = 0; i < 8; ++i) {
+        bool down = false;
+        for (auto* pad : g_pads) down |= pad != nullptr && SDL_GameControllerGetButton(pad, buttons[i]) != 0;
+        if (down && !held[i]) SendKey(keys[i]);
+        held[i] = down;
+    }
+}
+
+// Remembers a core option the user picked in the game's options file, so the game starts with it next time.
+void PersistOption(const std::string& key, const std::string& value) {
+    if (g.optionsPath.empty()) return;
+    const auto data = ReadFile(g.optionsPath);
+    std::string text(data.begin(), data.end()), out;
+    bool replaced = false;
+    size_t start = 0;
+    while (start < text.size()) {
+        size_t end = text.find('\n', start);
+        if (end == std::string::npos) end = text.size();
+        std::string line = text.substr(start, end - start);
+        start = end + 1;
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        const size_t equals = line.find('=');
+        std::string name = equals == std::string::npos ? "" : line.substr(0, equals);
+        while (!name.empty() && name.back() == ' ') name.pop_back();
+        if (name == key) {
+            line = key + " = \"" + value + "\"";
+            replaced = true;
+        }
+        out += line + "\r\n";
+    }
+    if (!replaced) out += key + " = \"" + value + "\"\r\n";
+    WriteFile(g.optionsPath, out.data(), out.size());
+}
+
+// Shows the menu and returns what was picked; the core options are applied here.
+int ShowMenu(int slot) {
+    HMENU menu = CreatePopupMenu();
+    const std::wstring slotText = L" (posição " + std::to_wstring(slot + 1) + L")";
+    AppendMenuW(menu, MF_STRING, kContinue, L"Continuar\tEsc");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING, kSave, (L"Salvar estado" + slotText + L"\tF5").c_str());
+    AppendMenuW(menu, MF_STRING, kLoad, (L"Carregar estado" + slotText + L"\tF7").c_str());
+    HMENU slots = CreatePopupMenu();
+    for (int i = 0; i < 5; ++i) AppendMenuW(slots, MF_STRING | (i == slot ? MF_CHECKED : 0), kSlot + i, (L"Posição " + std::to_wstring(i + 1)).c_str());
+    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(slots), L"Posição do estado");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    // Each option is a submenu of its values, the current one checked; ids encode option and value.
+    HMENU options = CreatePopupMenu();
+    int shown = 0;
+    for (size_t i = 0; i < g.optionOrder.size() && i < 200; ++i) {
+        const std::string& key = g.optionOrder[i];
+        const auto& info = g.optionInfo[key];
+        if (info.values.size() < 2) continue;
+        HMENU values = CreatePopupMenu();
+        const std::string current = g.options[key];
+        for (size_t v = 0; v < info.values.size() && v < 64; ++v) {
+            const std::string label = info.values[v].second.empty() ? info.values[v].first : info.values[v].second;
+            AppendMenuW(values, MF_STRING | (info.values[v].first == current ? MF_CHECKED : 0), kOption + i * 64 + v, Wide(label).c_str());
+        }
+        AppendMenuW(options, MF_POPUP, reinterpret_cast<UINT_PTR>(values), Wide(info.description.empty() ? key : info.description).c_str());
+        ++shown;
+    }
+    AppendMenuW(menu, MF_POPUP | (shown == 0 ? MF_GRAYED : 0), reinterpret_cast<UINT_PTR>(options), L"Opções do core");
+    AppendMenuW(menu, MF_STRING | (g_fullscreen ? MF_CHECKED : 0), kFullscreen, L"Tela cheia\tF11");
+    AppendMenuW(menu, MF_STRING, kReset, L"Reiniciar o jogo");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING, kQuit, L"Sair do jogo");
+
+    RECT client{};
+    GetClientRect(g_window, &client);
+    POINT center{client.right / 2, client.bottom / 2};
+    ClientToScreen(g_window, &center);
+    if (g_fullscreen) ShowCursor(TRUE);
+    SetForegroundWindow(g_window);
+    const UINT_PTR timer = SetTimer(nullptr, 0, 40, MenuPadTimer);
+    // The first press of the button that opened the menu must not also pick an item.
+    MenuPadTimer(nullptr, 0, 0, 0);
+    const int picked = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_CENTERALIGN | TPM_VCENTERALIGN | TPM_RIGHTBUTTON, center.x, center.y, 0, g_window, nullptr);
+    KillTimer(nullptr, timer);
+    Log("[retro] menu: escolha %d, janela na frente: %s\n", picked, GetForegroundWindow() == g_window ? "sim" : "nao");
+    if (g_fullscreen) ShowCursor(FALSE);
+    DestroyMenu(menu);
+    if (picked >= kOption) {
+        const size_t option = static_cast<size_t>(picked - kOption) / 64, value = static_cast<size_t>(picked - kOption) % 64;
+        if (option < g.optionOrder.size()) {
+            const std::string& key = g.optionOrder[option];
+            const auto& values = g.optionInfo[key].values;
+            if (value < values.size()) {
+                g.options[key] = values[value].first;
+                g.optionsChanged = true;
+                PersistOption(key, values[value].first);
+                ShowMessage(L"Opção alterada; alguns cores só aplicam ao reiniciar o jogo", 0);
+            }
+        }
+        return kContinue;
+    }
+    return picked;
+}
 
 // Ranga's own defaults for a core, applied before the game's options file, which can still change any of them: the
 // OpenGL renderer at about 1080p, and for SwanStation the PS1 BIOS inside the PS3 firmware Sony publishes (ps1_rom.bin,
@@ -1038,6 +1206,7 @@ int RetroMain(int argc, wchar_t** argv) {
     g.saveDir = Utf8(saveDir);
     ApplyCoreDefaults(corePath);
     if (!optionsPath.empty()) ReadOptionsFile(optionsPath);
+    g.optionsPath = optionsPath;
 
     // Per-monitor DPI awareness, so the picture is not blurred by Windows' scaling (Windows 10 1703 and later).
     using SetAwareness = BOOL(WINAPI*)(HANDLE);
@@ -1131,6 +1300,28 @@ int RetroMain(int argc, wchar_t** argv) {
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_CONTROLLERDEVICEADDED) OpenPads();
             else if (event.type == SDL_CONTROLLERDEVICEREMOVED) ClosePad(event.cdevice.which);
+        }
+        // The gamepad's PS/Guide button opens the menu too.
+        static bool guideHeld = false;
+        bool guide = false;
+        for (auto* pad : g_pads) guide |= pad != nullptr && SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_GUIDE) != 0;
+        if (guide && !guideHeld && GetForegroundWindow() == g_window) g_hotkey = VK_ESCAPE;
+        guideHeld = guide;
+        if (g_hotkey == VK_ESCAPE) {
+            g_hotkey = 0;
+            const int picked = ShowMenu(saves.slot);
+            if (picked == kSave) saves.SaveState();
+            else if (picked == kLoad) saves.LoadState();
+            else if (picked >= kSlot && picked < kSlot + 5) {
+                saves.slot = picked - kSlot;
+                ShowMessage(L"Posição do estado: " + std::to_wstring(saves.slot + 1), 0);
+            } else if (picked == kReset) g.core.reset();
+            else if (picked == kFullscreen) ToggleFullscreen();
+            else if (picked == kQuit) g_running = false;
+            // The pause leaves no catching up and no stale sound behind.
+            audio.Clear();
+            last = std::chrono::steady_clock::now();
+            accumulator = 0;
         }
         if (g_hotkey == VK_F5) saves.SaveState();
         if (g_hotkey == VK_F7) saves.LoadState();
