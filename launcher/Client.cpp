@@ -768,87 +768,101 @@ struct Client {
                 ImGui::TextUnformatted(engine.exe.empty() ? "sem emulador" : "precisa de atenção");
             }
             ImGui::PopStyleColor();
-            if (!engine.exe.empty()) ImGui::TextDisabled("%s", Utf8(engine.exe).c_str());
-            if (!engine.ready && !engine.exe.empty()) {
-                ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
-                ImGui::TextUnformatted(Utf8(engine.problem).c_str());
-                ImGui::PopStyleColor();
+            if (engine.nativeAvailable) {
+                bool native = engine.native;
+                if (ImGui::Checkbox("Rodar dentro do Ranga (nativo)", &native)) pending = [this, id = system.id, native] { SetNative(library.Root(), id, native); RefreshEngines(); };
             }
-            if (ImGui::Button(engine.exe.empty() ? "Escolher emulador..." : "Trocar...")) {
-                const std::wstring start = engine.exe.empty() ? L"" : ParentFolder(engine.exe);
-                const std::wstring exe = PickFile(window, start, (L"Escolha o .exe do emulador de " + Wide(system.name)).c_str(), {{L"Programa", L"*.exe"}});
-                if (!exe.empty()) pending = [this, id = system.id, exe] { ChooseEngine(library.Root(), id, exe); RefreshEngines(); };
-            }
-            if (!engine.exe.empty()) {
-                ImGui::SameLine();
-                if (ImGui::Button("Abrir pasta")) ShellExecuteW(window, L"open", ParentFolder(engine.exe).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-                ImGui::SameLine();
-                if (ImGui::Button("Tirar")) pending = [this, id = system.id] { ClearEngine(library.Root(), id); RefreshEngines(); };
-                if (engine.tunable) {
+            if (engine.native) {
+                ImGui::TextDisabled("O jogo roda no Ranga Retro, com o core %s, sem abrir outro emulador. F11 tela cheia, F5 salva estado, F7 carrega.", Utf8(system.nativeCore).c_str());
+                if (!engine.ready) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
+                    ImGui::TextUnformatted(Utf8(engine.problem).c_str());
+                    ImGui::PopStyleColor();
+                }
+                if (!engine.bios.empty()) ImGui::TextDisabled("BIOS: %s", Utf8(engine.bios).c_str());
+            } else {
+                if (!engine.exe.empty()) ImGui::TextDisabled("%s", Utf8(engine.exe).c_str());
+                if (!engine.ready && !engine.exe.empty()) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
+                    ImGui::TextUnformatted(Utf8(engine.problem).c_str());
+                    ImGui::PopStyleColor();
+                }
+                if (ImGui::Button(engine.exe.empty() ? "Escolher emulador..." : "Trocar...")) {
+                    const std::wstring start = engine.exe.empty() ? L"" : ParentFolder(engine.exe);
+                    const std::wstring exe = PickFile(window, start, (L"Escolha o .exe do emulador de " + Wide(system.name)).c_str(), {{L"Programa", L"*.exe"}});
+                    if (!exe.empty()) pending = [this, id = system.id, exe] { ChooseEngine(library.Root(), id, exe); RefreshEngines(); };
+                }
+                if (!engine.exe.empty()) {
                     ImGui::SameLine();
-                    // It rewrites the emulator's own settings, which the emulator overwrites when it closes, so it waits for no game.
-                    ImGui::BeginDisabled(runner.Busy());
-                    if (ImGui::Button("Ajustar para este PC")) {
-                        pending = [this, id = system.id, name = system.name] {
-                            const std::wstring report = TuneEngine(library.Root(), id);
-                            const std::wstring text = L"Ajustes de " + Wide(name) + L" (com o emulador fechado):\n\n" + report;
-                            MessageBoxW(window, text.c_str(), kAppName, MB_OK | MB_ICONINFORMATION);
+                    if (ImGui::Button("Abrir pasta")) ShellExecuteW(window, L"open", ParentFolder(engine.exe).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+                    ImGui::SameLine();
+                    if (ImGui::Button("Tirar")) pending = [this, id = system.id] { ClearEngine(library.Root(), id); RefreshEngines(); };
+                    if (engine.tunable) {
+                        ImGui::SameLine();
+                        // It rewrites the emulator's own settings, which the emulator overwrites when it closes, so it waits for no game.
+                        ImGui::BeginDisabled(runner.Busy());
+                        if (ImGui::Button("Ajustar para este PC")) {
+                            pending = [this, id = system.id, name = system.name] {
+                                const std::wstring report = TuneEngine(library.Root(), id);
+                                const std::wstring text = L"Ajustes de " + Wide(name) + L" (com o emulador fechado):\n\n" + report;
+                                MessageBoxW(window, text.c_str(), kAppName, MB_OK | MB_ICONINFORMATION);
+                                RefreshEngines();
+                            };
+                        }
+                        ImGui::EndDisabled();
+                    }
+                }
+                if (!engine.bios.empty()) {
+                    ImGui::AlignTextToFramePadding();
+                    ImGui::TextDisabled("BIOS: %s", Utf8(engine.bios).c_str());
+                    ImGui::SameLine();
+                    if (ImGui::Button("Abrir pasta da BIOS")) {
+                        CreateDirectoryW((library.Root() + L"\\bios").c_str(), nullptr);
+                        CreateDirectoryW(engine.bios.c_str(), nullptr);
+                        ShellExecuteW(window, L"open", engine.bios.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+                    }
+                }
+                if (engine.exe.empty() && !retroArch.empty()) {
+                    for (const auto& preset : system.presets) {
+                        if (preset.exePrefixes != L"retroarch") continue;
+                        ImGui::SameLine();
+                        if (ImGui::Button("Usar o RetroArch")) pending = [this, id = system.id, retroArch] { ChooseEngine(library.Root(), id, retroArch); RefreshEngines(); };
+                        break;
+                    }
+                }
+                if (engine.exe.empty()) {
+                    std::string names;
+                    for (const auto& preset : system.presets) {
+                        const std::string name = preset.exePrefixes == L"retroarch" ? "RetroArch" : Utf8(preset.name);
+                        if (names.find(name) == std::string::npos) names += (names.empty() ? "" : ", ") + name;
+                    }
+                    ImGui::TextDisabled("Funciona com: %s", names.c_str());
+                } else {
+                    // The arguments stay editable: a new emulator version may want others than the ones the client knows.
+                    auto& args = argsEdit[system.id];
+                    auto& fullscreen = fullscreenEdit[system.id];
+                    ImGui::AlignTextToFramePadding();
+                    ImGui::TextDisabled("Argumentos");
+                    ImGui::SameLine(110 * scale);
+                    ImGui::SetNextItemWidth(std::max(200 * scale, ImGui::GetContentRegionAvail().x - pad - 90 * scale));
+                    ImGui::InputText("##args", args.data(), args.size());
+                    const bool argsDone = ImGui::IsItemDeactivatedAfterEdit();
+                    ImGui::SameLine();
+                    if (ImGui::Button("Padrão")) pending = [this, id = system.id] { ResetEngineArgs(library.Root(), id); RefreshEngines(); };
+                    ImGui::AlignTextToFramePadding();
+                    ImGui::TextDisabled("Tela cheia");
+                    ImGui::SameLine(110 * scale);
+                    ImGui::SetNextItemWidth(260 * scale);
+                    ImGui::InputText("##fullscreen", fullscreen.data(), fullscreen.size());
+                    const bool fullscreenDone = ImGui::IsItemDeactivatedAfterEdit();
+                    if (argsDone || fullscreenDone) {
+                        pending = [this, id = system.id, a = std::string(args.data()), f = std::string(fullscreen.data())] {
+                            SaveEngineArgs(library.Root(), id, Wide(a), Wide(f));
                             RefreshEngines();
                         };
                     }
-                    ImGui::EndDisabled();
+                    ImGui::TextDisabled("{rom} é o jogo; {fullscreen} vira o argumento de tela cheia quando o jogo está em tela cheia.");
                 }
-            }
-            if (!engine.bios.empty()) {
-                ImGui::AlignTextToFramePadding();
-                ImGui::TextDisabled("BIOS: %s", Utf8(engine.bios).c_str());
-                ImGui::SameLine();
-                if (ImGui::Button("Abrir pasta da BIOS")) {
-                    CreateDirectoryW((library.Root() + L"\\bios").c_str(), nullptr);
-                    CreateDirectoryW(engine.bios.c_str(), nullptr);
-                    ShellExecuteW(window, L"open", engine.bios.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-                }
-            }
-            if (engine.exe.empty() && !retroArch.empty()) {
-                for (const auto& preset : system.presets) {
-                    if (preset.exePrefixes != L"retroarch") continue;
-                    ImGui::SameLine();
-                    if (ImGui::Button("Usar o RetroArch")) pending = [this, id = system.id, retroArch] { ChooseEngine(library.Root(), id, retroArch); RefreshEngines(); };
-                    break;
-                }
-            }
-            if (engine.exe.empty()) {
-                std::string names;
-                for (const auto& preset : system.presets) {
-                    const std::string name = preset.exePrefixes == L"retroarch" ? "RetroArch" : Utf8(preset.name);
-                    if (names.find(name) == std::string::npos) names += (names.empty() ? "" : ", ") + name;
-                }
-                ImGui::TextDisabled("Funciona com: %s", names.c_str());
-            } else {
-                // The arguments stay editable: a new emulator version may want others than the ones the client knows.
-                auto& args = argsEdit[system.id];
-                auto& fullscreen = fullscreenEdit[system.id];
-                ImGui::AlignTextToFramePadding();
-                ImGui::TextDisabled("Argumentos");
-                ImGui::SameLine(110 * scale);
-                ImGui::SetNextItemWidth(std::max(200 * scale, ImGui::GetContentRegionAvail().x - pad - 90 * scale));
-                ImGui::InputText("##args", args.data(), args.size());
-                const bool argsDone = ImGui::IsItemDeactivatedAfterEdit();
-                ImGui::SameLine();
-                if (ImGui::Button("Padrão")) pending = [this, id = system.id] { ResetEngineArgs(library.Root(), id); RefreshEngines(); };
-                ImGui::AlignTextToFramePadding();
-                ImGui::TextDisabled("Tela cheia");
-                ImGui::SameLine(110 * scale);
-                ImGui::SetNextItemWidth(260 * scale);
-                ImGui::InputText("##fullscreen", fullscreen.data(), fullscreen.size());
-                const bool fullscreenDone = ImGui::IsItemDeactivatedAfterEdit();
-                if (argsDone || fullscreenDone) {
-                    pending = [this, id = system.id, a = std::string(args.data()), f = std::string(fullscreen.data())] {
-                        SaveEngineArgs(library.Root(), id, Wide(a), Wide(f));
-                        RefreshEngines();
-                    };
-                }
-                ImGui::TextDisabled("{rom} é o jogo; {fullscreen} vira o argumento de tela cheia quando o jogo está em tela cheia.");
             }
             ImGui::TextDisabled("%s", system.note.c_str());
             ImGui::Dummy(ImVec2(0, 4 * scale));

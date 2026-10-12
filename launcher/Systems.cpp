@@ -53,7 +53,7 @@ const Preset kMesen = {L"Mesen", L"mesen", L"{fullscreen} \"{rom}\"", L"--fullsc
 
 std::vector<System> MakeSystems() {
     const char* bios = "Precisa da BIOS tirada do seu console, configurada no emulador.";
-    return {
+    std::vector<System> systems = {
         {L"PS4", "PlayStation 4", {}, true,
          {{L"shadPS4", L"shadps4", L"{fullscreen} -g \"{rom}\"", L"--fullscreen true", {}, L"", true}},
          "Aponte o shadPS4.exe (o emulador), não o shadPS4QtLauncher. O Bloodborne continua no port nativo do Ranga. A pasta do jogo é a que tem eboot.bin e sce_sys."},
@@ -169,6 +169,19 @@ std::vector<System> MakeSystems() {
          {RetroArch(L"fbneo"), RetroArch(L"mame"), {L"MAME", L"mame", L"-rompath \"{romdir}\" \"{romname}\"", L""}},
          "O .zip tem que ser da versão de romset que o core ou o MAME pede."},
     };
+    // What Ranga Retro runs itself, drawing in software: stage 1 of the native engine. Consoles whose cores need the GPU
+    // (N64, PS1 in hardware mode, PSP, Dreamcast, DS, PS2, GameCube, Wii, 3DS) come with the next stages.
+    const std::pair<const wchar_t*, const wchar_t*> native[] = {
+        {L"SNES", L"snes9x"}, {L"NES", L"mesen"}, {L"MD", L"genesis_plus_gx"}, {L"SMS", L"genesis_plus_gx"},
+        {L"SEGACD", L"genesis_plus_gx"}, {L"SATURN", L"mednafen_saturn"}, {L"PCE", L"mednafen_pce_fast"},
+        {L"A2600", L"stella"}, {L"ARCADE", L"fbneo"},
+    };
+    for (auto& system : systems) {
+        for (const auto& [id, core] : native) {
+            if (system.id == id) system.nativeCore = core;
+        }
+    }
+    return systems;
 }
 
 std::wstring EnginesIni(const std::wstring& root) { return root + L"\\engines.ini"; }
@@ -469,6 +482,8 @@ std::string SystemName(const std::wstring& id) {
     return system != nullptr ? system->name : Utf8(id);
 }
 
+std::wstring NativeCorePath(const std::wstring& root, const System& system) { return root + L"\\cores\\" + system.nativeCore + L"_libretro.dll"; }
+
 Engine LoadEngine(const std::wstring& root, const std::wstring& id) {
     Engine engine;
     const System* system = FindSystem(id);
@@ -477,6 +492,23 @@ Engine LoadEngine(const std::wstring& root, const std::wstring& id) {
         return engine;
     }
     const std::wstring ini = EnginesIni(root);
+    // Native by default where Ranga Retro has the console's core; mode=external hands it to the chosen emulator.
+    engine.nativeAvailable = !system->nativeCore.empty();
+    if (engine.nativeAvailable && ReadIni(ini, id.c_str(), L"mode", L"native") != L"external") {
+        engine.native = true;
+        engine.exe = root + L"\\ranga_retro.exe";
+        engine.presetName = L"Ranga (nativo, " + system->nativeCore + L")";
+        engine.args = L"--core \"" + NativeCorePath(root, *system) + L"\" --rom \"{rom}\" --title \"{title}\" --system \"" + root +
+                      L"\\bios\\retroarch\" --saves \"{workspace}\\saves\" --options \"{workspace}\\core-options.ini\" {fullscreen}";
+        engine.fullscreen = L"--fullscreen";
+        for (const auto& preset : system->presets) {
+            if (!preset.bios.empty()) engine.bios = root + L"\\bios\\retroarch";
+        }
+        if (!Exists(engine.exe)) engine.problem = L"Falta o ranga_retro.exe ao lado do RangaEmu.exe. Extraia o download inteiro de novo.";
+        else if (!Exists(NativeCorePath(root, *system))) engine.problem = L"Falta o core " + system->nativeCore + L"_libretro.dll em " + root + L"\\cores.";
+        else engine.ready = true;
+        return engine;
+    }
     engine.exe = ReadIni(ini, id.c_str(), L"exe", L"");
     const Preset* preset = MatchPreset(*system, engine.exe);
     if (preset != nullptr) {
@@ -532,9 +564,20 @@ void ResetEngineArgs(const std::wstring& root, const std::wstring& id) {
 
 void ClearEngine(const std::wstring& root, const std::wstring& id) { WritePrivateProfileStringW(id.c_str(), nullptr, nullptr, EnginesIni(root).c_str()); }
 
-std::wstring EngineCommand(const Engine& engine, const std::wstring& rom, bool fullscreen) {
-    const std::wstring args = Expand(engine.args, engine.exe, rom, fullscreen ? engine.fullscreen : L"");
+std::wstring EngineCommand(const Engine& engine, const std::wstring& rom, bool fullscreen, const std::wstring& title, const std::wstring& workspace) {
+    std::wstring args = engine.args;
+    // A title with quotes would break the command line; it is only shown, so they go.
+    std::wstring safeTitle = title;
+    safeTitle.erase(std::remove(safeTitle.begin(), safeTitle.end(), L'"'), safeTitle.end());
+    Replace(args, L"{title}", safeTitle);
+    Replace(args, L"{workspace}", workspace);
+    args = Expand(args, engine.exe, rom, fullscreen ? engine.fullscreen : L"");
     return L"\"" + engine.exe + L"\"" + (args.empty() ? L"" : L" " + args);
+}
+
+void SetNative(const std::wstring& root, const std::wstring& id, bool native) {
+    EnsureUnicodeIni(EnginesIni(root));
+    WritePrivateProfileStringW(id.c_str(), L"mode", native ? nullptr : L"external", EnginesIni(root).c_str());
 }
 
 namespace {

@@ -51,6 +51,9 @@ struct System {
     std::vector<Preset> presets;
     // What the emulator needs besides the game, shown on the Emulators page.
     std::string note;
+    // The libretro core Ranga Retro runs its games with, from cores beside this program; empty when Ranga cannot run
+    // the console itself yet.
+    std::wstring nativeCore = L"";
 };
 
 // Every console handed to another emulator, in the order the Emulators page lists them.
@@ -70,6 +73,10 @@ struct Engine {
     bool tunable = false;
     std::wstring bios;
     bool embed = false;
+    // Ranga Retro runs the game inside Ranga with the console's core, instead of another emulator.
+    bool native = false;
+    // The console has a core for Ranga Retro, whether or not it is in use (engines.ini mode=external turns it off).
+    bool nativeAvailable = false;
     bool ready = false;
     // Why the game cannot start yet; empty when ready.
     std::wstring problem;
@@ -81,8 +88,12 @@ void ChooseEngine(const std::wstring& root, const std::wstring& system, const st
 void SaveEngineArgs(const std::wstring& root, const std::wstring& system, const std::wstring& args, const std::wstring& fullscreen);
 void ResetEngineArgs(const std::wstring& root, const std::wstring& system);
 void ClearEngine(const std::wstring& root, const std::wstring& system);
-// The whole command line, the executable quoted first.
-std::wstring EngineCommand(const Engine& engine, const std::wstring& rom, bool fullscreen);
+// The whole command line, the executable quoted first. {title} and {workspace} are the game's.
+std::wstring EngineCommand(const Engine& engine, const std::wstring& rom, bool fullscreen, const std::wstring& title, const std::wstring& workspace);
+// Runs the console in Ranga Retro (native) or in the emulator chosen for it.
+void SetNative(const std::wstring& root, const std::wstring& system, bool native);
+// The core file Ranga Retro loads for the console, in cores beside this program.
+std::wstring NativeCorePath(const std::wstring& root, const System& system);
 // Writes the preset's tweaks into the emulator's configuration, which has to be closed, and makes its BIOS folder.
 // Returns what was changed, one line each, or why nothing could be.
 std::wstring TuneEngine(const std::wstring& root, const std::wstring& system);

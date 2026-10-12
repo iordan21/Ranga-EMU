@@ -345,18 +345,20 @@ void Runner::RunExternal(const std::wstring& root, const Game& game, const Optio
     // As with the Bloodborne port, ReShade and the add-ons sit beside the emulator only while this game has DLSS 5 on.
     // The layer reaches only Vulkan emulators; one drawing with Direct3D or OpenGL just starts without it.
     const std::wstring exeFolder = ParentFolder(engine.exe);
-    if (options.dlss5) {
+    // Ranga Retro draws with Direct3D 11, which the Vulkan layer does not reach; nothing of DLSS 5 goes beside it.
+    if (options.dlss5 && !engine.native) {
         const std::wstring error = EnableDlss5(root, exeFolder, workspace, logs + L"\\dlss5.log");
         if (!error.empty()) {
             Report(State::Failed, error);
             return;
         }
-    } else {
+    } else if (!engine.native) {
         DisableDlss5(exeFolder, workspace);
     }
 
     // An embedded emulator stays windowed inside Ranga's window, which goes fullscreen instead.
-    std::wstring command = EngineCommand(engine, rom, options.borderless && !engine.embed);
+    CreateDirectoryW((workspace + L"\\saves").c_str(), nullptr);
+    std::wstring command = EngineCommand(engine, rom, options.borderless && !engine.embed, game.title, workspace);
     {
         // The exact command goes to the log first, so a wrong argument shows there.
         const std::string line = "> " + Utf8(command) + "\r\n";
