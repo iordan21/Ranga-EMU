@@ -10,6 +10,7 @@
 #include <SDL.h>
 
 #include "libretro.h"
+#include "VulkanVideo.hpp"
 
 #ifndef UNICODE
 #define UNICODE
@@ -153,6 +154,9 @@ uintptr_t RETRO_CALLCONV HwCurrentFramebuffer();
 retro_proc_address_t RETRO_CALLCONV HwProcAddress(const char* name);
 extern retro_hw_render_callback g_hw;
 extern bool g_hwActive;
+// Vulkan is offered first (--gpu opengl offers OpenGL instead); a core that draws with Vulkan gets RetroVulkan.
+bool g_preferVulkan = true, g_hwVulkan = false;
+const retro_hw_render_context_negotiation_interface_vulkan* g_negotiation = nullptr;
 unsigned g_hwFrameWidth = 0, g_hwFrameHeight = 0;
 
 // ------------------------------------------------------------------------------------------------------------- input
@@ -443,10 +447,33 @@ bool RETRO_CALLCONV Environment(unsigned command, void* data) {
         // The GPU: OpenGL, compatibility or core profile. Vulkan and Direct3D contexts are refused, and a core then
         // falls back to another renderer or says it cannot run.
         case RETRO_ENVIRONMENT_GET_PREFERRED_HW_RENDER:
-            *static_cast<unsigned*>(data) = RETRO_HW_CONTEXT_OPENGL_CORE;
+            *static_cast<unsigned*>(data) = g_preferVulkan ? RETRO_HW_CONTEXT_VULKAN : RETRO_HW_CONTEXT_OPENGL_CORE;
             return true;
+        case RETRO_ENVIRONMENT_GET_HW_RENDER_INTERFACE: {
+            const auto* face = g_hwVulkan ? RetroVulkan::Interface() : nullptr;
+            *static_cast<const retro_hw_render_interface**>(data) = reinterpret_cast<const retro_hw_render_interface*>(face);
+            return face != nullptr;
+        }
+        case RETRO_ENVIRONMENT_SET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE: {
+            const auto* face = static_cast<const retro_hw_render_context_negotiation_interface*>(data);
+            if (face->interface_type != RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN) return false;
+            g_negotiation = reinterpret_cast<const retro_hw_render_context_negotiation_interface_vulkan*>(data);
+            return true;
+        }
+        case RETRO_ENVIRONMENT_GET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_SUPPORT: {
+            auto* face = static_cast<retro_hw_render_context_negotiation_interface*>(data);
+            face->interface_version = face->interface_type == RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN ? 2 : 0;
+            return true;
+        }
         case RETRO_ENVIRONMENT_SET_HW_RENDER: {
             auto* request = static_cast<retro_hw_render_callback*>(data);
+            g_hwVulkan = request->context_type == RETRO_HW_CONTEXT_VULKAN;
+            if (g_hwVulkan) {
+                g_hw = *request;
+                g_hwActive = true;
+                Log("[retro] o core desenha com Vulkan\n");
+                return true;
+            }
             if (request->context_type != RETRO_HW_CONTEXT_OPENGL && request->context_type != RETRO_HW_CONTEXT_OPENGL_CORE) {
                 Log("[retro] o core pediu um contexto de GPU que o Ranga Retro não tem (tipo %u)\n", static_cast<unsigned>(request->context_type));
                 return false;
@@ -1142,12 +1169,12 @@ void ApplyCoreDefaults(const std::wstring& corePath) {
     for (auto& character : name) character = static_cast<wchar_t>(towlower(character));
     struct Default { const wchar_t* core; const char* key; const char* value; };
     static const Default defaults[] = {
-        {L"swanstation", "swanstation_GPU_Renderer", "OpenGL"},
+
         {L"swanstation", "swanstation_GPU_ResolutionScale", "5"},
         {L"melondsds", "melonds_render_mode", "opengl"},
         {L"melondsds", "melonds_opengl_resolution", "4"},
-        {L"mupen64plus_next", "mupen64plus-rdp-plugin", "gliden64"},
         {L"mupen64plus_next", "mupen64plus-43screensize", "1440x1080"},
+        {L"mupen64plus_next", "mupen64plus-parallel-rdp-upscaling", "4x"},
         {L"swanstation", "swanstation_BIOS_PathNTSCU", "ps1_rom.bin"},
         {L"swanstation", "swanstation_BIOS_PathNTSCJ", "ps1_rom.bin"},
         {L"swanstation", "swanstation_BIOS_PathPAL", "ps1_rom.bin"},
@@ -1155,6 +1182,10 @@ void ApplyCoreDefaults(const std::wstring& corePath) {
     for (const auto& entry : defaults) {
         if (name.rfind(entry.core, 0) == 0) g.overrides[entry.key] = entry.value;
     }
+    // With Vulkan, SwanStation draws with it and the N64 goes to paraLLEl-RDP, the accurate renderer that only runs on
+    // Vulkan; with OpenGL, GLideN64.
+    if (name.rfind(L"swanstation", 0) == 0) g.overrides["swanstation_GPU_Renderer"] = g_preferVulkan ? "Vulkan" : "OpenGL";
+    if (name.rfind(L"mupen64plus_next", 0) == 0) g.overrides["mupen64plus-rdp-plugin"] = g_preferVulkan ? "parallel" : "gliden64";
 }
 
 void ReadOptionsFile(const std::wstring& path) {
@@ -1193,6 +1224,7 @@ int RetroMain(int argc, wchar_t** argv) {
         else if (arg == L"--options" && hasValue) optionsPath = argv[++i];
         else if (arg == L"--fullscreen") fullscreen = true;
         else if (arg == L"--no-game") romPath = L"<sem jogo>";
+        else if (arg == L"--gpu" && hasValue) g_preferVulkan = std::wstring(argv[++i]) != L"opengl";
     }
     const bool noGame = romPath == L"<sem jogo>";
     if (corePath.empty() || romPath.empty()) {
@@ -1262,7 +1294,13 @@ int RetroMain(int argc, wchar_t** argv) {
 
     Video video;
     GlVideo glVideo;
-    if (g_hwActive) {
+    if (g_hwActive && g_hwVulkan) {
+        if (!RetroVulkan::Create(g_window, g_negotiation, Log)) {
+            Log("[retro] Vulkan não iniciou; tente --gpu opengl\n");
+            return 5;
+        }
+        if (g_hw.context_reset != nullptr) g_hw.context_reset();
+    } else if (g_hwActive) {
         if (!glVideo.Create(g_window, std::max(1u, g.av.geometry.max_width), std::max(1u, g.av.geometry.max_height))) {
             Log("[retro] OpenGL não iniciou\n");
             return 5;
@@ -1328,6 +1366,7 @@ int RetroMain(int argc, wchar_t** argv) {
         g_hotkey = 0;
         if (g_resized) {
             if (!g_hwActive) video.Resize();
+            if (g_hwVulkan) RetroVulkan::Resize();
             g_resized = false;
         }
         if (IsIconic(g_window)) {
@@ -1347,6 +1386,7 @@ int RetroMain(int argc, wchar_t** argv) {
             frames = static_cast<int>(accumulator * fps);
             accumulator -= frames / fps;
         }
+        if (g_hwVulkan && frames > 0) RetroVulkan::BeginFrame();
         for (int i = 0; i < frames; ++i) {
             if (g.frameTime.callback != nullptr) g.frameTime.callback(static_cast<retro_usec_t>(1000000.0 / fps));
             g.core.run();
@@ -1367,7 +1407,10 @@ int RetroMain(int argc, wchar_t** argv) {
         audio.Push(g.audio, g.av.timing.sample_rate);
         g.audio.clear();
         const float aspect = g.av.geometry.aspect_ratio > 0 ? g.av.geometry.aspect_ratio : 0;
-        if (g_hwActive) {
+        if (g_hwVulkan) {
+            g.frameNew = false;
+            RetroVulkan::Present(g_window, g_hwFrameWidth, g_hwFrameHeight, aspect);
+        } else if (g_hwActive) {
             glVideo.Size(g.av.geometry.max_width, g.av.geometry.max_height);
             g.frameNew = false;
             glVideo.Present(g_hwFrameWidth, g_hwFrameHeight, aspect);
@@ -1401,6 +1444,7 @@ int RetroMain(int argc, wchar_t** argv) {
     if (g_hwActive && g_hw.context_destroy != nullptr) g_hw.context_destroy();
     g.core.unloadGame();
     g.core.deinit();
+    if (g_hwVulkan) RetroVulkan::Destroy(g_negotiation);
     for (auto* pad : g_pads) if (pad != nullptr) SDL_GameControllerClose(pad);
     SDL_Quit();
     Log("[retro] fim\n");

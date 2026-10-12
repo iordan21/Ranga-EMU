@@ -345,14 +345,15 @@ void Runner::RunExternal(const std::wstring& root, const Game& game, const Optio
     // As with the Bloodborne port, ReShade and the add-ons sit beside the emulator only while this game has DLSS 5 on.
     // The layer reaches only Vulkan emulators; one drawing with Direct3D or OpenGL just starts without it.
     const std::wstring exeFolder = ParentFolder(engine.exe);
-    // Ranga Retro draws with Direct3D 11, which the Vulkan layer does not reach; nothing of DLSS 5 goes beside it.
-    if (options.dlss5 && !engine.native) {
+    // Ranga Retro presents through Vulkan when its core draws with Vulkan (PS1, N64 with paraLLEl-RDP), so the layer
+    // reaches those native games too; a core drawing in software or OpenGL starts without it.
+    if (options.dlss5) {
         const std::wstring error = EnableDlss5(root, exeFolder, workspace, logs + L"\\dlss5.log");
         if (!error.empty()) {
             Report(State::Failed, error);
             return;
         }
-    } else if (!engine.native) {
+    } else {
         DisableDlss5(exeFolder, workspace);
     }
 
