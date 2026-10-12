@@ -92,7 +92,8 @@ std::vector<System> MakeSystems() {
         {L"SWITCH", "Nintendo Switch", {L".nsp", L".xci", L".nca", L".nro", L".nso"}, false,
          {{L"Ryujinx", L"ryujinx", L"{fullscreen} \"{rom}\"", L"--fullscreen", {}, L"", true},
           {L"Eden / Citron (família yuzu)", L"eden;citron;sudachi;suyu;yuzu;torzu", L"{fullscreen} -g \"{rom}\"", L"-f", {}, L"", true}},
-         "Precisa das prod.keys e do firmware tirados do seu Switch, instalados no emulador."},
+         "Precisa das prod.keys e do firmware tirados do seu Switch. No nativo (core do Eden feito para o Ranga) ficam em "
+         "bios\\retroarch\\eden (keys e nand), sem save state."},
         {L"WIIU", "Wii U", {L".wua", L".wud", L".wux", L".rpx", L".wuhb"}, true,
          {{L"Cemu", L"cemu", L"{fullscreen} -g \"{rom}\"", L"-f", {}, L"", true}},
          "Nativo (core do Cemu): WUD e WUX precisam das chaves do seu console em bios\\retroarch\\Cemu\\keys.txt; não tem "
@@ -172,14 +173,16 @@ std::vector<System> MakeSystems() {
          "O .zip tem que ser da versão de romset que o core ou o MAME pede."},
     };
     // What Ranga Retro runs itself, by the core it loads; cores that draw with the GPU get Vulkan or OpenGL. Consoles with
-    // no core here (PS3, PS4, Switch, Xbox 360) stay with their emulator in Ranga's window. Wii U (Cemu) and Xbox (xemu)
-    // have no save states natively; mode=external gives them back to the full emulator.
+    // no core here (PS3, PS4, Xbox 360) stay with their emulator in Ranga's window. Wii U (Cemu), Xbox (xemu) and Switch
+    // (Eden, Ranga's own core from eden-libretro, which draws in the game window itself) have no save states natively;
+    // mode=external gives them back to the full emulator.
     const std::pair<const wchar_t*, const wchar_t*> native[] = {
         {L"SNES", L"snes9x"}, {L"NES", L"mesen"}, {L"MD", L"genesis_plus_gx"}, {L"SMS", L"genesis_plus_gx"},
         {L"SEGACD", L"genesis_plus_gx"}, {L"SATURN", L"mednafen_saturn"}, {L"PCE", L"mednafen_pce_fast"},
         {L"A2600", L"stella"}, {L"ARCADE", L"fbneo"}, {L"GBA", L"mgba"}, {L"GB", L"gambatte"}, {L"PS1", L"swanstation"},
         {L"NDS", L"melondsds"}, {L"PSP", L"ppsspp"}, {L"DC", L"flycast"}, {L"PS2", L"pcsx2"}, {L"GC", L"dolphin"}, {L"WII", L"dolphin"},
         {L"3DS", L"azahar"}, {L"N64", L"mupen64plus_next"}, {L"WIIU", L"cemu"}, {L"XBOX", L"xemu"},
+        {L"SWITCH", L"eden"},
     };
     for (auto& system : systems) {
         for (const auto& [id, core] : native) {

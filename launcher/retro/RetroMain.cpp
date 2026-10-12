@@ -10,6 +10,7 @@
 #include <SDL.h>
 
 #include "libretro.h"
+#include "RangaRetroExt.h"
 #include "VulkanVideo.hpp"
 
 #ifndef UNICODE
@@ -160,6 +161,9 @@ extern bool g_hwActive;
 bool g_preferVulkan = true, g_hwVulkan = false;
 const retro_hw_render_context_negotiation_interface_vulkan* g_negotiation = nullptr;
 unsigned g_hwFrameWidth = 0, g_hwFrameHeight = 0;
+// A core that draws in the game window itself (RANGA_ENVIRONMENT_GET_WINDOW), and the frame rate it reports.
+bool g_coreDraws = false;
+float g_coreFps = -1;
 
 // ------------------------------------------------------------------------------------------------------------- input
 
@@ -441,6 +445,7 @@ bool RETRO_CALLCONV Environment(unsigned command, void* data) {
         case RETRO_ENVIRONMENT_SET_SUBSYSTEM_INFO:
         case RETRO_ENVIRONMENT_SET_MEMORY_MAPS:
         case RETRO_ENVIRONMENT_SET_PERFORMANCE_LEVEL:
+            return true;
         case RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME:
             g.supportsNoGame = data != nullptr && *static_cast<const bool*>(data);
             return true;
@@ -489,6 +494,17 @@ bool RETRO_CALLCONV Environment(unsigned command, void* data) {
             Log("[retro] o core desenha com OpenGL %s %u.%u\n", request->context_type == RETRO_HW_CONTEXT_OPENGL_CORE ? "core" : "", request->version_major, request->version_minor);
             return true;
         }
+
+        // Ranga's own commands (RangaRetroExt.h).
+        case RANGA_ENVIRONMENT_GET_WINDOW:
+            if (g_window == nullptr) return false;
+            *static_cast<HWND*>(data) = g_window;
+            if (!g_coreDraws) Log("[retro] o core desenha sozinho na janela do jogo\n");
+            g_coreDraws = true;
+            return true;
+        case RANGA_ENVIRONMENT_SET_FPS:
+            g_coreFps = *static_cast<const float*>(data);
+            return true;
     }
     return false;
 }
@@ -1321,7 +1337,9 @@ int RetroMain(int argc, wchar_t** argv) {
 
     Video video;
     GlVideo glVideo;
-    if (g_hwActive && g_hwVulkan) {
+    if (g_coreDraws) {
+        // The core's renderer owns the window's surface; a swapchain of Ranga's on it would fight it.
+    } else if (g_hwActive && g_hwVulkan) {
         if (!RetroVulkan::Create(g_window, g_negotiation, Log)) {
             Log("[retro] Vulkan não iniciou; tente --gpu opengl\n");
             return 5;
@@ -1392,7 +1410,7 @@ int RetroMain(int argc, wchar_t** argv) {
         if (g_hotkey == VK_F7) saves.LoadState();
         g_hotkey = 0;
         if (g_resized) {
-            if (!g_hwActive) video.Resize();
+            if (!g_hwActive && !g_coreDraws) video.Resize();
             if (g_hwVulkan) RetroVulkan::Resize();
             g_resized = false;
         }
@@ -1434,7 +1452,14 @@ int RetroMain(int argc, wchar_t** argv) {
         audio.Push(g.audio, g.av.timing.sample_rate);
         g.audio.clear();
         const float aspect = g.av.geometry.aspect_ratio > 0 ? g.av.geometry.aspect_ratio : 0;
-        if (g_hwVulkan) {
+        if (g_coreDraws) {
+            // Nothing to present and no swapchain to wait on: the loop keeps the core's rate by the clock instead.
+            static auto next = std::chrono::steady_clock::now();
+            next += std::chrono::microseconds(static_cast<long long>(1000000.0 / fps));
+            const auto behind = std::chrono::steady_clock::now();
+            if (next < behind) next = behind;
+            else Sleep(static_cast<DWORD>(std::chrono::duration_cast<std::chrono::milliseconds>(next - behind).count()));
+        } else if (g_hwVulkan) {
             g.frameNew = false;
             RetroVulkan::Present(g_window, g_hwFrameWidth, g_hwFrameHeight, aspect);
         } else if (g_hwActive) {
@@ -1455,7 +1480,8 @@ int RetroMain(int argc, wchar_t** argv) {
             lastSave = tick;
         }
         if (tick - fpsStart >= 1000) {
-            const double measured = fpsFrames * 1000.0 / static_cast<double>(tick - fpsStart);
+            // A core drawing by itself shows frames at its own pace; its count is the one that means anything.
+            const double measured = g_coreDraws && g_coreFps >= 0 ? g_coreFps : fpsFrames * 1000.0 / static_cast<double>(tick - fpsStart);
             fpsFrames = 0;
             fpsStart = tick;
             wchar_t text[64];
