@@ -32,11 +32,6 @@ std::vector<Entry> Entries(const std::wstring& folder, const wchar_t* pattern) {
     return entries;
 }
 
-std::wstring Lower(std::wstring text) {
-    for (auto& character : text) character = static_cast<wchar_t>(std::towlower(character));
-    return text;
-}
-
 bool EndsWith(const std::wstring& text, const std::wstring& end) {
     return text.size() >= end.size() && Lower(text.substr(text.size() - end.size())) == end;
 }

@@ -1,4 +1,5 @@
 #include "Library.hpp"
+#include "Systems.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -11,41 +12,6 @@ namespace {
 
 constexpr const wchar_t* kSonsOfSparta = L"PPSA28997";
 constexpr const wchar_t* kBloodborne = L"CUSA03173";
-
-// The UTF-8 string value of key in a PS4 param.sfo (a PSF table: header, 16-byte index entries, key and data tables).
-std::string SfoString(const std::string& sfo, const char* key) {
-    const auto u16 = [&](size_t at) { return at + 2 <= sfo.size() ? static_cast<unsigned>(static_cast<unsigned char>(sfo[at]) | static_cast<unsigned char>(sfo[at + 1]) << 8) : 0u; };
-    const auto u32 = [&](size_t at) { return at + 4 <= sfo.size() ? static_cast<size_t>(u16(at) | u16(at + 2) << 16) : size_t{0}; };
-    if (sfo.size() < 20 || sfo.compare(0, 4, std::string("\0PSF", 4)) != 0) return {};
-    const size_t keys = u32(8), data = u32(12), count = u32(16);
-    for (size_t i = 0; i < count && 20 + i * 16 + 16 <= sfo.size(); ++i) {
-        const size_t entry = 20 + i * 16;
-        const size_t name = keys + u16(entry);
-        if (name >= sfo.size() || sfo.compare(name, std::char_traits<char>::length(key) + 1, std::string(key, std::char_traits<char>::length(key) + 1)) != 0) continue;
-        const size_t value = data + u32(entry + 12), length = u32(entry + 4);
-        if (u16(entry + 2) != 0x0204 || value + length > sfo.size()) return {};
-        std::string text = sfo.substr(value, length);
-        text.resize(std::strlen(text.c_str()));
-        return text;
-    }
-    return {};
-}
-
-// The profile API writes Unicode only into a file that already starts with a UTF-16 byte order mark.
-void EnsureUnicodeIni(const std::wstring& path) {
-    if (Exists(path)) return;
-    FILE* file = nullptr;
-    if (_wfopen_s(&file, path.c_str(), L"wb") != 0 || file == nullptr) return;
-    const unsigned char bom[2] = {0xFF, 0xFE};
-    fwrite(bom, 1, sizeof(bom), file);
-    fclose(file);
-}
-
-std::wstring ReadIni(const std::wstring& path, const wchar_t* section, const wchar_t* key, const wchar_t* fallback) {
-    wchar_t value[MAX_PATH * 2] = {};
-    GetPrivateProfileStringW(section, key, fallback, value, MAX_PATH * 2, path.c_str());
-    return value;
-}
 
 bool ReadFlag(const std::wstring& path, const wchar_t* section, const wchar_t* key) { return ReadIni(path, section, key, L"0") == L"1"; }
 
@@ -121,6 +87,7 @@ bool ReadGameInfo(const std::wstring& folder, Game& game) {
         game.title = title.empty() ? game.titleId : Wide(title);
         game.version = Wide(SfoString(sfo, "APP_VER"));
         game.folder = folder;
+        game.system = L"PS4";
         return true;
     }
     std::string title;
@@ -135,7 +102,13 @@ bool ReadGameInfo(const std::wstring& folder, Game& game) {
     game.title = title.empty() ? game.titleId : Wide(title);
     game.version = Wide(JsonString(text, "contentVersion"));
     game.folder = folder;
+    game.system = L"PS5";
     return true;
+}
+
+bool GameAvailable(const Game& game) {
+    if (game.system == L"PS5" || (game.system == L"PS4" && ProfileFor(game.titleId).bloodborne)) return IsGameFolder(game.folder);
+    return !GameRom(game.system, game.folder).empty();
 }
 
 Library::Library(std::wstring root) : root(std::move(root)) {}
@@ -149,12 +122,22 @@ void Library::Load() {
         if (titleId == L"Client") continue;
         Game game;
         const std::wstring folder = ReadIni(IniPath(), name, L"folder", L"");
-        // A game whose folder is gone stays listed under its stored name, so it can be pointed at its new place.
-        if (!ReadGameInfo(folder, game) || game.titleId != titleId) {
+        // Entries from before other consoles have no system: their title id says PS4 or PS5.
+        const std::wstring system = ReadIni(IniPath(), name, L"system", titleId.rfind(L"CUSA", 0) == 0 ? L"PS4" : L"PS5");
+        // A game whose folder is gone stays listed under its stored name, so it can be pointed at its new place. Other
+        // consoles keep what was read when they were added.
+        if (system != L"PS5" && system != L"PS4") {
+            game.titleId = titleId;
+            game.title = ReadIni(IniPath(), name, L"title", name);
+            game.folder = folder;
+            game.system = system;
+            game.serial = ReadIni(IniPath(), name, L"serial", L"");
+        } else if (!ReadGameInfo(folder, game) || game.titleId != titleId) {
             game = Game{};
             game.titleId = titleId;
             game.title = ReadIni(IniPath(), name, L"title", name);
             game.folder = folder;
+            game.system = system;
         }
         game.workspace = root + L"\\games\\" + titleId;
         games.push_back(game);
@@ -165,28 +148,49 @@ void Library::Load() {
 int Library::Add(const std::wstring& folder, std::wstring& error) {
     Game game;
     if (!IsGameFolder(folder)) {
-        error = L"Esta pasta não tem os arquivos do jogo:\n\n" + folder + L"\n\nEscolha a pasta que tem eboot.bin (ou eboot.elf) e sce_sys.";
+        // Not a PS5 or PS4 dump: maybe a PS3, Xbox 360 or Wii U game folder.
+        const Detected found = DetectFolder(folder);
+        if (found.systems.size() == 1) {
+            const std::wstring key = found.systems[0] == L"PS3" && !found.serial.empty() ? found.serial : FileKey(found.systems[0], folder);
+            return Store(key, folder, found.systems[0], found.serial, found.title, error);
+        }
+        error = L"Não reconheci o jogo nesta pasta:\n\n" + folder +
+                L"\n\nPasta de jogo é a de PS5 ou PS4 (com eboot.bin e sce_sys), PS3 (com PS3_GAME ou USRDIR), Xbox 360 (com default.xex) ou Wii U (com code e meta). Para ISO, ROM e outros arquivos, use \"Arquivo do jogo\".";
         return -1;
     }
     if (!ReadGameInfo(folder, game)) {
         error = L"Não deu para ler sce_sys\\param.json (PS5) nem sce_sys\\param.sfo (PS4) em:\n\n" + folder;
         return -1;
     }
-    if (game.titleId.rfind(L"CUSA", 0) == 0 && game.titleId != kBloodborne) {
-        error = L"" + game.title + L" (" + game.titleId + L") é um jogo de PS4. O Ranga Emu roda jogos de PS5 e, de PS4, só o Bloodborne (CUSA03173) pelo port nativo.";
-        return -1;
-    }
+    return Store(game.titleId, folder, game.system, L"", game.title, error);
+}
+
+int Library::AddFile(const std::wstring& path, const std::wstring& system, const std::wstring& serial, const std::wstring& title, std::wstring& error) {
+    const std::wstring key = FileKey(system, path);
+    const int index = Store(key, path, system, serial, title, error);
+    if (index >= 0) ExtractArt(system, path, root + L"\\games\\" + key + L"\\art");
+    return index;
+}
+
+int Library::Store(const std::wstring& key, const std::wstring& path, const std::wstring& system, const std::wstring& serial, const std::wstring& title, std::wstring& error) {
     EnsureUnicodeIni(IniPath());
-    if (!WritePrivateProfileStringW(game.titleId.c_str(), L"folder", folder.c_str(), IniPath().c_str()) ||
-        !WritePrivateProfileStringW(game.titleId.c_str(), L"title", game.title.c_str(), IniPath().c_str())) {
+    if (!WritePrivateProfileStringW(key.c_str(), L"folder", path.c_str(), IniPath().c_str()) ||
+        !WritePrivateProfileStringW(key.c_str(), L"title", title.c_str(), IniPath().c_str()) ||
+        !WritePrivateProfileStringW(key.c_str(), L"system", system.c_str(), IniPath().c_str())) {
         error = L"Não deu para salvar library.ini em:\n\n" + root;
         return -1;
     }
+    WritePrivateProfileStringW(key.c_str(), L"serial", serial.empty() ? nullptr : serial.c_str(), IniPath().c_str());
     Load();
     for (size_t i = 0; i < games.size(); ++i) {
-        if (games[i].titleId == game.titleId) return static_cast<int>(i);
+        if (games[i].titleId == key) return static_cast<int>(i);
     }
     return -1;
+}
+
+void Library::Relocate(const std::wstring& titleId, const std::wstring& path) {
+    WritePrivateProfileStringW(titleId.c_str(), L"folder", path.c_str(), IniPath().c_str());
+    Load();
 }
 
 void Library::Remove(size_t index) {

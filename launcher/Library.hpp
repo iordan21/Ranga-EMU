@@ -9,14 +9,23 @@
 namespace Ranga {
 
 // One game in the library. Its files stay in folder and are only read; everything made from them, its saves, caches and
-// logs live in its own workspace, games\<title id> beside this program.
+// logs live in its own workspace, games\<title id> beside this program. A game of another console has its library key
+// in titleId (its own title id for PS4 and PS3, otherwise the console and a hash of its path), and folder can be a single
+// file: a disc image or a cartridge dump.
 struct Game {
     std::wstring titleId;
     std::wstring title;
     std::wstring version;
     std::wstring folder;
     std::wstring workspace;
+    // PS5 games run in Ranga's runtime; any other console (see Systems.hpp) goes to its emulator.
+    std::wstring system = L"PS5";
+    // The serial read from the disc or its param.sfo, shown beside the title; may be empty.
+    std::wstring serial;
 };
+
+// Whether the game's files are still where the library points.
+bool GameAvailable(const Game& game);
 
 // What the runtime needs to know about a game beyond its files. Only God of War Sons of Sparta has been tested; any other
 // game gets the generic profile and is shown as experimental.
@@ -37,8 +46,8 @@ Profile ProfileFor(const std::wstring& titleId);
 // The folder of the Bloodborne port beside this program, with its run.bat, scripts and out\bbport.exe.
 std::wstring BloodborneEngine(const std::wstring& root);
 
-// Reads title id, title and version from sce_sys\param.json, or from sce_sys\param.sfo for a PS4 game; false when the
-// folder has neither.
+// Reads title id, title and version from sce_sys\param.json, or from sce_sys\param.sfo for a PS4 game, and sets system;
+// false when the folder has neither.
 bool ReadGameInfo(const std::wstring& folder, Game& game);
 
 // The string value of the first "key" at or after from, with the JSON escapes param.json uses; empty when there is none.
@@ -52,12 +61,17 @@ public:
     void Load();
     // Adds the game in folder, or points an existing entry with the same title id at it; returns its index or -1.
     int Add(const std::wstring& folder, std::wstring& error);
+    // Adds a game file of another console, once its console is known.
+    int AddFile(const std::wstring& path, const std::wstring& system, const std::wstring& serial, const std::wstring& title, std::wstring& error);
+    // Points an entry of another console at the place its files moved to, keeping its key and workspace.
+    void Relocate(const std::wstring& titleId, const std::wstring& path);
     void Remove(size_t index);
     std::wstring Selected() const;
     void Select(const std::wstring& titleId);
 
 private:
     std::wstring IniPath() const { return root + L"\\library.ini"; }
+    int Store(const std::wstring& key, const std::wstring& path, const std::wstring& system, const std::wstring& serial, const std::wstring& title, std::wstring& error);
     std::wstring root;
     std::vector<Game> games;
 };

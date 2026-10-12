@@ -1,5 +1,6 @@
 #include "Runner.hpp"
 #include "Dlss5.hpp"
+#include "Systems.hpp"
 
 #include <cstdio>
 #include <cwchar>
@@ -45,6 +46,10 @@ void Runner::Run(std::wstring root, Game game, Options options) {
     const Profile profile = ProfileFor(game.titleId);
     if (profile.bloodborne) {
         RunBloodborne(root, game, options);
+        return;
+    }
+    if (game.system != L"PS5") {
+        RunExternal(root, game, options);
         return;
     }
     const std::wstring workspace = game.workspace;
@@ -317,6 +322,65 @@ void Runner::RunBloodborne(const std::wstring& root, const Game& game, const Opt
     }
     AllowSetForegroundWindow(ASFW_ANY);
     Report(State::Running, L"Rodando " + game.title + L" pelo port nativo...");
+    Await(process, logs, game, L"game.log");
+}
+
+void Runner::RunExternal(const std::wstring& root, const Game& game, const Options& options) {
+    const Engine engine = LoadEngine(root, game.system);
+    const std::wstring workspace = game.workspace;
+    const std::wstring logs = workspace + L"\\logs";
+    if (!engine.ready) {
+        Report(State::Failed, engine.problem);
+        return;
+    }
+    const std::wstring rom = GameRom(game.system, game.folder);
+    if (rom.empty()) {
+        Report(State::Failed, L"O jogo não está mais em " + game.folder + L". Use \"Trocar\" nas opções.");
+        return;
+    }
+    CreateDirectoryW((root + L"\\games").c_str(), nullptr);
+    CreateDirectoryW(workspace.c_str(), nullptr);
+    CreateDirectoryW(logs.c_str(), nullptr);
+    // As with the Bloodborne port, ReShade and the add-ons sit beside the emulator only while this game has DLSS 5 on.
+    // The layer reaches only Vulkan emulators; one drawing with Direct3D or OpenGL just starts without it.
+    const std::wstring exeFolder = ParentFolder(engine.exe);
+    if (options.dlss5) {
+        const std::wstring error = EnableDlss5(root, exeFolder, workspace, logs + L"\\dlss5.log");
+        if (!error.empty()) {
+            Report(State::Failed, error);
+            return;
+        }
+    } else {
+        DisableDlss5(exeFolder, workspace);
+    }
+
+    std::wstring command = EngineCommand(engine, rom, options.borderless);
+    {
+        // The exact command goes to the log first, so a wrong argument shows there.
+        const std::string line = "> " + Utf8(command) + "\r\n";
+        HANDLE journal = CreateFileW((logs + L"\\launcher.log").c_str(), FILE_APPEND_DATA, FILE_SHARE_READ, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (journal != INVALID_HANDLE_VALUE) { DWORD put = 0; WriteFile(journal, line.data(), static_cast<DWORD>(line.size()), &put, nullptr); CloseHandle(journal); }
+    }
+    SECURITY_ATTRIBUTES inherit{sizeof(inherit), nullptr, TRUE};
+    HANDLE out = CreateFileW((logs + L"\\game.log").c_str(), GENERIC_WRITE, FILE_SHARE_READ, &inherit, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    DeleteFileW((logs + L"\\game.err").c_str());
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    startup.dwFlags = STARTF_USESTDHANDLES;
+    startup.hStdOutput = out;
+    startup.hStdError = out;
+    startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    PROCESS_INFORMATION process{};
+    // Emulators keep their settings, BIOS and saves beside themselves when portable, so they start from their own folder.
+    const BOOL started = CreateProcessW(nullptr, command.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, exeFolder.c_str(), &startup, &process);
+    if (out != INVALID_HANDLE_VALUE) CloseHandle(out);
+    if (!started) {
+        Report(State::Failed, L"O emulador não pôde ser iniciado (" + engine.exe + L").");
+        return;
+    }
+    AllowSetForegroundWindow(ASFW_ANY);
+    const std::wstring emulator = engine.presetName.empty() ? FileName(engine.exe) : engine.presetName;
+    Report(State::Running, L"Rodando " + game.title + L" no " + emulator + L"...");
     Await(process, logs, game, L"game.log");
 }
 

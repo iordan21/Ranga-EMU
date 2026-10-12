@@ -343,6 +343,89 @@ std::wstring PickFolder(HWND owner, const std::wstring& start, const wchar_t* ti
     return result;
 }
 
+std::wstring PickFile(HWND owner, const std::wstring& start, const wchar_t* title, const std::vector<std::pair<std::wstring, std::wstring>>& filters) {
+    std::wstring result;
+    IFileOpenDialog* dialog = nullptr;
+    if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)))) return result;
+    DWORD options = 0;
+    dialog->GetOptions(&options);
+    dialog->SetOptions(options | FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST);
+    dialog->SetTitle(title);
+    std::vector<COMDLG_FILTERSPEC> specs;
+    for (const auto& [name, patterns] : filters) specs.push_back({name.c_str(), patterns.c_str()});
+    if (!specs.empty()) dialog->SetFileTypes(static_cast<UINT>(specs.size()), specs.data());
+    IShellItem* folder = nullptr;
+    if (!start.empty() && SUCCEEDED(SHCreateItemFromParsingName(start.c_str(), nullptr, IID_PPV_ARGS(&folder)))) {
+        dialog->SetFolder(folder);
+        folder->Release();
+    }
+    IShellItem* item = nullptr;
+    if (SUCCEEDED(dialog->Show(owner)) && SUCCEEDED(dialog->GetResult(&item))) {
+        PWSTR path = nullptr;
+        if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path))) {
+            result = path;
+            CoTaskMemFree(path);
+        }
+        item->Release();
+    }
+    dialog->Release();
+    return result;
+}
+
+std::string SfoString(const std::string& sfo, const char* key) {
+    const auto u16 = [&](size_t at) { return at + 2 <= sfo.size() ? static_cast<unsigned>(static_cast<unsigned char>(sfo[at]) | static_cast<unsigned char>(sfo[at + 1]) << 8) : 0u; };
+    const auto u32 = [&](size_t at) { return at + 4 <= sfo.size() ? static_cast<size_t>(u16(at) | u16(at + 2) << 16) : size_t{0}; };
+    if (sfo.size() < 20 || sfo.compare(0, 4, std::string("\0PSF", 4)) != 0) return {};
+    const size_t keys = u32(8), data = u32(12), count = u32(16);
+    for (size_t i = 0; i < count && 20 + i * 16 + 16 <= sfo.size(); ++i) {
+        const size_t entry = 20 + i * 16;
+        const size_t name = keys + u16(entry);
+        if (name >= sfo.size() || sfo.compare(name, std::char_traits<char>::length(key) + 1, std::string(key, std::char_traits<char>::length(key) + 1)) != 0) continue;
+        const size_t value = data + u32(entry + 12), length = u32(entry + 4);
+        if (u16(entry + 2) != 0x0204 || value + length > sfo.size()) return {};
+        std::string text = sfo.substr(value, length);
+        text.resize(std::strlen(text.c_str()));
+        return text;
+    }
+    return {};
+}
+
+void EnsureUnicodeIni(const std::wstring& path) {
+    if (Exists(path)) return;
+    FILE* file = nullptr;
+    if (_wfopen_s(&file, path.c_str(), L"wb") != 0 || file == nullptr) return;
+    const unsigned char bom[2] = {0xFF, 0xFE};
+    fwrite(bom, 1, sizeof(bom), file);
+    fclose(file);
+}
+
+std::wstring ReadIni(const std::wstring& path, const wchar_t* section, const wchar_t* key, const wchar_t* fallback) {
+    wchar_t value[MAX_PATH * 2] = {};
+    GetPrivateProfileStringW(section, key, fallback, value, MAX_PATH * 2, path.c_str());
+    return value;
+}
+
+std::wstring Lower(std::wstring text) {
+    for (auto& character : text) character = static_cast<wchar_t>(towlower(character));
+    return text;
+}
+
+std::wstring FileName(const std::wstring& path) {
+    const size_t slash = path.find_last_of(L"\\/");
+    return slash == std::wstring::npos ? path : path.substr(slash + 1);
+}
+
+std::wstring ParentFolder(const std::wstring& path) {
+    const size_t slash = path.find_last_of(L"\\/");
+    return slash == std::wstring::npos ? L"" : path.substr(0, slash);
+}
+
+std::wstring Extension(const std::wstring& path) {
+    const std::wstring name = FileName(path);
+    const size_t dot = name.find_last_of(L'.');
+    return dot == std::wstring::npos ? L"" : Lower(name.substr(dot));
+}
+
 namespace {
 
 const unsigned char kSettingsHeader[12] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x00, 0x00};

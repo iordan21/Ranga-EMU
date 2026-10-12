@@ -6,6 +6,7 @@
 #endif
 #include <windows.h>
 #include <string>
+#include <utility>
 #include <vector>
 
 // File, process and game-file helpers shared by the Ranga Emu client. Paths are wide strings everywhere, so a game folder
@@ -49,6 +50,20 @@ bool ConvertOrCopy(const std::wstring& from, const std::wstring& to);
 void PrepareModules(const std::wstring& game, const std::wstring& prep, std::wstring& failed);
 
 std::wstring PickFolder(HWND owner, const std::wstring& start, const wchar_t* title);
+// filters are pairs of a name and its patterns ("*.iso;*.chd"); empty when nothing was chosen.
+std::wstring PickFile(HWND owner, const std::wstring& start, const wchar_t* title, const std::vector<std::pair<std::wstring, std::wstring>>& filters);
+
+// The profile API writes Unicode only into a file that already starts with a UTF-16 byte order mark.
+void EnsureUnicodeIni(const std::wstring& path);
+std::wstring ReadIni(const std::wstring& path, const wchar_t* section, const wchar_t* key, const wchar_t* fallback);
+std::wstring Lower(std::wstring text);
+// What follows the last dot of the file name, lower-case and with the dot; empty when there is none.
+std::wstring Extension(const std::wstring& path);
+std::wstring FileName(const std::wstring& path);
+std::wstring ParentFolder(const std::wstring& path);
+// The UTF-8 string value of key in a PlayStation param.sfo (PS3, PSP, PS4: header, 16-byte index entries, key and data
+// tables); empty when it is not there.
+std::string SfoString(const std::string& sfo, const char* key);
 
 // God of War Sons of Sparta keeps its settings in a save file; these change one integer value in it in place.
 int ReadSosSetting(const std::wstring& workspace, const char* key);

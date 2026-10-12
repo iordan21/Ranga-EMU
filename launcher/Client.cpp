@@ -1,14 +1,17 @@
-// Ranga Emu client: a library of PS5 games on the left, the chosen game on the right, with Play and its options, cheats and logs.
+// Ranga Emu client: a library of games of every console on the left, the chosen game on the right, with Play and its
+// options, cheats and logs, and an Emulators page where each console other than PS5 gets the emulator that runs it.
 #include "Common.hpp"
 #include "Dlss5.hpp"
 #include "Library.hpp"
 #include "Runner.hpp"
+#include "Systems.hpp"
 
 #include <d3d11.h>
 #include <shellapi.h>
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <array>
 #include <map>
 
 #include "imgui.h"
@@ -185,8 +188,36 @@ struct Client {
     std::function<void()> pending;
     std::vector<Addon> addons;
     Dlss5Kit dlss5Kit;
+    // The Emulators page takes the place of the game while it is open.
+    bool enginesPage = false;
+    // Each console's emulator, read again whenever the page changes one, so drawing never reads engines.ini.
+    std::map<std::wstring, Engine> engines;
+    std::map<std::wstring, std::array<char, 1024>> argsEdit, fullscreenEdit;
+    // A game file whose extension fits several consoles waits here until the user says which.
+    std::wstring askFile;
+    Detected askDetected;
 
     explicit Client(const std::wstring& root) : library(root) {}
+
+    void RefreshEngines() {
+        engines.clear();
+        for (const auto& system : Systems()) {
+            const Engine engine = LoadEngine(library.Root(), system.id);
+            auto& args = argsEdit[system.id];
+            auto& fullscreen = fullscreenEdit[system.id];
+            snprintf(args.data(), args.size(), "%s", Utf8(engine.args).c_str());
+            snprintf(fullscreen.data(), fullscreen.size(), "%s", Utf8(engine.fullscreen).c_str());
+            engines.emplace(system.id, engine);
+        }
+    }
+
+    const Engine& EngineFor(const std::wstring& system) {
+        static const Engine none;
+        const auto found = engines.find(system);
+        return found != engines.end() ? found->second : none;
+    }
+
+    static bool External(const Game& game) { return game.system != L"PS5" && !ProfileFor(game.titleId).bloodborne; }
 
     Game* Current() { return selected >= 0 && selected < static_cast<int>(library.Games().size()) ? &library.Games()[static_cast<size_t>(selected)] : nullptr; }
 
@@ -200,13 +231,14 @@ struct Client {
             addons = LoadAddons(*game);
             dlss5Kit = InspectDlss5(library.Root());
             library.Select(game->titleId);
-            // The Bloodborne port writes everything to game.log; PS5 games put their errors in game.err.
-            logFile = ProfileFor(game->titleId).bloodborne ? 1 : 0;
+            // The Bloodborne port and the emulators write everything to game.log; PS5 games put their errors in game.err.
+            logFile = game->system != L"PS5" ? 1 : 0;
         }
     }
 
     void Reload(const std::wstring& keep) {
         library.Load();
+        RefreshEngines();
         int index = library.Games().empty() ? -1 : 0;
         for (size_t i = 0; i < library.Games().size(); ++i) {
             if (library.Games()[i].titleId == keep) index = static_cast<int>(i);
@@ -214,21 +246,46 @@ struct Client {
         Select(index);
     }
 
+    // A cover the user chose wins; otherwise the art the game itself carries, when its console has any.
+    static std::wstring ArtFile(const Game& game, bool icon) {
+        const std::wstring art = game.workspace + L"\\art";
+        if (Exists(art + L"\\cover.png")) return art + L"\\cover.png";
+        if (game.system == L"PS5" || game.system == L"PS4") {
+            // PS4 games have their background in pic1.png.
+            if (icon) return game.folder + L"\\sce_sys\\icon0.png";
+            return game.folder + (Exists(game.folder + L"\\sce_sys\\pic0.png") ? L"\\sce_sys\\pic0.png" : L"\\sce_sys\\pic1.png");
+        }
+        if (game.system == L"PS3" && IsDirectory(game.folder)) {
+            const std::wstring base = IsDirectory(game.folder + L"\\PS3_GAME") ? game.folder + L"\\PS3_GAME" : game.folder;
+            return base + (icon ? L"\\ICON0.PNG" : L"\\PIC1.PNG");
+        }
+        if (game.system == L"PSP") return art + (icon ? L"\\ICON0.PNG" : L"\\PIC1.PNG");
+        return L"";
+    }
+
     const Texture& Icon(const Game& game) {
-        auto found = icons.find(game.folder);
-        if (found == icons.end()) found = icons.emplace(game.folder, LoadTexture(game.folder + L"\\sce_sys\\icon0.png")).first;
+        auto found = icons.find(game.titleId);
+        if (found == icons.end()) found = icons.emplace(game.titleId, LoadTexture(ArtFile(game, true))).first;
         return found->second;
     }
 
     const Texture& Banner(const Game& game) {
-        auto found = banners.find(game.folder);
-        // PS4 games have their background in pic1.png.
-        if (found == banners.end()) found = banners.emplace(game.folder, LoadTexture(game.folder + (Exists(game.folder + L"\\sce_sys\\pic0.png") ? L"\\sce_sys\\pic0.png" : L"\\sce_sys\\pic1.png"))).first;
+        auto found = banners.find(game.titleId);
+        if (found == banners.end()) found = banners.emplace(game.titleId, LoadTexture(ArtFile(game, false))).first;
         return found->second;
     }
 
+    void ForgetArt(const Game& game) {
+        for (auto* cache : {&icons, &banners}) {
+            const auto found = cache->find(game.titleId);
+            if (found == cache->end()) continue;
+            if (found->second.view != nullptr) found->second.view->Release();
+            cache->erase(found);
+        }
+    }
+
     void AddGame() {
-        const std::wstring folder = PickFolder(window, library.Root(), L"Escolha a pasta do jogo (com eboot.bin e sce_sys)");
+        const std::wstring folder = PickFolder(window, library.Root(), L"Escolha a pasta do jogo (PS5, PS4, PS3, Xbox 360 ou Wii U)");
         if (folder.empty()) return;
         std::wstring error;
         const int index = library.Add(folder, error);
@@ -236,7 +293,61 @@ struct Client {
             MessageBoxW(window, error.c_str(), kAppName, MB_OK | MB_ICONWARNING);
             return;
         }
+        enginesPage = false;
         Select(index);
+    }
+
+    void AddGameFile() {
+        const std::wstring path = PickFile(window, L"", L"Escolha o arquivo do jogo (ISO, ROM, NSP...)", GameFileFilters());
+        if (path.empty()) return;
+        const Detected found = DetectFile(path);
+        if (found.systems.empty()) {
+            const std::wstring text = L"O Ranga não sabe qual console abre arquivos " + (Extension(path).empty() ? std::wstring(L"sem extensão") : Extension(path)) + L":\n\n" + path;
+            MessageBoxW(window, text.c_str(), kAppName, MB_OK | MB_ICONWARNING);
+            return;
+        }
+        if (found.systems.size() > 1) {
+            askFile = path;
+            askDetected = found;
+            return;
+        }
+        AddDetected(path, found, found.systems[0]);
+    }
+
+    void AddDetected(const std::wstring& path, const Detected& found, const std::wstring& system) {
+        std::wstring error;
+        const int index = library.AddFile(path, system, found.serial, found.title, error);
+        if (index < 0) {
+            MessageBoxW(window, error.c_str(), kAppName, MB_OK | MB_ICONWARNING);
+            return;
+        }
+        enginesPage = false;
+        Select(index);
+    }
+
+    void AskSystem(float scale) {
+        if (!askFile.empty() && !ImGui::IsPopupOpen("Qual console?")) ImGui::OpenPopup("Qual console?");
+        ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(20 * scale, 18 * scale));
+        if (ImGui::BeginPopupModal("Qual console?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextUnformatted(Utf8(FileName(askFile)).c_str());
+            ImGui::TextDisabled("Este tipo de arquivo serve para mais de um console e o Ranga não conseguiu ler qual é.");
+            ImGui::Dummy(ImVec2(0, 4 * scale));
+            for (const auto& id : askDetected.systems) {
+                if (ImGui::Button(SystemName(id).c_str(), ImVec2(320 * scale, 0))) {
+                    pending = [this, id, path = askFile, found = askDetected] { AddDetected(path, found, id); };
+                    askFile.clear();
+                    ImGui::CloseCurrentPopup();
+                }
+            }
+            ImGui::Dummy(ImVec2(0, 4 * scale));
+            if (ImGui::Button("Cancelar", ImVec2(320 * scale, 0))) {
+                askFile.clear();
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+        ImGui::PopStyleVar();
     }
 
     void Save() {
@@ -255,7 +366,7 @@ struct Client {
         ImGui::TextDisabled("Biblioteca");
         ImGui::Dummy(ImVec2(0, 4 * scale));
 
-        const float listHeight = ImGui::GetContentRegionAvail().y - 64 * scale;
+        const float listHeight = ImGui::GetContentRegionAvail().y - 106 * scale;
         ImGui::BeginChild("##games", ImVec2(0, listHeight), ImGuiChildFlags_None);
         const float row = 64 * scale;
         auto& games = library.Games();
@@ -271,7 +382,14 @@ struct Client {
             const ImVec2 iconMin(min.x + 8 * scale, min.y + 8 * scale), iconMax(iconMin.x + iconSize, iconMin.y + iconSize);
             const Texture& icon = Icon(game);
             if (icon.view != nullptr) draw->AddImageRounded(icon.Ref(), iconMin, iconMax, ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, 6 * scale);
-            else draw->AddRectFilled(iconMin, iconMax, Packed(kSurface), 6 * scale);
+            else {
+                // No art: the console's short name stands in for it.
+                draw->AddRectFilled(iconMin, iconMax, Packed(kSurface), 6 * scale);
+                const std::string tag = Utf8(game.system);
+                const float size = ImGui::GetFontSize() * (tag.size() > 4 ? 0.62f : 0.8f);
+                const ImVec2 extent = semibold->CalcTextSizeA(size, FLT_MAX, 0, tag.c_str());
+                draw->AddText(semibold, size, ImVec2((iconMin.x + iconMax.x - extent.x) / 2, (iconMin.y + iconMax.y - extent.y) / 2), Packed(kDim), tag.c_str());
+            }
             const float textX = iconMax.x + 12 * scale;
             const float textWidth = min.x + width - 20 * scale - textX - 8 * scale;
             const std::string title = Utf8(game.title);
@@ -279,10 +397,17 @@ struct Client {
             draw->AddText(semibold, ImGui::GetFontSize(), ImVec2(textX, min.y + 12 * scale), Packed(kText), title.c_str());
             ImGui::PopClipRect();
             const Profile gameProfile = ProfileFor(game.titleId);
-            const bool tested = gameProfile.tested;
-            const bool missing = !IsGameFolder(game.folder);
-            const unsigned dot = missing ? kRed : tested ? kGreen : kAmber;
-            const char* label = missing ? "pasta não encontrada" : gameProfile.bloodborne ? "port nativo (PS4)" : tested ? "testado" : "experimental";
+            const bool missing = !GameAvailable(game);
+            bool ready = gameProfile.tested;
+            std::string status = gameProfile.bloodborne ? "port nativo (PS4)" : gameProfile.tested ? "testado" : "experimental";
+            if (External(game)) {
+                const Engine& engine = EngineFor(game.system);
+                ready = engine.ready;
+                status = Utf8(game.system) + "  ·  " + (!engine.ready ? std::string("falta emulador") : engine.presetName.empty() ? Utf8(FileName(engine.exe)) : Utf8(engine.presetName));
+            }
+            if (missing) status = "não encontrado";
+            const unsigned dot = missing ? kRed : ready ? kGreen : kAmber;
+            const char* label = status.c_str();
             const float small = ImGui::GetFontSize() * 0.85f;
             draw->AddCircleFilled(ImVec2(textX + 4 * scale, min.y + row - 20 * scale), 3.5f * scale, Packed(dot));
             draw->AddText(nullptr, small, ImVec2(textX + 14 * scale, min.y + row - 20 * scale - small / 2), Packed(kDim), label);
@@ -296,10 +421,31 @@ struct Client {
         }
         ImGui::EndChild();
 
-        ImGui::SetCursorPos(ImVec2(16 * scale, ImGui::GetWindowHeight() - 52 * scale));
-        if (ImGui::Button("+  Adicionar jogo", ImVec2(width - 32 * scale, 36 * scale))) pending = [this] { AddGame(); };
+        ImGui::SetCursorPos(ImVec2(16 * scale, ImGui::GetWindowHeight() - 94 * scale));
+        if (ImGui::Button("+  Adicionar jogo", ImVec2(width - 32 * scale, 36 * scale))) ImGui::OpenPopup("##add");
+        AddMenu(scale);
+        ImGui::SetCursorPosX(16 * scale);
+        ImGui::PushStyleColor(ImGuiCol_Button, Color(enginesPage ? kSelected : kSurface));
+        if (ImGui::Button("Emuladores", ImVec2(width - 32 * scale, 36 * scale))) {
+            enginesPage = !enginesPage;
+            RefreshEngines();
+        }
+        ImGui::PopStyleColor();
         ImGui::EndChild();
         ImGui::PopStyleColor();
+    }
+
+    void AddMenu(float scale) {
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8 * scale, 8 * scale));
+        if (ImGui::BeginPopup("##add")) {
+            if (ImGui::Selectable("Pasta do jogo...")) pending = [this] { AddGame(); };
+            ImGui::TextDisabled("   PS5, PS4, PS3, Xbox 360, Wii U");
+            ImGui::Separator();
+            if (ImGui::Selectable("Arquivo do jogo...")) pending = [this] { AddGameFile(); };
+            ImGui::TextDisabled("   ISO, CHD, ROM, NSP, WBFS e outros");
+            ImGui::EndPopup();
+        }
+        ImGui::PopStyleVar();
     }
 
     void OptionsTab(const Game& game, const Profile& profile, float scale) {
@@ -351,6 +497,26 @@ struct Client {
             ImGui::TextDisabled("Roda pelo port nativo do Bloodborne (deadinside28, Mrsuss60 e shadPS4, licença GPL), não pelo emulador de PS5. Precisa da versão 1.09 com a atualização mesclada na pasta do jogo e do Python 3.10 ou mais novo.");
             ImGui::TextDisabled("No jogo, Insert ou L3 + R3 abre o menu de gráficos e FSR.");
             ImGui::PopTextWrapPos();
+        } else if (External(game)) {
+            const Engine& engine = EngineFor(game.system);
+            label("Emulador");
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted(engine.exe.empty() ? "nenhum escolhido" : engine.presetName.empty() ? Utf8(FileName(engine.exe)).c_str() : Utf8(engine.presetName).c_str());
+            ImGui::SameLine();
+            if (ImGui::Button("Emuladores...")) {
+                enginesPage = true;
+                RefreshEngines();
+            }
+            if (!engine.ready) {
+                ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
+                ImGui::TextWrapped("%s", Utf8(engine.problem).c_str());
+                ImGui::PopStyleColor();
+            }
+            if (const System* system = FindSystem(game.system)) {
+                ImGui::PushTextWrapPos(0);
+                ImGui::TextDisabled("%s", system->note.c_str());
+                ImGui::PopTextWrapPos();
+            }
         } else {
             ImGui::Dummy(ImVec2(0, 2 * scale));
             ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
@@ -364,18 +530,44 @@ struct Client {
         ImGui::Dummy(ImVec2(0, 6 * scale));
         ImGui::Separator();
         ImGui::Dummy(ImVec2(0, 2 * scale));
-        ImGui::TextDisabled("Pasta do jogo");
+        const bool isFile = !IsDirectory(game.folder) && game.system != L"PS5" && game.system != L"PS4";
+        ImGui::TextDisabled(isFile ? "Arquivo do jogo" : "Pasta do jogo");
         ImGui::TextWrapped("%s", Utf8(game.folder).c_str());
-        if (ImGui::Button("Abrir pasta")) ShellExecuteW(window, L"open", game.folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        if (ImGui::Button("Abrir pasta")) {
+            if (isFile) ShellExecuteW(window, L"open", L"explorer.exe", (L"/select,\"" + game.folder + L"\"").c_str(), nullptr, SW_SHOWNORMAL);
+            else ShellExecuteW(window, L"open", game.folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        }
         ImGui::SameLine();
-        if (ImGui::Button("Trocar pasta...")) {
-            const std::wstring folder = PickFolder(window, game.folder, L"Escolha a nova pasta do jogo");
-            if (!folder.empty()) {
-                pending = [this, folder] {
-                    std::wstring error;
-                    const int index = library.Add(folder, error);
-                    if (index < 0) MessageBoxW(window, error.c_str(), kAppName, MB_OK | MB_ICONWARNING);
-                    else Select(index);
+        if (ImGui::Button(isFile ? "Trocar arquivo..." : "Trocar pasta...")) {
+            const std::wstring start = isFile ? ParentFolder(game.folder) : game.folder;
+            const std::wstring path = isFile ? PickFile(window, start, L"Escolha o novo arquivo do jogo", GameFileFilters()) : PickFolder(window, start, L"Escolha a nova pasta do jogo");
+            if (!path.empty()) {
+                pending = [this, path, titleId = game.titleId, system = game.system] {
+                    // PS5 and PS4 games are found again by their title id; other consoles keep their entry and workspace.
+                    if (system == L"PS5" || system == L"PS4") {
+                        std::wstring error;
+                        const int index = library.Add(path, error);
+                        if (index < 0) MessageBoxW(window, error.c_str(), kAppName, MB_OK | MB_ICONWARNING);
+                        else Select(index);
+                        return;
+                    }
+                    library.Relocate(titleId, path);
+                    Reload(titleId);
+                };
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Capa...")) {
+            const std::wstring image = PickFile(window, L"", L"Escolha uma imagem PNG para a capa", {{L"Imagem PNG", L"*.png"}});
+            if (!image.empty()) {
+                pending = [this, image] {
+                    Game* current = Current();
+                    if (current == nullptr) return;
+                    CreateDirectoryW((library.Root() + L"\\games").c_str(), nullptr);
+                    CreateDirectoryW(current->workspace.c_str(), nullptr);
+                    CreateDirectoryW((current->workspace + L"\\art").c_str(), nullptr);
+                    CopyFileW(image.c_str(), (current->workspace + L"\\art\\cover.png").c_str(), FALSE);
+                    ForgetArt(*current);
                 };
             }
         }
@@ -414,6 +606,7 @@ struct Client {
         }
         ImGui::PushTextWrapPos(0);
         ImGui::TextDisabled("Como o DLSS 5 Swapper faz com emuladores: ReShade + DLSS5-Feeder + um add-on neural, com os arquivos que você colocar na pasta do DLSS 5. O Ranga não baixa nenhum deles. Só placa RTX 50, e pesa: o FPS pode cair perto da metade.");
+        if (External(game)) ImGui::TextDisabled("Em outro emulador, só pega se ele estiver desenhando com Vulkan (escolha Vulkan nas configurações de vídeo dele).");
         ImGui::PopTextWrapPos();
         if (ImGui::Button("Abrir pasta do DLSS 5")) {
             CreateDlss5Folder(library.Root());
@@ -538,7 +731,116 @@ struct Client {
         ImGui::PopStyleColor();
     }
 
+    void EnginesPage(float scale) {
+        const float pad = 32 * scale;
+        ImGui::BeginChild("##engines", ImVec2(0, 0), ImGuiChildFlags_None);
+        ImGui::SetCursorPos(ImVec2(pad, 24 * scale));
+        ImGui::BeginGroup();
+        ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x - pad);
+        ImGui::PushFont(semibold, 28);
+        ImGui::TextUnformatted("Emuladores");
+        ImGui::PopFont();
+        ImGui::TextDisabled("Jogos de PS5 rodam no Ranga e o Bloodborne no port nativo. Cada outro console roda no emulador que você escolher aqui. O Ranga não baixa nenhum: baixe do site oficial, extraia onde quiser e aponte o .exe. BIOS, firmware e chaves vêm do seu próprio console.");
+        ImGui::Dummy(ImVec2(0, 6 * scale));
+        if (ImGui::Button("Voltar para o jogo")) enginesPage = false;
+        ImGui::SameLine();
+        if (ImGui::Button("Verificar de novo")) RefreshEngines();
+        ImGui::Dummy(ImVec2(0, 6 * scale));
+        // A RetroArch chosen for one console can serve every console its cores cover.
+        std::wstring retroArch;
+        for (const auto& [id, engine] : engines) {
+            if (Lower(FileName(engine.exe)).rfind(L"retroarch", 0) == 0) retroArch = engine.exe;
+        }
+        for (const auto& system : Systems()) {
+            const Engine& engine = EngineFor(system.id);
+            ImGui::PushID(Utf8(system.id).c_str());
+            ImGui::Separator();
+            ImGui::Dummy(ImVec2(0, 2 * scale));
+            ImGui::PushFont(semibold, 0.0f);
+            ImGui::TextUnformatted(system.name.c_str());
+            ImGui::PopFont();
+            ImGui::SameLine();
+            if (engine.ready) {
+                ImGui::PushStyleColor(ImGuiCol_Text, Color(kGreen));
+                ImGui::TextUnformatted(engine.presetName.empty() ? "pronto (argumentos genéricos)" : ("pronto  ·  " + Utf8(engine.presetName)).c_str());
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Text, Color(engine.exe.empty() ? kDim : kAmber));
+                ImGui::TextUnformatted(engine.exe.empty() ? "sem emulador" : "precisa de atenção");
+            }
+            ImGui::PopStyleColor();
+            if (!engine.exe.empty()) ImGui::TextDisabled("%s", Utf8(engine.exe).c_str());
+            if (!engine.ready && !engine.exe.empty()) {
+                ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
+                ImGui::TextUnformatted(Utf8(engine.problem).c_str());
+                ImGui::PopStyleColor();
+            }
+            if (ImGui::Button(engine.exe.empty() ? "Escolher emulador..." : "Trocar...")) {
+                const std::wstring start = engine.exe.empty() ? L"" : ParentFolder(engine.exe);
+                const std::wstring exe = PickFile(window, start, (L"Escolha o .exe do emulador de " + Wide(system.name)).c_str(), {{L"Programa", L"*.exe"}});
+                if (!exe.empty()) pending = [this, id = system.id, exe] { ChooseEngine(library.Root(), id, exe); RefreshEngines(); };
+            }
+            if (!engine.exe.empty()) {
+                ImGui::SameLine();
+                if (ImGui::Button("Abrir pasta")) ShellExecuteW(window, L"open", ParentFolder(engine.exe).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+                ImGui::SameLine();
+                if (ImGui::Button("Tirar")) pending = [this, id = system.id] { ClearEngine(library.Root(), id); RefreshEngines(); };
+            }
+            if (engine.exe.empty() && !retroArch.empty()) {
+                for (const auto& preset : system.presets) {
+                    if (preset.exePrefixes != L"retroarch") continue;
+                    ImGui::SameLine();
+                    if (ImGui::Button("Usar o RetroArch")) pending = [this, id = system.id, retroArch] { ChooseEngine(library.Root(), id, retroArch); RefreshEngines(); };
+                    break;
+                }
+            }
+            if (engine.exe.empty()) {
+                std::string names;
+                for (const auto& preset : system.presets) {
+                    const std::string name = preset.exePrefixes == L"retroarch" ? "RetroArch" : Utf8(preset.name);
+                    if (names.find(name) == std::string::npos) names += (names.empty() ? "" : ", ") + name;
+                }
+                ImGui::TextDisabled("Funciona com: %s", names.c_str());
+            } else {
+                // The arguments stay editable: a new emulator version may want others than the ones the client knows.
+                auto& args = argsEdit[system.id];
+                auto& fullscreen = fullscreenEdit[system.id];
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextDisabled("Argumentos");
+                ImGui::SameLine(110 * scale);
+                ImGui::SetNextItemWidth(std::max(200 * scale, ImGui::GetContentRegionAvail().x - pad - 90 * scale));
+                ImGui::InputText("##args", args.data(), args.size());
+                const bool argsDone = ImGui::IsItemDeactivatedAfterEdit();
+                ImGui::SameLine();
+                if (ImGui::Button("Padrão")) pending = [this, id = system.id] { ResetEngineArgs(library.Root(), id); RefreshEngines(); };
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextDisabled("Tela cheia");
+                ImGui::SameLine(110 * scale);
+                ImGui::SetNextItemWidth(260 * scale);
+                ImGui::InputText("##fullscreen", fullscreen.data(), fullscreen.size());
+                const bool fullscreenDone = ImGui::IsItemDeactivatedAfterEdit();
+                if (argsDone || fullscreenDone) {
+                    pending = [this, id = system.id, a = std::string(args.data()), f = std::string(fullscreen.data())] {
+                        SaveEngineArgs(library.Root(), id, Wide(a), Wide(f));
+                        RefreshEngines();
+                    };
+                }
+                ImGui::TextDisabled("{rom} é o jogo; {fullscreen} vira o argumento de tela cheia quando o jogo está em tela cheia.");
+            }
+            ImGui::TextDisabled("%s", system.note.c_str());
+            ImGui::Dummy(ImVec2(0, 4 * scale));
+            ImGui::PopID();
+        }
+        ImGui::PopTextWrapPos();
+        ImGui::EndGroup();
+        ImGui::Dummy(ImVec2(0, 20 * scale));
+        ImGui::EndChild();
+    }
+
     void Detail(float scale) {
+        if (enginesPage) {
+            EnginesPage(scale);
+            return;
+        }
         ImGui::BeginChild("##detail", ImVec2(0, 0), ImGuiChildFlags_None);
         Game* game = Current();
         if (game == nullptr) {
@@ -548,9 +850,11 @@ struct Client {
             ImGui::PushFont(semibold, 24);
             ImGui::TextUnformatted("Nenhum jogo na biblioteca");
             ImGui::PopFont();
-            ImGui::TextDisabled("Adicione a pasta de um jogo do seu console.");
+            ImGui::TextDisabled("Adicione a pasta ou o arquivo de um jogo do seu console.");
             ImGui::Dummy(ImVec2(0, 6 * scale));
-            if (ImGui::Button("+  Adicionar jogo", ImVec2(200 * scale, 38 * scale))) pending = [this] { AddGame(); };
+            if (ImGui::Button("Pasta do jogo...", ImVec2(200 * scale, 38 * scale))) pending = [this] { AddGame(); };
+            ImGui::SameLine();
+            if (ImGui::Button("Arquivo do jogo...", ImVec2(200 * scale, 38 * scale))) pending = [this] { AddGameFile(); };
             ImGui::EndGroup();
             ImGui::EndChild();
             return;
@@ -588,13 +892,22 @@ struct Client {
         ImGui::PushFont(semibold, 30);
         ImGui::TextUnformatted(Utf8(game->title).c_str());
         ImGui::PopFont();
-        std::string meta = Utf8(game->titleId);
+        std::string meta = SystemName(game->system);
+        // Other consoles' keys are a hash of the path; their serial, when the disc had one, says more.
+        const std::wstring id = External(*game) || game->system == L"PS3" ? game->serial : game->titleId;
+        if (!id.empty()) meta += "   ·   " + Utf8(id);
         if (!game->version.empty()) meta += "   ·   v" + Utf8(game->version);
         ImGui::TextDisabled("%s", meta.c_str());
         ImGui::SameLine();
-        const char* tag = profile.bloodborne ? "port nativo (PS4)" : profile.tested ? "testado" : "experimental";
-        ImGui::PushStyleColor(ImGuiCol_Text, Color(profile.tested ? kGreen : kAmber));
-        ImGui::TextUnformatted(tag);
+        std::string tag = profile.bloodborne ? "port nativo" : profile.tested ? "testado" : "experimental";
+        bool good = profile.tested;
+        if (External(*game)) {
+            const Engine& engine = EngineFor(game->system);
+            good = engine.ready;
+            tag = !engine.ready ? "falta emulador" : "via " + (engine.presetName.empty() ? Utf8(FileName(engine.exe)) : Utf8(engine.presetName));
+        }
+        ImGui::PushStyleColor(ImGuiCol_Text, Color(good ? kGreen : kAmber));
+        ImGui::TextUnformatted(tag.c_str());
         ImGui::PopStyleColor();
         ImGui::Dummy(ImVec2(0, 6 * scale));
 
@@ -609,6 +922,7 @@ struct Client {
         const char* playLabel = !busy ? "Jogar" : runner.Current() == Runner::State::Preparing ? "Preparando..." : "Rodando...";
         if (ImGui::Button(playLabel, ImVec2(170 * scale, 44 * scale))) {
             Save();
+            RefreshEngines();
             runner.Start(library.Root(), *game, options);
             logDirty = true;
         }
@@ -648,8 +962,8 @@ struct Client {
                 ImGui::EndChild();
                 ImGui::EndTabItem();
             }
-            // Add-ons are mounted by the PS5 runtime; the Bloodborne port has no such mount.
-            if (!profile.bloodborne && ImGui::BeginTabItem("DLC")) {
+            // Add-ons are mounted by the PS5 runtime; the Bloodborne port and other emulators have no such mount.
+            if (game->system == L"PS5" && ImGui::BeginTabItem("DLC")) {
                 ImGui::BeginChild("##dlc");
                 DlcTab(*game, scale);
                 ImGui::EndChild();
@@ -692,6 +1006,7 @@ struct Client {
         Sidebar(scale);
         ImGui::SameLine(0, 0);
         Detail(scale);
+        AskSystem(scale);
         ImGui::End();
     }
 };
