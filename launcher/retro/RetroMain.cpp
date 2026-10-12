@@ -752,6 +752,24 @@ struct Saves {
     }
 };
 
+// Ranga's own defaults for a core, applied before the game's options file, which can still change any of them.
+// SwanStation draws in software until Ranga Retro hands cores a GPU context, and boots with the PS1 BIOS inside the
+// PS3 firmware Sony publishes (ps1_rom.bin, taken from RPCS3's dev_flash), which serves every region.
+void ApplyCoreDefaults(const std::wstring& corePath) {
+    std::wstring name = corePath.substr(corePath.find_last_of(L"\\/") + 1);
+    for (auto& character : name) character = static_cast<wchar_t>(towlower(character));
+    struct Default { const wchar_t* core; const char* key; const char* value; };
+    static const Default defaults[] = {
+        {L"swanstation", "swanstation_GPU_Renderer", "Software"},
+        {L"swanstation", "swanstation_BIOS_PathNTSCU", "ps1_rom.bin"},
+        {L"swanstation", "swanstation_BIOS_PathNTSCJ", "ps1_rom.bin"},
+        {L"swanstation", "swanstation_BIOS_PathPAL", "ps1_rom.bin"},
+    };
+    for (const auto& entry : defaults) {
+        if (name.rfind(entry.core, 0) == 0) g.overrides[entry.key] = entry.value;
+    }
+}
+
 void ReadOptionsFile(const std::wstring& path) {
     const auto data = ReadFile(path);
     std::string text(data.begin(), data.end());
@@ -797,6 +815,7 @@ int RetroMain(int argc, wchar_t** argv) {
     CreateDirectoryW(saveDir.c_str(), nullptr);
     g.systemDir = Utf8(systemDir);
     g.saveDir = Utf8(saveDir);
+    ApplyCoreDefaults(corePath);
     if (!optionsPath.empty()) ReadOptionsFile(optionsPath);
 
     // Per-monitor DPI awareness, so the picture is not blurred by Windows' scaling (Windows 10 1703 and later).

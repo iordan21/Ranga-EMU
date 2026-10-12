@@ -170,11 +170,12 @@ std::vector<System> MakeSystems() {
          "O .zip tem que ser da versão de romset que o core ou o MAME pede."},
     };
     // What Ranga Retro runs itself, drawing in software: stage 1 of the native engine. Consoles whose cores need the GPU
-    // (N64, PS1 in hardware mode, PSP, Dreamcast, DS, PS2, GameCube, Wii, 3DS) come with the next stages.
+    // (N64, PSP, Dreamcast, PS2, GameCube, Wii, 3DS) come with the next stages; PS1 and DS draw in software meanwhile.
     const std::pair<const wchar_t*, const wchar_t*> native[] = {
         {L"SNES", L"snes9x"}, {L"NES", L"mesen"}, {L"MD", L"genesis_plus_gx"}, {L"SMS", L"genesis_plus_gx"},
         {L"SEGACD", L"genesis_plus_gx"}, {L"SATURN", L"mednafen_saturn"}, {L"PCE", L"mednafen_pce_fast"},
-        {L"A2600", L"stella"}, {L"ARCADE", L"fbneo"},
+        {L"A2600", L"stella"}, {L"ARCADE", L"fbneo"}, {L"GBA", L"mgba"}, {L"GB", L"gambatte"}, {L"PS1", L"swanstation"},
+        {L"NDS", L"melondsds"},
     };
     for (auto& system : systems) {
         for (const auto& [id, core] : native) {
