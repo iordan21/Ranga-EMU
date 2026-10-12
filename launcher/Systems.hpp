@@ -11,6 +11,17 @@
 // fetches itself.
 namespace Ranga {
 
+// One setting written into an emulator's own configuration file when the user asks the client to fit it to this PC.
+struct Tweak {
+    // Relative to the emulator's folder.
+    std::wstring file;
+    // The [section] it belongs to; empty for a file without sections, like retroarch.cfg.
+    std::string section;
+    std::string key;
+    // Written as it is, quotes included; {root} becomes the client's folder.
+    std::string value;
+};
+
 // An emulator the client knows the command line of.
 struct Preset {
     std::wstring name;
@@ -20,6 +31,11 @@ struct Preset {
     // and {fullscreen} the fullscreen argument when the game's screen option asks for it.
     std::wstring args;
     std::wstring fullscreen;
+    // Settings that fit it to this PC: Vulkan where it has it, a higher internal resolution, no first-run wizard, the
+    // first SDL gamepad (DualSense, Xbox or generic) on player 1 where its bindings do not name the device.
+    std::vector<Tweak> tweaks = {};
+    // Its BIOS folder under bios beside this program, which the tweaks point it at; empty when it needs none.
+    std::wstring bios = L"";
 };
 
 struct System {
@@ -47,6 +63,9 @@ struct Engine {
     std::wstring fullscreen;
     // The preset the executable's name matched; empty when the client does not know it and passes just the file.
     std::wstring presetName;
+    // The matched preset has settings to fit this PC, and the folder where its BIOS goes (empty when none).
+    bool tunable = false;
+    std::wstring bios;
     bool ready = false;
     // Why the game cannot start yet; empty when ready.
     std::wstring problem;
@@ -60,6 +79,9 @@ void ResetEngineArgs(const std::wstring& root, const std::wstring& system);
 void ClearEngine(const std::wstring& root, const std::wstring& system);
 // The whole command line, the executable quoted first.
 std::wstring EngineCommand(const Engine& engine, const std::wstring& rom, bool fullscreen);
+// Writes the preset's tweaks into the emulator's configuration, which has to be closed, and makes its BIOS folder.
+// Returns what was changed, one line each, or why nothing could be.
+std::wstring TuneEngine(const std::wstring& root, const std::wstring& system);
 
 // What a game file or folder turned out to be.
 struct Detected {

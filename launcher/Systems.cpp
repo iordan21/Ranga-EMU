@@ -9,12 +9,45 @@ namespace Ranga {
 
 namespace {
 
-// RetroArch with one of its cores, which the user installs inside RetroArch (Online Updater, Core Downloader).
-Preset RetroArch(const std::wstring& core) {
-    return {L"RetroArch (" + core + L")", L"retroarch", L"{fullscreen} -L \"{exedir}\\cores\\" + core + L"_libretro.dll\" \"{rom}\"", L"-f"};
+// Player 1 on the first SDL gamepad, in the binding names PCSX2 and DuckStation share (SDLInputSource): any gamepad SDL
+// knows, DualSense, Xbox or generic, maps the same way, so the binding never names a device.
+std::vector<Tweak> SdlPad(const std::wstring& file) {
+    const char* binds[][2] = {
+        {"Up", "DPadUp"}, {"Down", "DPadDown"}, {"Left", "DPadLeft"}, {"Right", "DPadRight"},
+        {"Cross", "FaceSouth"}, {"Circle", "FaceEast"}, {"Square", "FaceWest"}, {"Triangle", "FaceNorth"},
+        {"Select", "Back"}, {"Start", "Start"}, {"Analog", "Guide"},
+        {"L1", "LeftShoulder"}, {"R1", "RightShoulder"}, {"L2", "+LeftTrigger"}, {"R2", "+RightTrigger"},
+        {"L3", "LeftStick"}, {"R3", "RightStick"},
+        {"LUp", "-LeftY"}, {"LDown", "+LeftY"}, {"LLeft", "-LeftX"}, {"LRight", "+LeftX"},
+        {"RUp", "-RightY"}, {"RDown", "+RightY"}, {"RLeft", "-RightX"}, {"RRight", "+RightX"},
+        {"LargeMotor", "LargeMotor"}, {"SmallMotor", "SmallMotor"},
+    };
+    std::vector<Tweak> tweaks = {{file, "InputSources", "SDL", "true"}};
+    for (const auto& [key, input] : binds) tweaks.push_back({file, "Pad1", key, std::string("SDL-0/") + input});
+    return tweaks;
 }
 
-const Preset kDolphin = {L"Dolphin", L"dolphin", L"-b {fullscreen} -e \"{rom}\"", L"-C Dolphin.Display.Fullscreen=True"};
+std::vector<Tweak> Join(std::vector<Tweak> first, const std::vector<Tweak>& second) {
+    first.insert(first.end(), second.begin(), second.end());
+    return first;
+}
+
+// RetroArch with one of its cores, which the user installs inside RetroArch (Online Updater, Core Downloader). Vulkan,
+// and SDL for gamepads, whose autoconfig profiles cover DualSense, Xbox and generic ones; XInput, its default on
+// Windows, sees only Xbox gamepads.
+Preset RetroArch(const std::wstring& core, const std::wstring& bios = L"") {
+    return {L"RetroArch (" + core + L")", L"retroarch", L"{fullscreen} -L \"{exedir}\\cores\\" + core + L"_libretro.dll\" \"{rom}\"", L"-f",
+            {{L"retroarch.cfg", "", "video_driver", "\"vulkan\""},
+             {L"retroarch.cfg", "", "input_joypad_driver", "\"sdl2\""},
+             {L"retroarch.cfg", "", "system_directory", "\"{root}\\bios\\retroarch\""}},
+            bios};
+}
+
+// Dolphin's GameCube and Wii pads name the device in their bindings, so they stay for the user to map once in Dolphin.
+const Preset kDolphin = {L"Dolphin", L"dolphin", L"-b {fullscreen} -e \"{rom}\"", L"-C Dolphin.Display.Fullscreen=True",
+                         {{L"User\\Config\\Dolphin.ini", "Core", "GFXBackend", "Vulkan"},
+                          {L"User\\Config\\Dolphin.ini", "Interface", "ConfirmStop", "False"},
+                          {L"User\\Config\\GFX.ini", "Settings", "InternalResolution", "3"}}};
 const Preset kMgba = {L"mGBA", L"mgba", L"{fullscreen} \"{rom}\"", L"-f"};
 const Preset kMesen = {L"Mesen", L"mesen", L"{fullscreen} \"{rom}\"", L"--fullscreen"};
 
@@ -25,16 +58,36 @@ std::vector<System> MakeSystems() {
          {{L"shadPS4", L"shadps4", L"{fullscreen} -g \"{rom}\"", L"--fullscreen true"}},
          "Aponte o shadPS4.exe (o emulador), não o shadPS4QtLauncher. O Bloodborne continua no port nativo do Ranga. A pasta do jogo é a que tem eboot.bin e sce_sys."},
         {L"PS3", "PlayStation 3", {L".iso"}, true,
-         {{L"RPCS3", L"rpcs3", L"--no-gui {fullscreen} \"{rom}\"", L"--fullscreen"}},
+         {{L"RPCS3", L"rpcs3", L"--no-gui {fullscreen} \"{rom}\"", L"--fullscreen",
+           {{L"GuiConfigs\\CurrentSettings.ini", "main_window", "infoBoxEnabledWelcome", "false"}}}},
          "Instale no RPCS3 o firmware do PS3 (PS3UPDAT.PUP, do site da Sony). Jogo em pasta (com PS3_GAME ou USRDIR) ou ISO."},
         {L"PS2", "PlayStation 2", {L".iso", L".chd", L".cso", L".zso", L".bin", L".cue", L".gz", L".mdf", L".img", L".m3u", L".elf"}, false,
-         {{L"PCSX2", L"pcsx2", L"-batch {fullscreen} -- \"{rom}\"", L"-fullscreen"}, RetroArch(L"pcsx2")},
+         {{L"PCSX2", L"pcsx2", L"-batch {fullscreen} -- \"{rom}\"", L"-fullscreen",
+           Join({{L"inis\\PCSX2.ini", "UI", "SetupWizardIncomplete", "false"},
+                 {L"inis\\PCSX2.ini", "UI", "ConfirmShutdown", "false"},
+                 {L"inis\\PCSX2.ini", "EmuCore/GS", "Renderer", "14"},
+                 {L"inis\\PCSX2.ini", "EmuCore/GS", "upscale_multiplier", "3"},
+                 {L"inis\\PCSX2.ini", "Folders", "Bios", "{root}\\bios\\ps2"}},
+                SdlPad(L"inis\\PCSX2.ini")),
+           L"ps2"},
+          RetroArch(L"pcsx2", L"retroarch")},
          bios},
         {L"PS1", "PlayStation", {L".cue", L".chd", L".pbp", L".bin", L".iso", L".img", L".ccd", L".mds", L".ecm", L".m3u"}, false,
-         {{L"DuckStation", L"duckstation", L"-batch {fullscreen} -- \"{rom}\"", L"-fullscreen"}, RetroArch(L"swanstation"), RetroArch(L"mednafen_psx_hw")},
+         {{L"DuckStation", L"duckstation", L"-batch {fullscreen} -- \"{rom}\"", L"-fullscreen",
+           Join({{L"settings.ini", "Main", "SetupWizardIncomplete", "false"},
+                 {L"settings.ini", "Main", "ConfirmPowerOff", "false"},
+                 {L"settings.ini", "GPU", "Renderer", "Vulkan"},
+                 {L"settings.ini", "GPU", "ResolutionScale", "4"},
+                 {L"settings.ini", "BIOS", "SearchDirectory", "{root}\\bios\\ps1"}},
+                SdlPad(L"settings.ini")),
+           L"ps1"},
+          RetroArch(L"swanstation", L"retroarch"), RetroArch(L"mednafen_psx_hw", L"retroarch")},
          bios},
         {L"PSP", "PSP", {L".iso", L".cso", L".chd", L".pbp", L".elf", L".prx"}, false,
-         {{L"PPSSPP", L"ppsspp", L"{fullscreen} \"{rom}\"", L"--fullscreen"}, RetroArch(L"ppsspp")},
+         {{L"PPSSPP", L"ppsspp", L"{fullscreen} \"{rom}\"", L"--fullscreen",
+           {{L"memstick\\PSP\\SYSTEM\\ppsspp.ini", "Graphics", "GraphicsBackend", "3 (VULKAN)"},
+            {L"memstick\\PSP\\SYSTEM\\ppsspp.ini", "Graphics", "InternalResolution", "4"}}},
+          RetroArch(L"ppsspp")},
          "Não precisa de BIOS."},
         {L"SWITCH", "Nintendo Switch", {L".nsp", L".xci", L".nca", L".nro", L".nso"}, false,
          {{L"Ryujinx", L"ryujinx", L"{fullscreen} \"{rom}\"", L"--fullscreen"},
@@ -50,10 +103,18 @@ std::vector<System> MakeSystems() {
          {kDolphin, RetroArch(L"dolphin")},
          "Não precisa de BIOS."},
         {L"3DS", "Nintendo 3DS", {L".3ds", L".cci", L".cxi", L".3dsx", L".app", L".z3dsx", L".zcci", L".zcxi"}, false,
-         {{L"Azahar", L"azahar;lime3ds;citra", L"{fullscreen} \"{rom}\"", L"-f"}},
+         {{L"Azahar", L"azahar;lime3ds;citra", L"{fullscreen} \"{rom}\"", L"-f",
+           {{L"user\\config\\qt-config.ini", "Renderer", "graphics_api\\default", "false"},
+            {L"user\\config\\qt-config.ini", "Renderer", "graphics_api", "2"},
+            {L"user\\config\\qt-config.ini", "Renderer", "resolution_factor\\default", "false"},
+            {L"user\\config\\qt-config.ini", "Renderer", "resolution_factor", "3"}}}},
          "O jogo tem que estar descriptografado."},
         {L"NDS", "Nintendo DS", {L".nds", L".dsi", L".srl"}, false,
-         {{L"melonDS", L"melonds", L"{fullscreen} \"{rom}\"", L"-f"}, RetroArch(L"melondsds"), RetroArch(L"desmume")},
+         {{L"melonDS", L"melonds", L"{fullscreen} \"{rom}\"", L"-f",
+           {{L"melonDS.toml", "3D", "Renderer", "1"},
+            {L"melonDS.toml", "3D.GL", "ScaleFactor", "4"},
+            {L"melonDS.toml", "Screen", "UseGL", "true"}}},
+          RetroArch(L"melondsds"), RetroArch(L"desmume")},
          "O melonDS roda sem BIOS, mas a do seu DS deixa mais fiel."},
         {L"GBA", "Game Boy Advance", {L".gba", L".agb"}, false,
          {kMgba, RetroArch(L"mgba")},
@@ -77,16 +138,21 @@ std::vector<System> MakeSystems() {
          {RetroArch(L"genesis_plus_gx"), RetroArch(L"picodrive")},
          "Não precisa de BIOS."},
         {L"SEGACD", "Sega CD", {L".cue", L".chd", L".iso", L".m3u"}, false,
-         {RetroArch(L"genesis_plus_gx"), RetroArch(L"picodrive")},
+         {RetroArch(L"genesis_plus_gx", L"retroarch"), RetroArch(L"picodrive", L"retroarch")},
          bios},
         {L"SATURN", "Sega Saturn", {L".cue", L".chd", L".ccd", L".mds", L".m3u"}, false,
-         {RetroArch(L"mednafen_saturn"), RetroArch(L"yabasanshiro")},
+         {RetroArch(L"mednafen_saturn", L"retroarch"), RetroArch(L"yabasanshiro", L"retroarch")},
          bios},
         {L"DC", "Dreamcast", {L".gdi", L".cdi", L".chd", L".cue", L".m3u"}, false,
-         {{L"Flycast", L"flycast", L"\"{rom}\"", L""}, RetroArch(L"flycast")},
+         {{L"Flycast", L"flycast", L"\"{rom}\"", L"",
+           {{L"emu.cfg", "config", "pvr.rend", "4"},
+            {L"emu.cfg", "config", "rend.Resolution", "1440"}}},
+          RetroArch(L"flycast")},
          "A BIOS do seu Dreamcast deixa mais fiel; o Flycast também roda sem ela."},
         {L"XBOX", "Xbox", {L".iso", L".xiso"}, false,
-         {{L"xemu", L"xemu", L"{fullscreen} -dvd_path \"{rom}\"", L"-full-screen"}},
+         {{L"xemu", L"xemu", L"{fullscreen} -dvd_path \"{rom}\"", L"-full-screen",
+           {{L"xemu.toml", "display", "renderer", "'VULKAN'"},
+            {L"xemu.toml", "display.quality", "surface_scale", "2"}}}},
          "O xemu precisa da BIOS, da MCPX e do HD do seu Xbox. O jogo tem que ser XISO."},
         {L"X360", "Xbox 360", {L".iso", L".xex", L".zar"}, true,
          {{L"Xenia Canary", L"xenia", L"{fullscreen} \"{rom}\"", L"--fullscreen=true"}},
@@ -411,7 +477,11 @@ Engine LoadEngine(const std::wstring& root, const std::wstring& id) {
     const std::wstring ini = EnginesIni(root);
     engine.exe = ReadIni(ini, id.c_str(), L"exe", L"");
     const Preset* preset = MatchPreset(*system, engine.exe);
-    if (preset != nullptr) engine.presetName = preset->name;
+    if (preset != nullptr) {
+        engine.presetName = preset->name;
+        engine.tunable = !preset->tweaks.empty();
+        if (!preset->bios.empty()) engine.bios = root + L"\\bios\\" + preset->bios;
+    }
     engine.args = ReadIni(ini, id.c_str(), L"args", preset != nullptr ? preset->args.c_str() : L"\"{rom}\"");
     engine.fullscreen = ReadIni(ini, id.c_str(), L"fullscreen", preset != nullptr ? preset->fullscreen.c_str() : L"");
     if (engine.exe.empty()) {
@@ -462,6 +532,110 @@ void ClearEngine(const std::wstring& root, const std::wstring& id) { WritePrivat
 std::wstring EngineCommand(const Engine& engine, const std::wstring& rom, bool fullscreen) {
     const std::wstring args = Expand(engine.args, engine.exe, rom, fullscreen ? engine.fullscreen : L"");
     return L"\"" + engine.exe + L"\"" + (args.empty() ? L"" : L" " + args);
+}
+
+namespace {
+
+// Sets key in [section] of an INI, TOML or RetroArch .cfg text, keeping every other line, the file's line ending and its
+// "key = value" or "key=value" spacing. A key that is not there goes after the last line of its section, and a missing
+// section at the end. Returns whether the value changed.
+bool SetKey(std::string& text, const std::string& section, const std::string& key, const std::string& value) {
+    const std::string newline = text.find("\r\n") != std::string::npos ? "\r\n" : "\n";
+    const std::string separator = text.find(" = ") != std::string::npos || text.empty() ? " = " : "=";
+    std::vector<std::string> lines;
+    for (size_t start = 0; start < text.size();) {
+        size_t end = text.find('\n', start);
+        if (end == std::string::npos) end = text.size();
+        std::string line = text.substr(start, end - start);
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        lines.push_back(line);
+        start = end + 1;
+    }
+    const auto trim = [](std::string value) {
+        const size_t first = value.find_first_not_of(" \t");
+        if (first == std::string::npos) return std::string();
+        return value.substr(first, value.find_last_not_of(" \t") - first + 1);
+    };
+    std::string current;
+    bool sectionFound = section.empty();
+    size_t insertAt = section.empty() ? lines.size() : std::string::npos;
+    for (size_t i = 0; i < lines.size(); ++i) {
+        const std::string line = trim(lines[i]);
+        if (line.size() > 2 && line.front() == '[' && line.back() == ']') {
+            current = line.substr(1, line.size() - 2);
+            if (current == section) {
+                sectionFound = true;
+                insertAt = i + 1;
+            }
+            continue;
+        }
+        if (current != section) continue;
+        if (!line.empty()) insertAt = i + 1;
+        const size_t equals = line.find('=');
+        if (equals == std::string::npos || trim(line.substr(0, equals)) != key) continue;
+        const std::string replaced = key + separator + value;
+        if (trim(line.substr(equals + 1)) == value) return false;
+        lines[i] = replaced;
+        text.clear();
+        for (const auto& kept : lines) text += kept + newline;
+        return true;
+    }
+    if (!sectionFound) {
+        if (!lines.empty() && !trim(lines.back()).empty()) lines.push_back("");
+        lines.push_back("[" + section + "]");
+        insertAt = lines.size();
+    }
+    lines.insert(lines.begin() + static_cast<std::ptrdiff_t>(insertAt), key + separator + value);
+    text.clear();
+    for (const auto& kept : lines) text += kept + newline;
+    return true;
+}
+
+}
+
+std::wstring TuneEngine(const std::wstring& root, const std::wstring& id) {
+    const Engine engine = LoadEngine(root, id);
+    const System* system = FindSystem(id);
+    const Preset* preset = system != nullptr ? MatchPreset(*system, engine.exe) : nullptr;
+    if (preset == nullptr || preset->tweaks.empty()) return L"O Ranga não tem ajustes para este emulador.";
+    if (!Exists(engine.exe)) return engine.problem;
+    const std::wstring folder = ParentFolder(engine.exe);
+    std::wstring report;
+    if (!preset->bios.empty()) {
+        CreateDirectoryW((root + L"\\bios").c_str(), nullptr);
+        CreateDirectoryW((root + L"\\bios\\" + preset->bios).c_str(), nullptr);
+    }
+    std::wstring file;
+    std::string text;
+    int changed = 0;
+    const auto flush = [&] {
+        if (file.empty() || changed == 0) return;
+        FILE* out = nullptr;
+        if (_wfopen_s(&out, (folder + L"\\" + file).c_str(), L"wb") != 0 || out == nullptr) {
+            report += L"FALHOU ao gravar " + file + L"\r\n";
+            return;
+        }
+        fwrite(text.data(), 1, text.size(), out);
+        fclose(out);
+        report += file + L": " + std::to_wstring(changed) + L" ajuste(s)\r\n";
+    };
+    for (const auto& tweak : preset->tweaks) {
+        if (tweak.file != file) {
+            flush();
+            file = tweak.file;
+            text = ReadBytes(folder + L"\\" + file);
+            changed = 0;
+            // The emulator makes its folders on first start; one never opened gets them here.
+            for (size_t slash = file.find(L'\\'); slash != std::wstring::npos; slash = file.find(L'\\', slash + 1)) CreateDirectoryW((folder + L"\\" + file.substr(0, slash)).c_str(), nullptr);
+        }
+        std::string value = tweak.value;
+        if (const size_t at = value.find("{root}"); at != std::string::npos) value.replace(at, 6, Utf8(root));
+        if (SetKey(text, tweak.section, tweak.key, value)) ++changed;
+    }
+    flush();
+    if (report.empty()) report = L"Já estava ajustado.\r\n";
+    if (!preset->bios.empty()) report += L"BIOS: coloque em " + root + L"\\bios\\" + preset->bios + L"\r\n";
+    return report;
 }
 
 Detected DetectFile(const std::wstring& path) {

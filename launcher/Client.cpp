@@ -784,6 +784,30 @@ struct Client {
                 if (ImGui::Button("Abrir pasta")) ShellExecuteW(window, L"open", ParentFolder(engine.exe).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
                 ImGui::SameLine();
                 if (ImGui::Button("Tirar")) pending = [this, id = system.id] { ClearEngine(library.Root(), id); RefreshEngines(); };
+                if (engine.tunable) {
+                    ImGui::SameLine();
+                    // It rewrites the emulator's own settings, which the emulator overwrites when it closes, so it waits for no game.
+                    ImGui::BeginDisabled(runner.Busy());
+                    if (ImGui::Button("Ajustar para este PC")) {
+                        pending = [this, id = system.id, name = system.name] {
+                            const std::wstring report = TuneEngine(library.Root(), id);
+                            const std::wstring text = L"Ajustes de " + Wide(name) + L" (com o emulador fechado):\n\n" + report;
+                            MessageBoxW(window, text.c_str(), kAppName, MB_OK | MB_ICONINFORMATION);
+                            RefreshEngines();
+                        };
+                    }
+                    ImGui::EndDisabled();
+                }
+            }
+            if (!engine.bios.empty()) {
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextDisabled("BIOS: %s", Utf8(engine.bios).c_str());
+                ImGui::SameLine();
+                if (ImGui::Button("Abrir pasta da BIOS")) {
+                    CreateDirectoryW((library.Root() + L"\\bios").c_str(), nullptr);
+                    CreateDirectoryW(engine.bios.c_str(), nullptr);
+                    ShellExecuteW(window, L"open", engine.bios.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+                }
             }
             if (engine.exe.empty() && !retroArch.empty()) {
                 for (const auto& preset : system.presets) {
