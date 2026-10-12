@@ -140,6 +140,12 @@ struct State {
     ULONGLONG messageUntil = 0;
 } g;
 
+uintptr_t RETRO_CALLCONV HwCurrentFramebuffer();
+retro_proc_address_t RETRO_CALLCONV HwProcAddress(const char* name);
+extern retro_hw_render_callback g_hw;
+extern bool g_hwActive;
+unsigned g_hwFrameWidth = 0, g_hwFrameHeight = 0;
+
 // ------------------------------------------------------------------------------------------------------------- input
 
 constexpr int kPorts = 2;
@@ -394,10 +400,24 @@ bool RETRO_CALLCONV Environment(unsigned command, void* data) {
         case RETRO_ENVIRONMENT_SET_SERIALIZATION_QUIRKS:
             return true;
 
-        // Stage 1 draws in software; a core that needs the GPU says so here and fails to load, and the log tells why.
-        case RETRO_ENVIRONMENT_SET_HW_RENDER:
-            Log("[retro] o core pediu renderização por GPU (SET_HW_RENDER), que esta versão do Ranga Retro ainda não tem\n");
-            return false;
+        // The GPU: OpenGL, compatibility or core profile. Vulkan and Direct3D contexts are refused, and a core then
+        // falls back to another renderer or says it cannot run.
+        case RETRO_ENVIRONMENT_GET_PREFERRED_HW_RENDER:
+            *static_cast<unsigned*>(data) = RETRO_HW_CONTEXT_OPENGL_CORE;
+            return true;
+        case RETRO_ENVIRONMENT_SET_HW_RENDER: {
+            auto* request = static_cast<retro_hw_render_callback*>(data);
+            if (request->context_type != RETRO_HW_CONTEXT_OPENGL && request->context_type != RETRO_HW_CONTEXT_OPENGL_CORE) {
+                Log("[retro] o core pediu um contexto de GPU que o Ranga Retro não tem (tipo %u)\n", static_cast<unsigned>(request->context_type));
+                return false;
+            }
+            request->get_current_framebuffer = HwCurrentFramebuffer;
+            request->get_proc_address = HwProcAddress;
+            g_hw = *request;
+            g_hwActive = true;
+            Log("[retro] o core desenha com OpenGL %s %u.%u\n", request->context_type == RETRO_HW_CONTEXT_OPENGL_CORE ? "core" : "", request->version_major, request->version_minor);
+            return true;
+        }
     }
     return false;
 }
@@ -410,6 +430,13 @@ uint32_t Expand6(uint32_t value) { return (value << 2) | (value >> 4); }
 void RETRO_CALLCONV VideoRefresh(const void* data, unsigned width, unsigned height, size_t pitch) {
     // A null frame repeats the previous one (GET_CAN_DUPE).
     if (data == nullptr || width == 0 || height == 0) return;
+    // A GPU frame is already in the framebuffer; only its size is news.
+    if (data == RETRO_HW_FRAME_BUFFER_VALID) {
+        g_hwFrameWidth = width;
+        g_hwFrameHeight = height;
+        g.frameNew = true;
+        return;
+    }
     g.frame.resize(static_cast<size_t>(width) * height);
     const auto* bytes = static_cast<const uint8_t*>(data);
     for (unsigned y = 0; y < height; ++y) {
@@ -634,6 +661,193 @@ private:
     unsigned textureWidth = 0, textureHeight = 0, frameWidth = 0, frameHeight = 0;
 };
 
+
+// Stage 2: a core that draws with the GPU (SET_HW_RENDER) gets an OpenGL context on the game window and draws into a
+// framebuffer object of Ranga's; each frame is then blitted to the window with the core's aspect ratio. Only the OpenGL
+// entry points this needs are loaded, through wglGetProcAddress.
+namespace gl {
+using GLenum = unsigned;
+using GLuint = unsigned;
+using GLint = int;
+using GLsizei = int;
+using GLbitfield = unsigned;
+constexpr GLenum kFramebuffer = 0x8D40, kReadFramebuffer = 0x8CA8, kDrawFramebuffer = 0x8CA9, kColorAttachment0 = 0x8CE0;
+constexpr GLenum kRenderbuffer = 0x8D41, kDepth24Stencil8 = 0x88F0, kDepthStencilAttachment = 0x821A, kComplete = 0x8CD5;
+constexpr GLenum kTexture2D = 0x0DE1, kRgba8 = 0x8058, kRgba = 0x1908, kUnsignedByte = 0x1401, kLinear = 0x2601;
+constexpr GLenum kTextureMinFilter = 0x2801, kTextureMagFilter = 0x2800, kScissorTest = 0x0C11;
+constexpr GLbitfield kColorBufferBit = 0x4000;
+constexpr int kContextMajor = 0x2091, kContextMinor = 0x2092, kContextProfile = 0x9126, kCoreProfile = 1, kCompatibilityProfile = 2;
+
+void(WINAPI* GenFramebuffers)(GLsizei, GLuint*);
+void(WINAPI* BindFramebuffer)(GLenum, GLuint);
+void(WINAPI* FramebufferTexture2D)(GLenum, GLenum, GLenum, GLuint, GLint);
+void(WINAPI* GenRenderbuffers)(GLsizei, GLuint*);
+void(WINAPI* BindRenderbuffer)(GLenum, GLuint);
+void(WINAPI* RenderbufferStorage)(GLenum, GLenum, GLsizei, GLsizei);
+void(WINAPI* FramebufferRenderbuffer)(GLenum, GLenum, GLenum, GLuint);
+GLenum(WINAPI* CheckFramebufferStatus)(GLenum);
+void(WINAPI* BlitFramebuffer)(GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum);
+BOOL(WINAPI* SwapInterval)(int);
+}
+
+extern "C" {
+__declspec(dllimport) void WINAPI glViewport(int, int, int, int);
+__declspec(dllimport) void WINAPI glClearColor(float, float, float, float);
+__declspec(dllimport) void WINAPI glClear(unsigned);
+__declspec(dllimport) void WINAPI glDisable(unsigned);
+__declspec(dllimport) void WINAPI glColorMask(unsigned char, unsigned char, unsigned char, unsigned char);
+__declspec(dllimport) void WINAPI glGenTextures(int, unsigned*);
+__declspec(dllimport) void WINAPI glBindTexture(unsigned, unsigned);
+__declspec(dllimport) void WINAPI glTexImage2D(unsigned, int, int, int, int, int, unsigned, unsigned, const void*);
+__declspec(dllimport) void WINAPI glTexParameteri(unsigned, unsigned, int);
+__declspec(dllimport) void WINAPI glReadPixels(int, int, int, int, unsigned, unsigned, void*);
+}
+
+retro_hw_render_callback g_hw{};
+bool g_hwActive = false;
+unsigned g_hwFramebuffer = 0;
+HMODULE g_openGl = nullptr;
+
+uintptr_t RETRO_CALLCONV HwCurrentFramebuffer() { return g_hwFramebuffer; }
+
+retro_proc_address_t RETRO_CALLCONV HwProcAddress(const char* name) {
+    void* function = reinterpret_cast<void*>(wglGetProcAddress(name));
+    // wglGetProcAddress answers 0, 1, 2, 3 or -1 for what opengl32.dll exports itself (OpenGL 1.1).
+    const auto value = reinterpret_cast<intptr_t>(function);
+    if (value >= -1 && value <= 3) function = reinterpret_cast<void*>(GetProcAddress(g_openGl, name));
+    return reinterpret_cast<retro_proc_address_t>(function);
+}
+
+template <typename T> bool LoadGl(T& function, const char* name) {
+    function = reinterpret_cast<T>(reinterpret_cast<void*>(HwProcAddress(name)));
+    if (function == nullptr) Log("[retro] OpenGL sem %s\n", name);
+    return function != nullptr;
+}
+
+class GlVideo {
+public:
+    bool Create(HWND window, unsigned width, unsigned height) {
+        dc = GetDC(window);
+        PIXELFORMATDESCRIPTOR format{sizeof(format), 1, PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER, PFD_TYPE_RGBA, 32};
+        format.cDepthBits = 24;
+        format.cStencilBits = 8;
+        if (!SetPixelFormat(dc, ChoosePixelFormat(dc, &format), &format)) return false;
+        g_openGl = LoadLibraryW(L"opengl32.dll");
+        HGLRC legacy = wglCreateContext(dc);
+        if (legacy == nullptr || !wglMakeCurrent(dc, legacy)) return false;
+        context = legacy;
+        // A core profile context of the version the core asked for; a core asking for plain OpenGL keeps the
+        // compatibility context the driver gives, which on NVIDIA is the newest version.
+        using CreateAttribs = HGLRC(WINAPI*)(HDC, HGLRC, const int*);
+        const auto createAttribs = reinterpret_cast<CreateAttribs>(reinterpret_cast<void*>(wglGetProcAddress("wglCreateContextAttribsARB")));
+        if (g_hw.context_type == RETRO_HW_CONTEXT_OPENGL_CORE && createAttribs != nullptr) {
+            const int major = std::max<int>(3, static_cast<int>(g_hw.version_major));
+            const int minor = g_hw.version_major >= 3 ? static_cast<int>(g_hw.version_minor) : 3;
+            const int attributes[] = {gl::kContextMajor, major, gl::kContextMinor, minor, gl::kContextProfile, gl::kCoreProfile, 0};
+            HGLRC core = createAttribs(dc, nullptr, attributes);
+            if (core == nullptr) {
+                Log("[retro] OpenGL %d.%d core não disponível\n", major, minor);
+                return false;
+            }
+            wglMakeCurrent(dc, core);
+            wglDeleteContext(legacy);
+            context = core;
+        }
+        if (!(LoadGl(gl::GenFramebuffers, "glGenFramebuffers") & LoadGl(gl::BindFramebuffer, "glBindFramebuffer") &
+              LoadGl(gl::FramebufferTexture2D, "glFramebufferTexture2D") & LoadGl(gl::GenRenderbuffers, "glGenRenderbuffers") &
+              LoadGl(gl::BindRenderbuffer, "glBindRenderbuffer") & LoadGl(gl::RenderbufferStorage, "glRenderbufferStorage") &
+              LoadGl(gl::FramebufferRenderbuffer, "glFramebufferRenderbuffer") & LoadGl(gl::CheckFramebufferStatus, "glCheckFramebufferStatus") &
+              LoadGl(gl::BlitFramebuffer, "glBlitFramebuffer")))
+            return false;
+        LoadGl(gl::SwapInterval, "wglSwapIntervalEXT");
+        if (gl::SwapInterval != nullptr) gl::SwapInterval(1);
+        gl::GenFramebuffers(1, &g_hwFramebuffer);
+        return Size(width, height);
+    }
+
+    // The core draws up to its largest frame; the framebuffer grows when a new geometry asks for more.
+    bool Size(unsigned width, unsigned height) {
+        if (width <= this->width && height <= this->height) return true;
+        this->width = std::max(width, this->width);
+        this->height = std::max(height, this->height);
+        if (texture == 0) glGenTextures(1, &texture);
+        glBindTexture(gl::kTexture2D, texture);
+        glTexImage2D(gl::kTexture2D, 0, static_cast<int>(gl::kRgba8), static_cast<int>(this->width), static_cast<int>(this->height), 0, gl::kRgba, gl::kUnsignedByte, nullptr);
+        glTexParameteri(gl::kTexture2D, gl::kTextureMinFilter, static_cast<int>(gl::kLinear));
+        glTexParameteri(gl::kTexture2D, gl::kTextureMagFilter, static_cast<int>(gl::kLinear));
+        glBindTexture(gl::kTexture2D, 0);
+        gl::BindFramebuffer(gl::kFramebuffer, g_hwFramebuffer);
+        gl::FramebufferTexture2D(gl::kFramebuffer, gl::kColorAttachment0, gl::kTexture2D, texture, 0);
+        if (g_hw.depth || g_hw.stencil) {
+            if (depth == 0) gl::GenRenderbuffers(1, &depth);
+            gl::BindRenderbuffer(gl::kRenderbuffer, depth);
+            gl::RenderbufferStorage(gl::kRenderbuffer, gl::kDepth24Stencil8, static_cast<int>(this->width), static_cast<int>(this->height));
+            gl::FramebufferRenderbuffer(gl::kFramebuffer, gl::kDepthStencilAttachment, gl::kRenderbuffer, depth);
+        }
+        const bool complete = gl::CheckFramebufferStatus(gl::kFramebuffer) == gl::kComplete;
+        gl::BindFramebuffer(gl::kFramebuffer, 0);
+        Log("[retro] OpenGL: quadro de %ux%u %s\n", this->width, this->height, complete ? "pronto" : "INCOMPLETO");
+        return complete;
+    }
+
+    void Present(unsigned frameWidth, unsigned frameHeight, float aspect) {
+        RECT client{};
+        GetClientRect(g_window, &client);
+        gl::BindFramebuffer(gl::kDrawFramebuffer, 0);
+        glDisable(gl::kScissorTest);
+        glColorMask(1, 1, 1, 1);
+        glViewport(0, 0, client.right, client.bottom);
+        glClearColor(0, 0, 0, 1);
+        glClear(gl::kColorBufferBit);
+        if (frameWidth != 0 && frameHeight != 0 && client.right > 0 && client.bottom > 0) {
+            if (aspect <= 0) aspect = static_cast<float>(frameWidth) / static_cast<float>(frameHeight);
+            float w = static_cast<float>(client.right), h = w / aspect;
+            if (h > static_cast<float>(client.bottom)) {
+                h = static_cast<float>(client.bottom);
+                w = h * aspect;
+            }
+            const int x0 = static_cast<int>((static_cast<float>(client.right) - w) / 2), y0 = static_cast<int>((static_cast<float>(client.bottom) - h) / 2);
+            gl::BindFramebuffer(gl::kReadFramebuffer, g_hwFramebuffer);
+            // OpenGL's origin is the bottom left; a core that draws top-down is flipped on the way.
+            const int top = g_hw.bottom_left_origin ? static_cast<int>(frameHeight) : 0, bottom = g_hw.bottom_left_origin ? 0 : static_cast<int>(frameHeight);
+            gl::BlitFramebuffer(0, bottom, static_cast<int>(frameWidth), top, x0, y0, x0 + static_cast<int>(w), y0 + static_cast<int>(h), gl::kColorBufferBit, gl::kLinear);
+            gl::BindFramebuffer(gl::kReadFramebuffer, 0);
+        }
+        // RANGA_RETRO_PROBE=1 logs a few pixels of the core's frame and of the window every two seconds.
+        static const bool probe = std::getenv("RANGA_RETRO_PROBE") != nullptr;
+        static ULONGLONG probeAt = 0;
+        if (probe && GetTickCount64() - probeAt > 2000 && frameWidth != 0) {
+            probeAt = GetTickCount64();
+            unsigned char core[4] = {}, shown[4] = {};
+            unsigned bright = 0;
+            gl::BindFramebuffer(gl::kReadFramebuffer, g_hwFramebuffer);
+            for (unsigned i = 1; i < 8; ++i) {
+                unsigned char pixel[4] = {};
+                glReadPixels(static_cast<int>(frameWidth * i / 8), static_cast<int>(frameHeight * i / 8), 1, 1, gl::kRgba, gl::kUnsignedByte, pixel);
+                bright = std::max<unsigned>(bright, pixel[0] + pixel[1] + pixel[2]);
+                if (i == 4) std::memcpy(core, pixel, 4);
+            }
+            gl::BindFramebuffer(gl::kReadFramebuffer, 0);
+            glReadPixels(client.right / 2, client.bottom / 2, 1, 1, gl::kRgba, gl::kUnsignedByte, shown);
+            Log("[retro] sonda: quadro %ux%u, centro do core %u,%u,%u, mais claro %u, centro da janela %u,%u,%u\n", frameWidth, frameHeight,
+                core[0], core[1], core[2], bright, shown[0], shown[1], shown[2]);
+        }
+        SwapBuffers(dc);
+    }
+
+    ~GlVideo() {
+        if (context != nullptr) {
+            wglMakeCurrent(nullptr, nullptr);
+            wglDeleteContext(context);
+        }
+    }
+
+private:
+    HDC dc = nullptr;
+    HGLRC context = nullptr;
+    unsigned texture = 0, depth = 0, width = 0, height = 0;
+};
+
 // ------------------------------------------------------------------------------------------------------------ window
 
 bool g_running = true, g_resized = false, g_fullscreen = false;
@@ -752,15 +966,20 @@ struct Saves {
     }
 };
 
-// Ranga's own defaults for a core, applied before the game's options file, which can still change any of them.
-// SwanStation draws in software until Ranga Retro hands cores a GPU context, and boots with the PS1 BIOS inside the
-// PS3 firmware Sony publishes (ps1_rom.bin, taken from RPCS3's dev_flash), which serves every region.
+// Ranga's own defaults for a core, applied before the game's options file, which can still change any of them: the
+// OpenGL renderer at about 1080p, and for SwanStation the PS1 BIOS inside the PS3 firmware Sony publishes (ps1_rom.bin,
+// taken from RPCS3's dev_flash), which serves every region.
 void ApplyCoreDefaults(const std::wstring& corePath) {
     std::wstring name = corePath.substr(corePath.find_last_of(L"\\/") + 1);
     for (auto& character : name) character = static_cast<wchar_t>(towlower(character));
     struct Default { const wchar_t* core; const char* key; const char* value; };
     static const Default defaults[] = {
-        {L"swanstation", "swanstation_GPU_Renderer", "Software"},
+        {L"swanstation", "swanstation_GPU_Renderer", "OpenGL"},
+        {L"swanstation", "swanstation_GPU_ResolutionScale", "5"},
+        {L"melondsds", "melonds_render_mode", "opengl"},
+        {L"melondsds", "melonds_opengl_resolution", "4"},
+        {L"mupen64plus_next", "mupen64plus-rdp-plugin", "gliden64"},
+        {L"mupen64plus_next", "mupen64plus-43screensize", "1440x1080"},
         {L"swanstation", "swanstation_BIOS_PathNTSCU", "ps1_rom.bin"},
         {L"swanstation", "swanstation_BIOS_PathNTSCJ", "ps1_rom.bin"},
         {L"swanstation", "swanstation_BIOS_PathPAL", "ps1_rom.bin"},
@@ -805,12 +1024,14 @@ int RetroMain(int argc, wchar_t** argv) {
         else if (arg == L"--saves" && hasValue) saveDir = argv[++i];
         else if (arg == L"--options" && hasValue) optionsPath = argv[++i];
         else if (arg == L"--fullscreen") fullscreen = true;
+        else if (arg == L"--no-game") romPath = L"<sem jogo>";
     }
+    const bool noGame = romPath == L"<sem jogo>";
     if (corePath.empty() || romPath.empty()) {
         Log("uso: ranga_retro --core <core.dll> --rom <jogo> [--title t] [--system pasta] [--saves pasta] [--options arquivo] [--fullscreen]\n");
         return 2;
     }
-    if (saveDir.empty()) saveDir = romPath.substr(0, romPath.find_last_of(L"\\/"));
+    if (saveDir.empty()) saveDir = noGame ? L"." : romPath.substr(0, romPath.find_last_of(L"\\/"));
     if (systemDir.empty()) systemDir = saveDir;
     CreateDirectoryW(saveDir.c_str(), nullptr);
     g.systemDir = Utf8(systemDir);
@@ -848,12 +1069,14 @@ int RetroMain(int argc, wchar_t** argv) {
     const std::string romUtf8 = Utf8(romPath);
     std::vector<unsigned char> romData;
     retro_game_info game{romUtf8.c_str(), nullptr, 0, nullptr};
-    if (!info.need_fullpath) {
+    if (!info.need_fullpath && !noGame) {
         romData = ReadFile(romPath);
         game.data = romData.data();
         game.size = romData.size();
     }
-    if (!g.core.loadGame(&game)) {
+    // The window exists before the game loads, so a GPU context can be made on it right after.
+    g_window = CreateGameWindow(title);
+    if (!g.core.loadGame(noGame ? nullptr : &game)) {
         Log("[retro] o core recusou o jogo %s\n", romUtf8.c_str());
         g.core.deinit();
         return 4;
@@ -863,14 +1086,20 @@ int RetroMain(int argc, wchar_t** argv) {
     g.core.getAvInfo(&g.av);
     Log("[retro] %ux%u, %.3f fps, som %.0f Hz\n", g.av.geometry.base_width, g.av.geometry.base_height, g.av.timing.fps, g.av.timing.sample_rate);
 
-    std::wstring romName = romPath.substr(romPath.find_last_of(L"\\/") + 1);
+    std::wstring romName = noGame ? L"sem-jogo" : romPath.substr(romPath.find_last_of(L"\\/") + 1);
     romName = romName.substr(0, romName.find_last_of(L'.'));
     Saves saves{saveDir + L"\\" + romName + L".srm", saveDir + L"\\" + romName + L".state"};
     saves.LoadSram();
 
-    g_window = CreateGameWindow(title);
     Video video;
-    if (!video.Create(g_window)) {
+    GlVideo glVideo;
+    if (g_hwActive) {
+        if (!glVideo.Create(g_window, std::max(1u, g.av.geometry.max_width), std::max(1u, g.av.geometry.max_height))) {
+            Log("[retro] OpenGL não iniciou\n");
+            return 5;
+        }
+        if (g_hw.context_reset != nullptr) g_hw.context_reset();
+    } else if (!video.Create(g_window)) {
         Log("[retro] Direct3D 11 não iniciou\n");
         return 5;
     }
@@ -907,7 +1136,7 @@ int RetroMain(int argc, wchar_t** argv) {
         if (g_hotkey == VK_F7) saves.LoadState();
         g_hotkey = 0;
         if (g_resized) {
-            video.Resize();
+            if (!g_hwActive) video.Resize();
             g_resized = false;
         }
         if (IsIconic(g_window)) {
@@ -946,12 +1175,18 @@ int RetroMain(int argc, wchar_t** argv) {
         }
         audio.Push(g.audio, g.av.timing.sample_rate);
         g.audio.clear();
-        if (g.frameNew) {
-            video.Upload(g.frame, g.frameWidth, g.frameHeight);
-            g.frameNew = false;
-        }
         const float aspect = g.av.geometry.aspect_ratio > 0 ? g.av.geometry.aspect_ratio : 0;
-        video.Draw(aspect, true);
+        if (g_hwActive) {
+            glVideo.Size(g.av.geometry.max_width, g.av.geometry.max_height);
+            g.frameNew = false;
+            glVideo.Present(g_hwFrameWidth, g_hwFrameHeight, aspect);
+        } else {
+            if (g.frameNew) {
+                video.Upload(g.frame, g.frameWidth, g.frameHeight);
+                g.frameNew = false;
+            }
+            video.Draw(aspect, true);
+        }
 
         const ULONGLONG tick = GetTickCount64();
         if (tick - lastSave > 10000) {
@@ -970,6 +1205,9 @@ int RetroMain(int argc, wchar_t** argv) {
         }
     }
     saves.FlushSram();
+    // The context goes first, while the game is still loaded: SwanStation, told its context is lost, switches to its
+    // software renderer, which needs the game's system still there.
+    if (g_hwActive && g_hw.context_destroy != nullptr) g_hw.context_destroy();
     g.core.unloadGame();
     g.core.deinit();
     for (auto* pad : g_pads) if (pad != nullptr) SDL_GameControllerClose(pad);
