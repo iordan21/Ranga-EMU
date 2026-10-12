@@ -54,9 +54,7 @@ const Preset kMesen = {L"Mesen", L"mesen", L"{fullscreen} \"{rom}\"", L"--fullsc
 std::vector<System> MakeSystems() {
     const char* bios = "Precisa da BIOS tirada do seu console, configurada no emulador.";
     std::vector<System> systems = {
-        {L"PS4", "PlayStation 4", {}, true,
-         {{L"shadPS4", L"shadps4", L"{fullscreen} -g \"{rom}\"", L"--fullscreen true", {}, L"", true}},
-         "Aponte o shadPS4.exe (o emulador), não o shadPS4QtLauncher. O Bloodborne continua no port nativo do Ranga. A pasta do jogo é a que tem eboot.bin e sce_sys."},
+        // No PS4 here: of the PS4, Ranga runs only Bloodborne, as an experiment, through its port (Library.cpp).
         {L"PS3", "PlayStation 3", {L".iso"}, true,
          {{L"RPCS3", L"rpcs3", L"--no-gui {fullscreen} \"{rom}\"", L"--fullscreen",
            {{L"GuiConfigs\\CurrentSettings.ini", "main_window", "infoBoxEnabledWelcome", "false"}}, L"", true}},
@@ -173,7 +171,7 @@ std::vector<System> MakeSystems() {
          "O .zip tem que ser da versão de romset que o core ou o MAME pede."},
     };
     // What Ranga Retro runs itself, by the core it loads; cores that draw with the GPU get Vulkan or OpenGL. Consoles with
-    // no core here (PS3, PS4, Xbox 360) stay with their emulator in Ranga's window. Wii U (Cemu), Xbox (xemu) and Switch
+    // no core here (PS3, Xbox 360) stay with their emulator in Ranga's window. Wii U (Cemu), Xbox (xemu) and Switch
     // (Eden, Ranga's own core from eden-libretro, which draws in the game window itself) have no save states natively;
     // mode=external gives them back to the full emulator.
     const std::pair<const wchar_t*, const wchar_t*> native[] = {
@@ -783,7 +781,6 @@ Detected DetectFolder(const std::wstring& folder) {
 
 std::wstring GameRom(const std::wstring& system, const std::wstring& path) {
     if (!IsDirectory(path)) return Exists(path) ? path : L"";
-    if (system == L"PS4") return Exists(path + L"\\eboot.bin") ? path + L"\\eboot.bin" : L"";
     if (system == L"PS3") {
         for (const wchar_t* eboot : {L"\\PS3_GAME\\USRDIR\\EBOOT.BIN", L"\\USRDIR\\EBOOT.BIN"}) {
             if (Exists(path + eboot)) return path + eboot;

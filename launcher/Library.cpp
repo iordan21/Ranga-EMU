@@ -155,11 +155,17 @@ int Library::Add(const std::wstring& folder, std::wstring& error) {
             return Store(key, folder, found.systems[0], found.serial, found.title, error);
         }
         error = L"Não reconheci o jogo nesta pasta:\n\n" + folder +
-                L"\n\nPasta de jogo é a de PS5 ou PS4 (com eboot.bin e sce_sys), PS3 (com PS3_GAME ou USRDIR), Xbox 360 (com default.xex) ou Wii U (com code e meta). Para ISO, ROM e outros arquivos, use \"Arquivo do jogo\".";
+                L"\n\nPasta de jogo é a de PS5 ou do Bloodborne (com eboot.bin e sce_sys), PS3 (com PS3_GAME ou USRDIR), Xbox 360 (com default.xex) ou Wii U (com code e meta). Para ISO, ROM e outros arquivos, use \"Arquivo do jogo\".";
         return -1;
     }
     if (!ReadGameInfo(folder, game)) {
         error = L"Não deu para ler sce_sys\\param.json (PS5) nem sce_sys\\param.sfo (PS4) em:\n\n" + folder;
+        return -1;
+    }
+    // PS4 is not one of Ranga's consoles: only Bloodborne runs, through its port, as an experiment.
+    if (game.system == L"PS4" && !ProfileFor(game.titleId).bloodborne) {
+        error = L"O Ranga não roda jogos de PS4: " + game.title + L" (" + game.titleId +
+                L") ficou de fora. Do PS4, só o Bloodborne (CUSA03173), como experimento, pelo port dele.";
         return -1;
     }
     return Store(game.titleId, folder, game.system, L"", game.title, error);

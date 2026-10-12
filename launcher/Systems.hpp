@@ -6,8 +6,8 @@
 #include <string>
 #include <vector>
 
-// The consoles whose games other emulators run for the client. PS5 games go to Ranga's own runtime and Bloodborne to its
-// native port; everything else is started through an emulator the user downloaded and pointed at, never one the client
+// The consoles whose games other emulators run for the client. PS5 games go to Ranga's own runtime and Bloodborne, the only
+// PS4 game it runs, as an experiment, to its native port; everything else is started through an emulator the user downloaded and pointed at, never one the client
 // fetches itself.
 namespace Ranga {
 
@@ -46,7 +46,7 @@ struct System {
     std::string name;
     // Lower-case extensions its games can have, each with its dot.
     std::vector<std::wstring> extensions;
-    // Its games can also be a folder: a PS4 or PS3 dump, an extracted Xbox 360 or Wii U game.
+    // Its games can also be a folder: a PS3 dump, an extracted Xbox 360 or Wii U game.
     bool folders = false;
     std::vector<Preset> presets;
     // What the emulator needs besides the game, shown on the Emulators page.
@@ -107,7 +107,7 @@ struct Detected {
 };
 
 Detected DetectFile(const std::wstring& path);
-// PS3, Xbox 360 and Wii U game folders; PS5 and PS4 folders are read by ReadGameInfo.
+// PS3, Xbox 360 and Wii U game folders; PS5 folders and Bloodborne's are read by ReadGameInfo.
 Detected DetectFolder(const std::wstring& folder);
 // The file the emulator opens for a game kept at path: the file itself, or the executable inside a game folder. Empty
 // when it is not there.

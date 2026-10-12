@@ -285,7 +285,7 @@ struct Client {
     }
 
     void AddGame() {
-        const std::wstring folder = PickFolder(window, library.Root(), L"Escolha a pasta do jogo (PS5, PS4, PS3, Xbox 360 ou Wii U)");
+        const std::wstring folder = PickFolder(window, library.Root(), L"Escolha a pasta do jogo (PS5, Bloodborne, PS3, Xbox 360 ou Wii U)");
         if (folder.empty()) return;
         std::wstring error;
         const int index = library.Add(folder, error);
@@ -414,7 +414,7 @@ struct Client {
             const Profile gameProfile = ProfileFor(game.titleId);
             const bool missing = !GameAvailable(game);
             bool ready = gameProfile.tested;
-            std::string status = gameProfile.bloodborne ? "port nativo (PS4)" : gameProfile.tested ? "testado" : "experimental";
+            std::string status = gameProfile.bloodborne ? "experimento (PS4)" : gameProfile.tested ? "testado" : "experimental";
             if (External(game)) {
                 const Engine& engine = EngineFor(game.system);
                 ready = engine.ready;
@@ -454,7 +454,7 @@ struct Client {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8 * scale, 8 * scale));
         if (ImGui::BeginPopup("##add")) {
             if (ImGui::Selectable("Pasta do jogo...")) pending = [this] { AddGame(); };
-            ImGui::TextDisabled("   PS5, PS4, PS3, Xbox 360, Wii U");
+            ImGui::TextDisabled("   PS5, Bloodborne, PS3, Xbox 360, Wii U");
             ImGui::Separator();
             if (ImGui::Selectable("Arquivo do jogo...")) pending = [this] { AddGameFile(); };
             ImGui::TextDisabled("   ISO, CHD, ROM, NSP, WBFS e outros");
@@ -512,7 +512,7 @@ struct Client {
             if (ImGui::Checkbox("Pular a intro", &options.skipIntro)) Save();
             ImGui::Dummy(ImVec2(0, 4 * scale));
             ImGui::PushTextWrapPos(0);
-            ImGui::TextDisabled("Roda pelo port nativo do Bloodborne (deadinside28, Mrsuss60 e shadPS4, licença GPL), não pelo emulador de PS5. Precisa da versão 1.09 com a atualização mesclada na pasta do jogo e do Python 3.10 ou mais novo.");
+            ImGui::TextDisabled("Experimento: o Ranga não roda jogos de PS4, só este. Roda pelo port nativo do Bloodborne (deadinside28, Mrsuss60 e shadPS4, licença GPL), não pelo emulador de PS5. Precisa da versão 1.09 com a atualização mesclada na pasta do jogo e do Python 3.10 ou mais novo.");
             ImGui::TextDisabled("No jogo, Insert ou L3 + R3 abre o menu de gráficos e FSR.");
             ImGui::PopTextWrapPos();
         } else if (External(game)) {
@@ -758,7 +758,7 @@ struct Client {
         ImGui::PushFont(semibold, 28);
         ImGui::TextUnformatted("Emuladores");
         ImGui::PopFont();
-        ImGui::TextDisabled("Jogos de PS5 rodam no Ranga e o Bloodborne no port nativo. Cada outro console roda no emulador que você escolher aqui. O Ranga não baixa nenhum: baixe do site oficial, extraia onde quiser e aponte o .exe. BIOS, firmware e chaves vêm do seu próprio console.");
+        ImGui::TextDisabled("Jogos de PS5 rodam no Ranga e o Bloodborne, como experimento, no port nativo; outros jogos de PS4 não rodam. Cada outro console roda no emulador que você escolher aqui. O Ranga não baixa nenhum: baixe do site oficial, extraia onde quiser e aponte o .exe. BIOS, firmware e chaves vêm do seu próprio console.");
         ImGui::Dummy(ImVec2(0, 6 * scale));
         if (ImGui::Button("Voltar para o jogo")) enginesPage = false;
         ImGui::SameLine();
@@ -955,7 +955,7 @@ struct Client {
         if (!game->version.empty()) meta += "   ·   v" + Utf8(game->version);
         ImGui::TextDisabled("%s", meta.c_str());
         ImGui::SameLine();
-        std::string tag = profile.bloodborne ? "port nativo" : profile.tested ? "testado" : "experimental";
+        std::string tag = profile.bloodborne ? "experimento" : profile.tested ? "testado" : "experimental";
         bool good = profile.tested;
         if (External(*game)) {
             const Engine& engine = EngineFor(game->system);

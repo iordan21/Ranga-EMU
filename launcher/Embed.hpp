@@ -5,8 +5,8 @@
 
 #include <string>
 
-// Shows another emulator's game inside a window of Ranga's own, for the consoles no libretro core covers (PS3, PS4,
-// Switch, Wii U, Xbox, Xbox 360). The emulator's largest window is made a borderless, menuless child of the host window,
+// Shows another emulator's game inside a window of Ranga's own, for the consoles no libretro core covers (PS3, Xbox 360,
+// and Switch, Wii U, Xbox with mode=external). The emulator's largest window is made a borderless, menuless child of the host window,
 // which takes the game's title, its place on the taskbar and its close button.
 namespace Ranga {
 
