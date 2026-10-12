@@ -709,6 +709,16 @@ Detected DetectFile(const std::wstring& path) {
     } else if (extension == L".chd") {
         disc.systems = ChdSystems(path);
         known = true;
+    } else if (extension == L".pbp") {
+        // A PBP holds a PS1 disc when its PSAR section starts with PSISOIMG (one disc) or PSTITLEIMG (several);
+        // otherwise it is a PSP program.
+        Reader reader(path);
+        const std::string header = reader.At(0, 0x28);
+        if (header.size() == 0x28 && header.compare(0, 4, std::string("\0PBP", 4)) == 0) {
+            const std::string psar = reader.At(Le32(header, 0x24), 12);
+            disc.systems = {psar.rfind("PSISOIMG", 0) == 0 || psar.rfind("PSTITLEIMG", 0) == 0 ? L"PS1" : L"PSP"};
+            known = true;
+        }
     } else if (extension == L".rvz" || extension == L".wia" || extension == L".gcz" || extension == L".ciso" || extension == L".gcm" || extension == L".wbfs") {
         known = DetectNintendoDisc(path, extension, disc);
     } else if (extension == L".iso" || extension == L".bin" || extension == L".img") {

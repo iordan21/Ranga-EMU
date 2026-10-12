@@ -188,6 +188,58 @@ int Library::Store(const std::wstring& key, const std::wstring& path, const std:
     return -1;
 }
 
+void Library::AddRomFolder(const std::wstring& folder, int& added, int& ambiguous, int& unknown) {
+    added = ambiguous = unknown = 0;
+    std::vector<std::wstring> files;
+    const auto list = [&](const std::wstring& directory, bool descend) {
+        WIN32_FIND_DATAW found;
+        HANDLE search = FindFirstFileW((directory + L"\\*").c_str(), &found);
+        if (search == INVALID_HANDLE_VALUE) return std::vector<std::wstring>{};
+        std::vector<std::wstring> folders;
+        do {
+            const std::wstring name = found.cFileName;
+            if (name == L"." || name == L"..") continue;
+            if ((found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+                if (descend) folders.push_back(directory + L"\\" + name);
+            } else {
+                files.push_back(directory + L"\\" + name);
+            }
+        } while (FindNextFileW(search, &found));
+        FindClose(search);
+        return folders;
+    };
+    for (const auto& inner : list(folder, true)) list(inner, false);
+    // A track named by a cue sheet beside it is part of that disc, not a game of its own.
+    std::vector<std::wstring> sheets;
+    for (const auto& file : files) {
+        if (Extension(file) == L".cue" || Extension(file) == L".m3u") sheets.push_back(Lower(file.substr(0, file.find_last_of(L'.'))));
+    }
+    EnsureUnicodeIni(IniPath());
+    for (const auto& file : files) {
+        const std::wstring extension = Extension(file);
+        if ((extension == L".bin" || extension == L".img") &&
+            std::find(sheets.begin(), sheets.end(), Lower(file.substr(0, file.find_last_of(L'.')))) != sheets.end())
+            continue;
+        const Detected found = DetectFile(file);
+        if (found.systems.empty()) {
+            ++unknown;
+            continue;
+        }
+        if (found.systems.size() > 1) {
+            ++ambiguous;
+            continue;
+        }
+        const std::wstring key = FileKey(found.systems[0], file);
+        WritePrivateProfileStringW(key.c_str(), L"folder", file.c_str(), IniPath().c_str());
+        WritePrivateProfileStringW(key.c_str(), L"title", found.title.c_str(), IniPath().c_str());
+        WritePrivateProfileStringW(key.c_str(), L"system", found.systems[0].c_str(), IniPath().c_str());
+        if (!found.serial.empty()) WritePrivateProfileStringW(key.c_str(), L"serial", found.serial.c_str(), IniPath().c_str());
+        ExtractArt(found.systems[0], file, root + L"\\games\\" + key + L"\\art");
+        ++added;
+    }
+    Load();
+}
+
 void Library::Relocate(const std::wstring& titleId, const std::wstring& path) {
     WritePrivateProfileStringW(titleId.c_str(), L"folder", path.c_str(), IniPath().c_str());
     Load();

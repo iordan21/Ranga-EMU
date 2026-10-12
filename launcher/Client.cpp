@@ -314,6 +314,21 @@ struct Client {
         AddDetected(path, found, found.systems[0]);
     }
 
+    void AddRomFolder() {
+        const std::wstring folder = PickFolder(window, L"", L"Escolha a pasta com os jogos (ROMs, ISOs, CHDs...)");
+        if (folder.empty()) return;
+        SetCursor(LoadCursorW(nullptr, IDC_WAIT));
+        int added = 0, ambiguous = 0, unknown = 0;
+        library.AddRomFolder(folder, added, ambiguous, unknown);
+        RefreshEngines();
+        std::wstring text = std::to_wstring(added) + L" jogo(s) adicionado(s).";
+        if (ambiguous > 0) text += L"\n" + std::to_wstring(ambiguous) + L" arquivo(s) servem para mais de um console e o Ranga não conseguiu ler qual: adicione esses por \"Arquivo do jogo\".";
+        if (unknown > 0) text += L"\n" + std::to_wstring(unknown) + L" arquivo(s) não são de nenhum console que o Ranga conhece.";
+        MessageBoxW(window, text.c_str(), kAppName, MB_OK | MB_ICONINFORMATION);
+        enginesPage = false;
+        if (selected < 0 && !library.Games().empty()) Select(0);
+    }
+
     void AddDetected(const std::wstring& path, const Detected& found, const std::wstring& system) {
         std::wstring error;
         const int index = library.AddFile(path, system, found.serial, found.title, error);
@@ -443,6 +458,9 @@ struct Client {
             ImGui::Separator();
             if (ImGui::Selectable("Arquivo do jogo...")) pending = [this] { AddGameFile(); };
             ImGui::TextDisabled("   ISO, CHD, ROM, NSP, WBFS e outros");
+            ImGui::Separator();
+            if (ImGui::Selectable("Pasta de ROMs (vários jogos)...")) pending = [this] { AddRomFolder(); };
+            ImGui::TextDisabled("   Todos os jogos da pasta de uma vez");
             ImGui::EndPopup();
         }
         ImGui::PopStyleVar();

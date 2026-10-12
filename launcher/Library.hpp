@@ -63,6 +63,10 @@ public:
     int Add(const std::wstring& folder, std::wstring& error);
     // Adds a game file of another console, once its console is known.
     int AddFile(const std::wstring& path, const std::wstring& system, const std::wstring& serial, const std::wstring& title, std::wstring& error);
+    // Adds every game file in folder and the folders right inside it whose console the file itself tells; a .bin or
+    // .img with a cue sheet of the same name goes in through the cue sheet. Counts what went in, what fits several
+    // consoles (to add one by one) and what no console takes.
+    void AddRomFolder(const std::wstring& folder, int& added, int& ambiguous, int& unknown);
     // Points an entry of another console at the place its files moved to, keeping its key and workspace.
     void Relocate(const std::wstring& titleId, const std::wstring& path);
     void Remove(size_t index);
