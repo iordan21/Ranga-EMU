@@ -1374,10 +1374,13 @@ int RetroMain(int argc, wchar_t** argv) {
     const ULONGLONG quitAt = quitAfter != nullptr ? GetTickCount64() + std::strtoull(quitAfter, nullptr, 10) : 0;
     while (g_running) {
         if (quitAt != 0 && GetTickCount64() >= quitAt) g_running = false;
+        // At most one WM_PAINT a turn: a core's own window that repaints itself on every paint (Xenia's) would otherwise
+        // keep this loop in the message queue for good, since Windows hands out WM_PAINT whenever the queue is empty.
         MSG message;
-        while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+        for (int pending = 0; pending < 256 && PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE); ++pending) {
             TranslateMessage(&message);
             DispatchMessageW(&message);
+            if (message.message == WM_PAINT) break;
         }
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
@@ -1480,12 +1483,13 @@ int RetroMain(int argc, wchar_t** argv) {
             lastSave = tick;
         }
         if (tick - fpsStart >= 1000) {
-            // A core drawing by itself shows frames at its own pace; its count is the one that means anything.
-            const double measured = g_coreDraws && g_coreFps >= 0 ? g_coreFps : fpsFrames * 1000.0 / static_cast<double>(tick - fpsStart);
+            // A core drawing by itself shows frames at its own pace; its count is the one that means anything, and a
+            // core that reports none (Xenia counts no frames) gets no number rather than Ranga's loop rate.
+            const double measured = g_coreDraws ? g_coreFps : fpsFrames * 1000.0 / static_cast<double>(tick - fpsStart);
             fpsFrames = 0;
             fpsStart = tick;
-            wchar_t text[64];
-            std::swprintf(text, 64, L" | %.0f FPS", measured);
+            wchar_t text[64] = L"";
+            if (measured >= 0) std::swprintf(text, 64, L" | %.0f FPS", measured);
             std::wstring next = L"Ranga Emu - " + title + text;
             if (tick < g.messageUntil) next += L" | " + g.message;
             if (next != shownTitle) SetWindowTextW(g_window, (shownTitle = next).c_str());

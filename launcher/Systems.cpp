@@ -159,7 +159,8 @@ std::vector<System> MakeSystems() {
          "bios\\retroarch\\xemu, sem save state e só com o controle 1. O jogo tem que ser ISO ou XISO."},
         {L"X360", "Xbox 360", {L".iso", L".xex", L".zar"}, true,
          {{L"Xenia Canary", L"xenia", L"{fullscreen} \"{rom}\"", L"--fullscreen=true", {}, L"", true}},
-         "Jogo em ISO, ou pasta com default.xex."},
+         "Jogo em ISO, ou pasta com default.xex. No nativo (core do Xenia feito para o Ranga) os saves ficam no content do "
+         "Xenia portátil, sem save state."},
         {L"PCE", "PC Engine / TurboGrafx-16", {L".pce", L".sgx"}, false,
          {RetroArch(L"mednafen_pce_fast"), RetroArch(L"mednafen_pce")},
          "Não precisa de BIOS (só os jogos em CD)."},
@@ -171,16 +172,16 @@ std::vector<System> MakeSystems() {
          "O .zip tem que ser da versão de romset que o core ou o MAME pede."},
     };
     // What Ranga Retro runs itself, by the core it loads; cores that draw with the GPU get Vulkan or OpenGL. Consoles with
-    // no core here (PS3, Xbox 360) stay with their emulator in Ranga's window. Wii U (Cemu), Xbox (xemu) and Switch
-    // (Eden, Ranga's own core from eden-libretro, which draws in the game window itself) have no save states natively;
-    // mode=external gives them back to the full emulator.
+    // no core here (PS3) stay with their emulator in Ranga's window. Wii U (Cemu), Xbox (xemu), Switch (Eden) and Xbox
+    // 360 (Xenia) have no save states natively; the last two are Ranga's own cores (eden-libretro, xenia-libretro), whose
+    // emulator draws in the game window itself. mode=external gives any of them back to the full emulator.
     const std::pair<const wchar_t*, const wchar_t*> native[] = {
         {L"SNES", L"snes9x"}, {L"NES", L"mesen"}, {L"MD", L"genesis_plus_gx"}, {L"SMS", L"genesis_plus_gx"},
         {L"SEGACD", L"genesis_plus_gx"}, {L"SATURN", L"mednafen_saturn"}, {L"PCE", L"mednafen_pce_fast"},
         {L"A2600", L"stella"}, {L"ARCADE", L"fbneo"}, {L"GBA", L"mgba"}, {L"GB", L"gambatte"}, {L"PS1", L"swanstation"},
         {L"NDS", L"melondsds"}, {L"PSP", L"ppsspp"}, {L"DC", L"flycast"}, {L"PS2", L"pcsx2"}, {L"GC", L"dolphin"}, {L"WII", L"dolphin"},
         {L"3DS", L"azahar"}, {L"N64", L"mupen64plus_next"}, {L"WIIU", L"cemu"}, {L"XBOX", L"xemu"},
-        {L"SWITCH", L"eden"},
+        {L"SWITCH", L"eden"}, {L"X360", L"xenia"},
     };
     for (auto& system : systems) {
         for (const auto& [id, core] : native) {
