@@ -1,5 +1,6 @@
 #include "Runner.hpp"
 #include "Dlss5.hpp"
+#include "Embed.hpp"
 #include "Systems.hpp"
 
 #include <cstdio>
@@ -354,7 +355,8 @@ void Runner::RunExternal(const std::wstring& root, const Game& game, const Optio
         DisableDlss5(exeFolder, workspace);
     }
 
-    std::wstring command = EngineCommand(engine, rom, options.borderless);
+    // An embedded emulator stays windowed inside Ranga's window, which goes fullscreen instead.
+    std::wstring command = EngineCommand(engine, rom, options.borderless && !engine.embed);
     {
         // The exact command goes to the log first, so a wrong argument shows there.
         const std::string line = "> " + Utf8(command) + "\r\n";
@@ -381,6 +383,7 @@ void Runner::RunExternal(const std::wstring& root, const Game& game, const Optio
     AllowSetForegroundWindow(ASFW_ANY);
     const std::wstring emulator = engine.presetName.empty() ? FileName(engine.exe) : engine.presetName;
     Report(State::Running, L"Rodando " + game.title + L" no " + emulator + L"...");
+    if (engine.embed) EmbedUntilExit(process, game.title, options.borderless);
     Await(process, logs, game, L"game.log");
 }
 

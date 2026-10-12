@@ -55,11 +55,11 @@ std::vector<System> MakeSystems() {
     const char* bios = "Precisa da BIOS tirada do seu console, configurada no emulador.";
     return {
         {L"PS4", "PlayStation 4", {}, true,
-         {{L"shadPS4", L"shadps4", L"{fullscreen} -g \"{rom}\"", L"--fullscreen true"}},
+         {{L"shadPS4", L"shadps4", L"{fullscreen} -g \"{rom}\"", L"--fullscreen true", {}, L"", true}},
          "Aponte o shadPS4.exe (o emulador), não o shadPS4QtLauncher. O Bloodborne continua no port nativo do Ranga. A pasta do jogo é a que tem eboot.bin e sce_sys."},
         {L"PS3", "PlayStation 3", {L".iso"}, true,
          {{L"RPCS3", L"rpcs3", L"--no-gui {fullscreen} \"{rom}\"", L"--fullscreen",
-           {{L"GuiConfigs\\CurrentSettings.ini", "main_window", "infoBoxEnabledWelcome", "false"}}}},
+           {{L"GuiConfigs\\CurrentSettings.ini", "main_window", "infoBoxEnabledWelcome", "false"}}, L"", true}},
          "Instale no RPCS3 o firmware do PS3 (PS3UPDAT.PUP, do site da Sony). Jogo em pasta (com PS3_GAME ou USRDIR) ou ISO."},
         {L"PS2", "PlayStation 2", {L".iso", L".chd", L".cso", L".zso", L".bin", L".cue", L".gz", L".mdf", L".img", L".m3u", L".elf"}, false,
          {{L"PCSX2", L"pcsx2", L"-batch {fullscreen} -- \"{rom}\"", L"-fullscreen",
@@ -90,11 +90,11 @@ std::vector<System> MakeSystems() {
           RetroArch(L"ppsspp")},
          "Não precisa de BIOS."},
         {L"SWITCH", "Nintendo Switch", {L".nsp", L".xci", L".nca", L".nro", L".nso"}, false,
-         {{L"Ryujinx", L"ryujinx", L"{fullscreen} \"{rom}\"", L"--fullscreen"},
-          {L"Eden / Citron (família yuzu)", L"eden;citron;sudachi;suyu;yuzu;torzu", L"{fullscreen} -g \"{rom}\"", L"-f"}},
+         {{L"Ryujinx", L"ryujinx", L"{fullscreen} \"{rom}\"", L"--fullscreen", {}, L"", true},
+          {L"Eden / Citron (família yuzu)", L"eden;citron;sudachi;suyu;yuzu;torzu", L"{fullscreen} -g \"{rom}\"", L"-f", {}, L"", true}},
          "Precisa das prod.keys e do firmware tirados do seu Switch, instalados no emulador."},
         {L"WIIU", "Wii U", {L".wua", L".wud", L".wux", L".rpx", L".wuhb"}, true,
-         {{L"Cemu", L"cemu", L"{fullscreen} -g \"{rom}\"", L"-f"}},
+         {{L"Cemu", L"cemu", L"{fullscreen} -g \"{rom}\"", L"-f", {}, L"", true}},
          "WUD e WUX precisam das chaves do seu console no keys.txt do Cemu. Jogo em pasta: a que tem code, content e meta."},
         {L"WII", "Wii", {L".wbfs", L".rvz", L".wia", L".iso", L".gcz", L".ciso", L".wad", L".dol", L".elf"}, false,
          {kDolphin, RetroArch(L"dolphin")},
@@ -152,10 +152,12 @@ std::vector<System> MakeSystems() {
         {L"XBOX", "Xbox", {L".iso", L".xiso"}, false,
          {{L"xemu", L"xemu", L"{fullscreen} -dvd_path \"{rom}\"", L"-full-screen",
            {{L"xemu.toml", "display", "renderer", "'VULKAN'"},
-            {L"xemu.toml", "display.quality", "surface_scale", "2"}}}},
+            {L"xemu.toml", "display.quality", "surface_scale", "2"},
+            {L"xemu.toml", "display.ui", "show_menubar", "false"}},
+           L"", true}},
          "O xemu precisa da BIOS, da MCPX e do HD do seu Xbox. O jogo tem que ser XISO."},
         {L"X360", "Xbox 360", {L".iso", L".xex", L".zar"}, true,
-         {{L"Xenia Canary", L"xenia", L"{fullscreen} \"{rom}\"", L"--fullscreen=true"}},
+         {{L"Xenia Canary", L"xenia", L"{fullscreen} \"{rom}\"", L"--fullscreen=true", {}, L"", true}},
          "Jogo em ISO, ou pasta com default.xex."},
         {L"PCE", "PC Engine / TurboGrafx-16", {L".pce", L".sgx"}, false,
          {RetroArch(L"mednafen_pce_fast"), RetroArch(L"mednafen_pce")},
@@ -480,6 +482,7 @@ Engine LoadEngine(const std::wstring& root, const std::wstring& id) {
     if (preset != nullptr) {
         engine.presetName = preset->name;
         engine.tunable = !preset->tweaks.empty();
+        engine.embed = preset->embed;
         if (!preset->bios.empty()) engine.bios = root + L"\\bios\\" + preset->bios;
     }
     engine.args = ReadIni(ini, id.c_str(), L"args", preset != nullptr ? preset->args.c_str() : L"\"{rom}\"");

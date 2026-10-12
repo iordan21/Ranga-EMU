@@ -36,6 +36,9 @@ struct Preset {
     std::vector<Tweak> tweaks = {};
     // Its BIOS folder under bios beside this program, which the tweaks point it at; empty when it needs none.
     std::wstring bios = L"";
+    // No libretro core runs its console, so its game window is shown inside Ranga's own window (Embed.hpp), which also
+    // takes over fullscreen.
+    bool embed = false;
 };
 
 struct System {
@@ -66,6 +69,7 @@ struct Engine {
     // The matched preset has settings to fit this PC, and the folder where its BIOS goes (empty when none).
     bool tunable = false;
     std::wstring bios;
+    bool embed = false;
     bool ready = false;
     // Why the game cannot start yet; empty when ready.
     std::wstring problem;
