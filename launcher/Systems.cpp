@@ -169,13 +169,14 @@ std::vector<System> MakeSystems() {
          {RetroArch(L"fbneo"), RetroArch(L"mame"), {L"MAME", L"mame", L"-rompath \"{romdir}\" \"{romname}\"", L""}},
          "O .zip tem que ser da versão de romset que o core ou o MAME pede."},
     };
-    // What Ranga Retro runs itself, drawing in software: stage 1 of the native engine. Consoles whose cores need the GPU
-    // (N64, PSP, Dreamcast, PS2, GameCube, Wii, 3DS) come with the next stages; PS1 and DS draw in software meanwhile.
+    // What Ranga Retro runs itself, by the core it loads; cores that draw with the GPU get Vulkan or OpenGL. Consoles with
+    // no core here (PS3, PS4, Switch, Wii U, Xbox, Xbox 360) stay with their emulator in Ranga's window.
     const std::pair<const wchar_t*, const wchar_t*> native[] = {
         {L"SNES", L"snes9x"}, {L"NES", L"mesen"}, {L"MD", L"genesis_plus_gx"}, {L"SMS", L"genesis_plus_gx"},
         {L"SEGACD", L"genesis_plus_gx"}, {L"SATURN", L"mednafen_saturn"}, {L"PCE", L"mednafen_pce_fast"},
         {L"A2600", L"stella"}, {L"ARCADE", L"fbneo"}, {L"GBA", L"mgba"}, {L"GB", L"gambatte"}, {L"PS1", L"swanstation"},
-        {L"NDS", L"melondsds"},
+        {L"NDS", L"melondsds"}, {L"PSP", L"ppsspp"}, {L"DC", L"flycast"}, {L"PS2", L"pcsx2"}, {L"GC", L"dolphin"}, {L"WII", L"dolphin"},
+        {L"3DS", L"azahar"}, {L"N64", L"mupen64plus_next"},
     };
     for (auto& system : systems) {
         for (const auto& [id, core] : native) {

@@ -140,6 +140,8 @@ struct State {
     std::vector<std::string> optionOrder;
     std::wstring optionsPath;
     bool optionsChanged = false;
+    // The core said it can start without a game (SET_SUPPORT_NO_GAME); --no-game is refused otherwise.
+    bool supportsNoGame = false;
     retro_frame_time_callback frameTime{};
     // The latest frame, as BGRA.
     std::vector<uint32_t> frame;
@@ -440,6 +442,8 @@ bool RETRO_CALLCONV Environment(unsigned command, void* data) {
         case RETRO_ENVIRONMENT_SET_MEMORY_MAPS:
         case RETRO_ENVIRONMENT_SET_PERFORMANCE_LEVEL:
         case RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME:
+            g.supportsNoGame = data != nullptr && *static_cast<const bool*>(data);
+            return true;
         case RETRO_ENVIRONMENT_SET_SUPPORT_ACHIEVEMENTS:
         case RETRO_ENVIRONMENT_SET_SERIALIZATION_QUIRKS:
             return true;
@@ -1175,6 +1179,10 @@ void ApplyCoreDefaults(const std::wstring& corePath) {
         {L"melondsds", "melonds_opengl_resolution", "4"},
         {L"mupen64plus_next", "mupen64plus-43screensize", "1440x1080"},
         {L"mupen64plus_next", "mupen64plus-parallel-rdp-upscaling", "4x"},
+        {L"ppsspp", "ppsspp_internal_resolution", "1920x1088"},
+        {L"flycast", "reicast_internal_resolution", "1920x1440"},
+        {L"pcsx2", "pcsx2_upscale_multiplier", "2x"},
+        {L"azahar", "citra_resolution_factor", "3"},
         {L"swanstation", "swanstation_BIOS_PathNTSCU", "ps1_rom.bin"},
         {L"swanstation", "swanstation_BIOS_PathNTSCJ", "ps1_rom.bin"},
         {L"swanstation", "swanstation_BIOS_PathPAL", "ps1_rom.bin"},
@@ -1277,6 +1285,11 @@ int RetroMain(int argc, wchar_t** argv) {
     }
     // The window exists before the game loads, so a GPU context can be made on it right after.
     g_window = CreateGameWindow(title);
+    if (noGame && !g.supportsNoGame) {
+        // Some cores (Mupen64Plus) crash in retro_deinit when no game was ever loaded; the process just ends.
+        Log("[retro] este core não inicia sem jogo\n");
+        return 4;
+    }
     if (!g.core.loadGame(noGame ? nullptr : &game)) {
         Log("[retro] o core recusou o jogo %s\n", romUtf8.c_str());
         g.core.deinit();
