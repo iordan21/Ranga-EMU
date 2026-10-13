@@ -376,6 +376,13 @@ public:
             now[Accept] = now[Accept] || SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_A);
             now[Back] = now[Back] || SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_B);
         }
+        // RANGA_CLIENT_TEST_INPUT=1: the number pad stands in for a gamepad (8 4 6 2 the d-pad, 5 A, 0 B), so the
+        // interface tests go the gamepad's way.
+        static const bool testPad = _wgetenv(L"RANGA_CLIENT_TEST_INPUT") != nullptr;
+        if (testPad) {
+            const ImGuiKey keys[Count] = {ImGuiKey_Keypad4, ImGuiKey_Keypad6, ImGuiKey_Keypad8, ImGuiKey_Keypad2, ImGuiKey_Keypad5, ImGuiKey_Keypad0};
+            for (int b = 0; b < Count; ++b) now[b] = now[b] || ImGui::IsKeyDown(keys[b]);
+        }
         const double time = ImGui::GetTime();
         for (int b = 0; b < Count; ++b) {
             if (!now[b]) { held[b] = 0; continue; }
@@ -391,6 +398,7 @@ public:
     }
 
     bool Pressed(Button button) const { return pressed[button]; }
+    bool Held(Button button) const { return held[button] != 0; }
 
 private:
     void Open() {
@@ -450,6 +458,8 @@ struct Client {
     // Where the gamepad is on the home screen: 0 the row of consoles, 1 the buttons under it, 2 the console's games;
     // the column within the row, and how many games the last frame had room for.
     int homeRow = 0, homeColumn = 0, homeGamesShown = 0;
+    // The game page has just opened: the focus goes to Jogar.
+    bool focusPlay = false;
     std::wstring homeConsole;
 
     explicit Client(const std::wstring& root) : library(root), covers(root) {}
@@ -698,6 +708,7 @@ struct Client {
         if (Game* game = Current()) {
             console = game->system;
             page = Page::Game;
+            focusPlay = true;
         }
     }
 
@@ -1492,10 +1503,6 @@ struct Client {
             pending = [this] { OpenConsole(); };
             return;
         }
-        // Cross / A plays, as on a console; Enter stays with whatever button has the keyboard focus.
-        if (nav.padAccept && !runner.Busy()) {
-            Play(*game);
-        }
         ImGui::BeginChild("##detail", ImVec2(0, 0), ImGuiChildFlags_None);
         const Profile profile = ProfileFor(game->titleId);
         const float width = ImGui::GetContentRegionAvail().x;
@@ -1571,7 +1578,18 @@ struct Client {
         ImGui::PushFont(semibold, 18);
         ImGui::BeginDisabled(busy);
         const char* playLabel = !busy ? "Jogar" : runner.Current() == Runner::State::Preparing ? "Preparando..." : "Rodando...";
+        // The page opens with the focus on Jogar, so Cross / A (or Enter) plays, as on a console; the d-pad goes down
+        // to the options from there.
+        const bool focusNow = focusPlay;
+        if (focusPlay) {
+            ImGui::SetKeyboardFocusHere();
+            focusPlay = false;
+        }
         if (ImGui::Button(playLabel, ImVec2(170 * scale, 44 * scale))) Play(*game);
+        // With a gamepad the focus shows from the start; A with nothing focused (the mouse clicked elsewhere) still plays.
+        static const bool testInput = _wgetenv(L"RANGA_CLIENT_TEST_INPUT") != nullptr;
+        if (focusNow && (gamepads.Connected() || testInput)) ImGui::SetNavCursorVisible(true);
+        if (nav.padAccept && !busy && !ImGui::IsAnyItemFocused()) Play(*game);
         ImGui::EndDisabled();
         ImGui::PopFont();
         ImGui::PopStyleColor(4);
@@ -1594,23 +1612,23 @@ struct Client {
 
         ImGui::Dummy(ImVec2(0, 10 * scale));
         ImGui::SetCursorPosX(pad);
-        ImGui::BeginChild("##tabs", ImVec2(width - 2 * pad, 0), ImGuiChildFlags_None);
+        ImGui::BeginChild("##tabs", ImVec2(width - 2 * pad, 0), ImGuiChildFlags_NavFlattened);
         if (ImGui::BeginTabBar("##tabbar")) {
             if (ImGui::BeginTabItem("Opções")) {
-                ImGui::BeginChild("##options");
+                ImGui::BeginChild("##options", ImVec2(0, 0), ImGuiChildFlags_NavFlattened);
                 OptionsTab(*game, profile, scale);
                 ImGui::EndChild();
                 ImGui::EndTabItem();
             }
             if (profile.sonsOfSparta && ImGui::BeginTabItem("Cheats")) {
-                ImGui::BeginChild("##cheats");
+                ImGui::BeginChild("##cheats", ImVec2(0, 0), ImGuiChildFlags_NavFlattened);
                 CheatsTab(scale);
                 ImGui::EndChild();
                 ImGui::EndTabItem();
             }
             // Add-ons are mounted by the PS5 runtime; the Bloodborne port and other emulators have no such mount.
             if (game->system == L"PS5" && ImGui::BeginTabItem("DLC")) {
-                ImGui::BeginChild("##dlc");
+                ImGui::BeginChild("##dlc", ImVec2(0, 0), ImGuiChildFlags_NavFlattened);
                 DlcTab(*game, scale);
                 ImGui::EndChild();
                 ImGui::EndTabItem();
@@ -1659,8 +1677,26 @@ struct Client {
         // Arrows move the keyboard focus only where there are fields and tabs; on the console row and the grid they
         // move the selection.
         ImGuiIO& io = ImGui::GetIO();
-        if (enginesPage || page == Page::Game) io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-        else io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableKeyboard;
+        const bool fieldNav = enginesPage || page == Page::Game;
+        if (fieldNav) io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
+        else io.ConfigFlags &= ~(ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad);
+        // There the gamepad moves the same focus as the arrows: the d-pad or left stick goes between fields, A (Cross)
+        // presses or opens one, B (Circle) closes an open list. The events reach ImGui on the next frame.
+        static const std::pair<Gamepads::Button, ImGuiKey> padKeys[] = {
+            {Gamepads::Left, ImGuiKey_GamepadDpadLeft}, {Gamepads::Right, ImGuiKey_GamepadDpadRight}, {Gamepads::Up, ImGuiKey_GamepadDpadUp},
+            {Gamepads::Down, ImGuiKey_GamepadDpadDown}, {Gamepads::Accept, ImGuiKey_GamepadFaceDown}, {Gamepads::Back, ImGuiKey_GamepadFaceRight},
+        };
+        // A button still held from the page before (the A that opened the game) is no press here: it would hit Jogar,
+        // which has the focus, and start the game.
+        static std::array<bool, Gamepads::Count> padSent{}, padStale{};
+        const bool padFront = _wgetenv(L"RANGA_CLIENT_TEST_INPUT") != nullptr || GetForegroundWindow() == window;
+        for (const auto& [button, key] : padKeys) {
+            const bool held = gamepads.Held(button);
+            if (!held) padStale[button] = false;
+            else if (!fieldNav) padStale[button] = true;
+            const bool down = fieldNav && padFront && held && !padStale[button];
+            if (down != padSent[button]) io.AddKeyEvent(key, padSent[button] = down);
+        }
 
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
         ImGui::SetNextWindowPos(viewport->WorkPos);
@@ -1712,8 +1748,9 @@ LRESULT WINAPI WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 }
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
+    // One Ranga at a time; the interface tests (RANGA_CLIENT_TEST_INPUT) run their copy beside the user's.
     HANDLE single = CreateMutexW(nullptr, TRUE, kMutex);
-    if (single != nullptr && GetLastError() == ERROR_ALREADY_EXISTS) {
+    if (single != nullptr && GetLastError() == ERROR_ALREADY_EXISTS && _wgetenv(L"RANGA_CLIENT_TEST_INPUT") == nullptr) {
         if (HWND existing = FindWindowW(kWindowClass, nullptr)) {
             ShowWindow(existing, SW_RESTORE);
             SetForegroundWindow(existing);
@@ -1806,6 +1843,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         }
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
+        // The Win32 backend sees only XInput pads and takes this flag away without one; Ranga feeds every SDL gamepad
+        // to ImGui itself (Frame), so a DualSense moves the focus too.
+        ImGui::GetIO().BackendFlags |= ImGuiBackendFlags_HasGamepad;
         ImGui::NewFrame();
         client.Frame(scale);
         ImGui::Render();
