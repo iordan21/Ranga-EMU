@@ -58,7 +58,9 @@ std::vector<System> MakeSystems() {
         {L"PS3", "PlayStation 3", {L".iso"}, true,
          {{L"RPCS3", L"rpcs3", L"--no-gui {fullscreen} \"{rom}\"", L"--fullscreen",
            {{L"GuiConfigs\\CurrentSettings.ini", "main_window", "infoBoxEnabledWelcome", "false"}}, L"", true}},
-         "Instale no RPCS3 o firmware do PS3 (PS3UPDAT.PUP, do site da Sony). Jogo em pasta (com PS3_GAME ou USRDIR) ou ISO."},
+         "Instale no RPCS3 o firmware do PS3 (PS3UPDAT.PUP, do site da Sony). Jogo em pasta (com PS3_GAME ou USRDIR) ou ISO. "
+         "No nativo (core do RPCS3 feito para o Ranga) o firmware e os saves são os do RPCS3 portátil, só com o controle 1 e "
+         "sem save state; a primeira abertura compila os shaders e demora."},
         {L"PS2", "PlayStation 2", {L".iso", L".chd", L".cso", L".zso", L".bin", L".cue", L".gz", L".mdf", L".img", L".m3u", L".elf"}, false,
          {{L"PCSX2", L"pcsx2", L"-batch {fullscreen} -- \"{rom}\"", L"-fullscreen",
            Join({{L"inis\\PCSX2.ini", "UI", "SetupWizardIncomplete", "false"},
@@ -171,17 +173,17 @@ std::vector<System> MakeSystems() {
          {RetroArch(L"fbneo"), RetroArch(L"mame"), {L"MAME", L"mame", L"-rompath \"{romdir}\" \"{romname}\"", L""}},
          "O .zip tem que ser da versão de romset que o core ou o MAME pede."},
     };
-    // What Ranga Retro runs itself, by the core it loads; cores that draw with the GPU get Vulkan or OpenGL. Consoles with
-    // no core here (PS3) stay with their emulator in Ranga's window. Wii U (Cemu), Xbox (xemu), Switch (Eden) and Xbox
-    // 360 (Xenia) have no save states natively; the last two are Ranga's own cores (eden-libretro, xenia-libretro), whose
-    // emulator draws in the game window itself. mode=external gives any of them back to the full emulator.
+    // What Ranga Retro runs itself, by the core it loads; cores that draw with the GPU get Vulkan or OpenGL. Wii U (Cemu),
+    // Xbox (xemu), Switch (Eden), Xbox 360 (Xenia) and PS3 (RPCS3) have no save states natively; the last three are
+    // Ranga's own cores (eden-libretro, xenia-libretro, rpcs3-libretro), whose emulator draws in the game window itself.
+    // mode=external gives any of them back to the full emulator.
     const std::pair<const wchar_t*, const wchar_t*> native[] = {
         {L"SNES", L"snes9x"}, {L"NES", L"mesen"}, {L"MD", L"genesis_plus_gx"}, {L"SMS", L"genesis_plus_gx"},
         {L"SEGACD", L"genesis_plus_gx"}, {L"SATURN", L"mednafen_saturn"}, {L"PCE", L"mednafen_pce_fast"},
         {L"A2600", L"stella"}, {L"ARCADE", L"fbneo"}, {L"GBA", L"mgba"}, {L"GB", L"gambatte"}, {L"PS1", L"swanstation"},
         {L"NDS", L"melondsds"}, {L"PSP", L"ppsspp"}, {L"DC", L"flycast"}, {L"PS2", L"pcsx2"}, {L"GC", L"dolphin"}, {L"WII", L"dolphin"},
         {L"3DS", L"azahar"}, {L"N64", L"mupen64plus_next"}, {L"WIIU", L"cemu"}, {L"XBOX", L"xemu"},
-        {L"SWITCH", L"eden"}, {L"X360", L"xenia"},
+        {L"SWITCH", L"eden"}, {L"X360", L"xenia"}, {L"PS3", L"rpcs3"},
     };
     for (auto& system : systems) {
         for (const auto& [id, core] : native) {
