@@ -22,6 +22,9 @@ public:
     std::wstring TitleId() const;
     // root is the folder of this program, with libs and tools.
     void Start(const std::wstring& root, const Game& game, const Options& options);
+    // The console's own system with no game (the PS2's menu, the Xbox dashboard on its hard disk, the Switch's Mii
+    // editor), through its native core; its saves and logs go to games\<console>-SISTEMA.
+    void StartSystem(const std::wstring& root, const std::wstring& system);
 
 private:
     void Run(std::wstring root, Game game, Options options);

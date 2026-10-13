@@ -689,6 +689,16 @@ struct Client {
         gridMoved = true;
     }
 
+    // The consoles whose own system opens with no game, as tested on 13/10/2026: the PS2's menu (with its BIOS), the
+    // dashboard on the Xbox's hard disk, the Switch's Mii editor. The others show nothing without a game or need files
+    // from the console that are not there (the DS firmware, the Dreamcast BIOS).
+    static const char* SystemButton(const std::wstring& id) {
+        if (id == L"PS2") return "Abrir o menu do PS2";
+        if (id == L"XBOX") return "Abrir o painel do Xbox";
+        if (id == L"SWITCH") return "Abrir o editor de Mii";
+        return nullptr;
+    }
+
     // How a console's games run, in a few words for the home screen.
     std::string HowItRuns(const std::wstring& id) {
         if (id == L"PS5") return "Roda no próprio Ranga";
@@ -825,6 +835,15 @@ struct Client {
         if (ImGui::Button(shelf.count > 0 ? "Abrir biblioteca" : "Ver console", ImVec2(190 * scale, 44 * scale))) pending = [this] { OpenConsole(); };
         ImGui::PopFont();
         ImGui::PopStyleColor(4);
+        const Engine& engine = EngineFor(console);
+        if (const char* label = SystemButton(console); label != nullptr && engine.native && engine.ready) {
+            ImGui::SameLine(0, 12 * scale);
+            ImGui::PushFont(semibold, 18);
+            ImGui::BeginDisabled(runner.Busy());
+            if (ImGui::Button(label, ImVec2(0, 44 * scale))) pending = [this] { runner.StartSystem(library.Root(), console); };
+            ImGui::EndDisabled();
+            ImGui::PopFont();
+        }
         ImGui::EndGroup();
 
         // A few of its games, straight to their page.

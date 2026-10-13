@@ -43,6 +43,16 @@ void Runner::Start(const std::wstring& root, const Game& game, const Options& op
     worker = std::thread(&Runner::Run, this, root, game, options);
 }
 
+void Runner::StartSystem(const std::wstring& root, const std::wstring& system) {
+    Game game;
+    game.system = system;
+    game.titleId = system + L"-SISTEMA";
+    game.title = L"Sistema do " + Wide(SystemName(system));
+    game.workspace = root + L"\\games\\" + game.titleId;
+    // No folder: RunExternal starts the core with --no-game.
+    Start(root, game, Options{});
+}
+
 void Runner::Run(std::wstring root, Game game, Options options) {
     const Profile profile = ProfileFor(game.titleId);
     if (profile.bloodborne) {
@@ -334,8 +344,10 @@ void Runner::RunExternal(const std::wstring& root, const Game& game, const Optio
         Report(State::Failed, engine.problem);
         return;
     }
-    const std::wstring rom = GameRom(game.system, game.folder);
-    if (rom.empty()) {
+    // The console's system (StartSystem) has no game: Ranga Retro starts the core with --no-game.
+    const bool noGame = game.folder.empty() && engine.native;
+    const std::wstring rom = noGame ? L"" : GameRom(game.system, game.folder);
+    if (rom.empty() && !noGame) {
         Report(State::Failed, L"O jogo não está mais em " + game.folder + L". Use \"Trocar\" nas opções.");
         return;
     }
@@ -360,6 +372,9 @@ void Runner::RunExternal(const std::wstring& root, const Game& game, const Optio
     // An embedded emulator stays windowed inside Ranga's window, which goes fullscreen instead.
     CreateDirectoryW((workspace + L"\\saves").c_str(), nullptr);
     std::wstring command = EngineCommand(engine, rom, options.borderless && !engine.embed, game.title, workspace);
+    if (noGame) {
+        if (const size_t at = command.find(L"--rom \"\""); at != std::wstring::npos) command.replace(at, 8, L"--no-game");
+    }
     {
         // The exact command goes to the log first, so a wrong argument shows there.
         const std::string line = "> " + Utf8(command) + "\r\n";
