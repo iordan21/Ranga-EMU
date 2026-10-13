@@ -28,6 +28,7 @@
 #include <cstdio>
 #include <cstring>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -168,6 +169,8 @@ float g_coreFps = -1;
 // ------------------------------------------------------------------------------------------------------------- input
 
 constexpr int kPorts = 2;
+// The core is xemu, whose players come on other ports (InputState).
+bool g_xemuPorts = false;
 SDL_GameController* g_pads[kPorts] = {};
 HWND g_window = nullptr;
 
@@ -197,9 +200,50 @@ void ClosePad(SDL_JoystickID id) {
 
 bool Key(int virtualKey) { return (GetAsyncKeyState(virtualKey) & 0x8000) != 0; }
 
+// RANGA_RETRO_PAD_SCRIPT="4000:A,6500:DOWN": player 1's buttons pressed by the clock (milliseconds since the program
+// started, 200 ms each), so a test drives a game or a console's menu without the real keyboard or a window in front.
+// Names: A B X Y UP DOWN LEFT RIGHT START SELECT L R.
+const ULONGLONG g_started = GetTickCount64();
+// With a script, it alone plays player 1: a real pad or keyboard in use meanwhile would change what the test sees.
+bool g_scripted = false;
+bool ScriptedButton(unsigned id) {
+    static const std::vector<std::pair<ULONGLONG, unsigned>> script = [] {
+        std::vector<std::pair<ULONGLONG, unsigned>> steps;
+        const char* text = std::getenv("RANGA_RETRO_PAD_SCRIPT");
+        if (text == nullptr) return steps;
+        static const std::pair<const char*, unsigned> names[] = {
+            {"A", RETRO_DEVICE_ID_JOYPAD_A}, {"B", RETRO_DEVICE_ID_JOYPAD_B}, {"X", RETRO_DEVICE_ID_JOYPAD_X},
+            {"Y", RETRO_DEVICE_ID_JOYPAD_Y}, {"UP", RETRO_DEVICE_ID_JOYPAD_UP}, {"DOWN", RETRO_DEVICE_ID_JOYPAD_DOWN},
+            {"LEFT", RETRO_DEVICE_ID_JOYPAD_LEFT}, {"RIGHT", RETRO_DEVICE_ID_JOYPAD_RIGHT}, {"START", RETRO_DEVICE_ID_JOYPAD_START},
+            {"SELECT", RETRO_DEVICE_ID_JOYPAD_SELECT}, {"L", RETRO_DEVICE_ID_JOYPAD_L}, {"R", RETRO_DEVICE_ID_JOYPAD_R},
+        };
+        std::string all = text;
+        for (size_t at = 0; at < all.size();) {
+            size_t end = all.find(',', at);
+            if (end == std::string::npos) end = all.size();
+            const std::string step = all.substr(at, end - at);
+            at = end + 1;
+            const size_t colon = step.find(':');
+            if (colon == std::string::npos) continue;
+            for (const auto& [name, button] : names) {
+                if (step.substr(colon + 1) == name) steps.push_back({std::strtoull(step.c_str(), nullptr, 10), button});
+            }
+        }
+        return steps;
+    }();
+    const ULONGLONG now = GetTickCount64() - g_started;
+    g_scripted = !script.empty();
+    for (const auto& [at, button] : script) {
+        if (button == id && now >= at && now < at + 200) return true;
+    }
+    return false;
+}
+
 // The RetroPad follows the Super Nintendo: B below, A right, Y left, X above, which is where SDL's south, east, west and
 // north buttons are on every pad it knows.
 int16_t PadButton(int port, unsigned id) {
+    if (port == 0 && ScriptedButton(id)) return 1;
+    if (g_scripted) return 0;
     // The game reads input only while its window is the one in front.
     if (GetForegroundWindow() != g_window) return 0;
     bool down = false;
@@ -247,7 +291,7 @@ int16_t PadButton(int port, unsigned id) {
 
 int16_t PadAnalog(int port, unsigned index, unsigned id) {
     SDL_GameController* pad = g_pads[port];
-    if (pad == nullptr || GetForegroundWindow() != g_window) return 0;
+    if (pad == nullptr || GetForegroundWindow() != g_window || g_scripted) return 0;
     if (index == RETRO_DEVICE_INDEX_ANALOG_BUTTON) {
         if (id == RETRO_DEVICE_ID_JOYPAD_L2) return SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_TRIGGERLEFT);
         if (id == RETRO_DEVICE_ID_JOYPAD_R2) return SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_TRIGGERRIGHT);
@@ -262,6 +306,16 @@ int16_t PadAnalog(int port, unsigned index, unsigned id) {
 void RETRO_CALLCONV InputPoll() {}
 
 int16_t RETRO_CALLCONV InputState(unsigned port, unsigned device, unsigned index, unsigned id) {
+    // RANGA_RETRO_DEBUG=1: each kind of question the core asks about the controls, once.
+    static const bool debug = std::getenv("RANGA_RETRO_DEBUG") != nullptr;
+    if (debug) {
+        static std::set<unsigned> asked;
+        if (asked.insert((port << 24) | (device << 16) | (index << 12) | id).second)
+            Log("[retro] o core perguntou: porta %u, aparelho %u, índice %u, botão %u\n", port, device, index, id);
+    }
+    // The xemu core asks for player 1 as port 2 and player 2 as port 3 (the Xbox's USB port less one, xemu's
+    // port_map { 3, 4, 1, 2 }), so its dashboard and games saw no controller on ports 0 and 1.
+    if (g_xemuPorts) port = (port + 2) % 4;
     if (port >= kPorts) return 0;
     switch (device & RETRO_DEVICE_MASK) {
         case RETRO_DEVICE_JOYPAD:
@@ -289,7 +343,8 @@ bool RETRO_CALLCONV SetRumble(unsigned port, retro_rumble_effect effect, uint16_
 
 void RETRO_CALLCONV CoreLog(retro_log_level level, const char* format, ...) {
     static const char* names[] = {"debug", "info", "aviso", "erro"};
-    if (level == RETRO_LOG_DEBUG) return;
+    static const bool debug = std::getenv("RANGA_RETRO_DEBUG") != nullptr;
+    if (level == RETRO_LOG_DEBUG && !debug) return;
     std::fprintf(stderr, "[core %s] ", names[std::min<int>(level, 3)]);
     va_list args;
     va_start(args, format);
@@ -507,6 +562,10 @@ bool RETRO_CALLCONV Environment(unsigned command, void* data) {
             g_coreFps = *static_cast<const float*>(data);
             return true;
     }
+    // RANGA_RETRO_DEBUG=1 also names each request Ranga does not answer, once, and keeps the core's debug messages.
+    static const bool debug = std::getenv("RANGA_RETRO_DEBUG") != nullptr;
+    static std::set<unsigned> told;
+    if (debug && told.insert(command).second) Log("[retro] pedido sem resposta: %u (0x%X)\n", command & 0xffff, command);
     return false;
 }
 
@@ -1271,6 +1330,11 @@ int RetroMain(int argc, wchar_t** argv) {
     g.systemDir = Utf8(systemDir);
     g.saveDir = Utf8(saveDir);
     ApplyCoreDefaults(corePath, systemDir);
+    {
+        std::wstring coreName = corePath.substr(corePath.find_last_of(L"\\/") + 1);
+        for (auto& character : coreName) character = static_cast<wchar_t>(towlower(character));
+        g_xemuPorts = coreName.rfind(L"xemu", 0) == 0;
+    }
     if (!optionsPath.empty()) ReadOptionsFile(optionsPath);
     g.optionsPath = optionsPath;
 
