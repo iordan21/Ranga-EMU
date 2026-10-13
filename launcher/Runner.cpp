@@ -351,6 +351,11 @@ void Runner::RunExternal(const std::wstring& root, const Game& game, const Optio
         Report(State::Failed, L"O jogo não está mais em " + game.folder + L". Use \"Trocar\" nas opções.");
         return;
     }
+    // Named here instead of the emulator opening to an error or a black screen.
+    if (const std::wstring missing = MissingFiles(root, game.system, engine, rom); !missing.empty()) {
+        Report(State::Failed, missing);
+        return;
+    }
     CreateDirectoryW((root + L"\\games").c_str(), nullptr);
     CreateDirectoryW(workspace.c_str(), nullptr);
     CreateDirectoryW(logs.c_str(), nullptr);

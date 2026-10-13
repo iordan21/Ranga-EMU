@@ -90,6 +90,10 @@ void ResetEngineArgs(const std::wstring& root, const std::wstring& system);
 void ClearEngine(const std::wstring& root, const std::wstring& system);
 // The whole command line, the executable quoted first. {title} and {workspace} are the game's.
 std::wstring EngineCommand(const Engine& engine, const std::wstring& rom, bool fullscreen, const std::wstring& title, const std::wstring& workspace);
+// What the emulator cannot start rom without that has to come from the user's own console (BIOS, keys, firmware), as
+// a sentence naming the file and its folder; empty when nothing is missing or the client cannot tell. rom is empty for
+// the console's own system.
+std::wstring MissingFiles(const std::wstring& root, const std::wstring& system, const Engine& engine, const std::wstring& rom);
 // Runs the console in Ranga Retro (native) or in the emulator chosen for it.
 void SetNative(const std::wstring& root, const std::wstring& system, bool native);
 // The core file Ranga Retro loads for the console, in cores beside this program.

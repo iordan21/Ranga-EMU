@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cwchar>
+#include <initializer_list>
 
 namespace Ranga {
 
@@ -52,7 +53,6 @@ const Preset kMgba = {L"mGBA", L"mgba", L"{fullscreen} \"{rom}\"", L"-f"};
 const Preset kMesen = {L"Mesen", L"mesen", L"{fullscreen} \"{rom}\"", L"--fullscreen"};
 
 std::vector<System> MakeSystems() {
-    const char* bios = "Precisa da BIOS tirada do seu console, configurada no emulador.";
     std::vector<System> systems = {
         // No PS4 here: of the PS4, Ranga runs only Bloodborne, as an experiment, through its port (Library.cpp).
         {L"PS3", "PlayStation 3", {L".iso"}, true,
@@ -71,7 +71,7 @@ std::vector<System> MakeSystems() {
                 SdlPad(L"inis\\PCSX2.ini")),
            L"ps2"},
           RetroArch(L"pcsx2", L"retroarch")},
-         bios},
+         "Precisa da BIOS tirada do seu PS2 (arquivo de 4 MB): no nativo em bios\\retroarch\\pcsx2\\bios, no PCSX2 em bios\\ps2."},
         {L"PS1", "PlayStation", {L".cue", L".chd", L".pbp", L".bin", L".iso", L".img", L".ccd", L".mds", L".ecm", L".m3u"}, false,
          {{L"DuckStation", L"duckstation", L"-batch {fullscreen} -- \"{rom}\"", L"-fullscreen",
            Join({{L"settings.ini", "Main", "SetupWizardIncomplete", "false"},
@@ -82,7 +82,9 @@ std::vector<System> MakeSystems() {
                 SdlPad(L"settings.ini")),
            L"ps1"},
           RetroArch(L"swanstation", L"retroarch"), RetroArch(L"mednafen_psx_hw", L"retroarch")},
-         bios},
+         "No nativo não precisa de BIOS: com a da Sony (ps1_rom.bin, que vem no firmware do PS3, em bios\\retroarch) roda "
+         "mais jogos; sem ela o Ranga usa a BIOS própria dele, que não roda Azure Dreams nem Wipeout (EUA). O DuckStation "
+         "precisa da BIOS tirada do seu console em bios\\ps1."},
         {L"PSP", "PSP", {L".iso", L".cso", L".chd", L".pbp", L".elf", L".prx"}, false,
          {{L"PPSSPP", L"ppsspp", L"{fullscreen} \"{rom}\"", L"--fullscreen",
            {{L"memstick\\PSP\\SYSTEM\\ppsspp.ini", "Graphics", "GraphicsBackend", "3 (VULKAN)"},
@@ -141,10 +143,11 @@ std::vector<System> MakeSystems() {
          "Não precisa de BIOS."},
         {L"SEGACD", "Sega CD", {L".cue", L".chd", L".iso", L".m3u"}, false,
          {RetroArch(L"genesis_plus_gx", L"retroarch"), RetroArch(L"picodrive", L"retroarch")},
-         bios},
+         "Precisa da BIOS tirada do seu Sega CD em bios\\retroarch: bios_CD_U.bin (EUA), bios_CD_E.bin (Europa) ou "
+         "bios_CD_J.bin (Japão), a da região do jogo."},
         {L"SATURN", "Sega Saturn", {L".cue", L".chd", L".ccd", L".mds", L".m3u"}, false,
          {RetroArch(L"mednafen_saturn", L"retroarch"), RetroArch(L"yabasanshiro", L"retroarch")},
-         bios},
+         "Precisa da BIOS tirada do seu Saturn em bios\\retroarch: mpr-17933.bin (EUA e Europa) ou sega_101.bin (Japão)."},
         {L"DC", "Dreamcast", {L".gdi", L".cdi", L".chd", L".cue", L".m3u"}, false,
          {{L"Flycast", L"flycast", L"\"{rom}\"", L"",
            {{L"emu.cfg", "config", "pvr.rend", "4"},
@@ -587,6 +590,104 @@ std::wstring EngineCommand(const Engine& engine, const std::wstring& rom, bool f
 void SetNative(const std::wstring& root, const std::wstring& id, bool native) {
     EnsureUnicodeIni(EnginesIni(root));
     WritePrivateProfileStringW(id.c_str(), L"mode", native ? nullptr : L"external", EnginesIni(root).c_str());
+}
+
+namespace {
+
+// A file matching pattern (a folder and a wildcard name); with sizes, only one of those sizes, since a BIOS dump keeps
+// the size of the chip whatever the user named it.
+bool HasMatch(const std::wstring& pattern, std::initializer_list<long long> sizes = {}) {
+    WIN32_FIND_DATAW data;
+    const HANDLE find = FindFirstFileW(pattern.c_str(), &data);
+    if (find == INVALID_HANDLE_VALUE) return false;
+    bool found = false;
+    do {
+        if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+        const long long size = (static_cast<long long>(data.nFileSizeHigh) << 32) | data.nFileSizeLow;
+        found = sizes.size() == 0 || std::find(sizes.begin(), sizes.end(), size) != sizes.end();
+    } while (!found && FindNextFileW(find, &data));
+    FindClose(find);
+    return found;
+}
+
+bool HasAny(const std::wstring& folder, std::initializer_list<const wchar_t*> names) {
+    for (const wchar_t* name : names) {
+        if (Exists(folder + L"\\" + name)) return true;
+    }
+    return false;
+}
+
+std::wstring Missing(const std::wstring& what, const std::wstring& folder) {
+    return L"Falta " + what + L" em " + folder + L". Tire do seu próprio console, coloque lá e tente de novo.";
+}
+
+}
+
+std::wstring MissingFiles(const std::wstring& root, const std::wstring& id, const Engine& engine, const std::wstring& rom) {
+    const System* system = FindSystem(id);
+    if (system == nullptr || engine.exe.empty()) return L"";
+    constexpr long long kMiB = 1024 * 1024;
+    // The core Ranga Retro or RetroArch loads; a standalone emulator has none and is told apart by its BIOS folder.
+    std::wstring core;
+    if (engine.native) {
+        core = system->nativeCore;
+    } else {
+        const std::wstring args = Expand(engine.args, engine.exe, L"", L"");
+        if (const size_t end = args.find(L"_libretro.dll"); end != std::wstring::npos) {
+            const size_t slash = args.find_last_of(L"\\/", end);
+            if (slash != std::wstring::npos) core = args.substr(slash + 1, end - slash - 1);
+        }
+    }
+    const std::wstring exeDir = ParentFolder(engine.exe);
+    // Ranga Retro reads bios\retroarch; RetroArch reads it once fitted to this PC (TuneEngine), its own system folder
+    // before that, so a file in either counts.
+    std::vector<std::wstring> folders = {root + L"\\bios\\retroarch"};
+    if (!engine.native && !core.empty()) folders.push_back(exeDir + L"\\system");
+    const auto inSystem = [&](const auto& check) {
+        for (const auto& folder : folders) {
+            if (check(folder)) return true;
+        }
+        return false;
+    };
+    const std::wstring shown = folders.front();
+    const std::wstring ext = Extension(rom);
+
+    if (core == L"pcsx2" && !inSystem([&](const std::wstring& f) { return HasMatch(f + L"\\pcsx2\\bios\\*", {4 * kMiB}); }))
+        return Missing(L"a BIOS do PS2 (um arquivo de 4 MB)", shown + L"\\pcsx2\\bios");
+    if (core.empty() && id == L"PS2" && !engine.bios.empty() && !HasMatch(engine.bios + L"\\*", {4 * kMiB}))
+        return Missing(L"a BIOS do PS2 (um arquivo de 4 MB)", engine.bios);
+    // DuckStation also boots from a PS2 BIOS; in native mode Ranga brings its own PS1 BIOS.
+    if (core.empty() && id == L"PS1" && !engine.bios.empty() && !HasMatch(engine.bios + L"\\*", {kMiB / 2, 4 * kMiB}))
+        return Missing(L"a BIOS do PS1", engine.bios) + L" No modo nativo não precisa: o Ranga tem uma BIOS própria de PS1.";
+    if (core == L"mednafen_psx_hw" && !inSystem([](const std::wstring& f) { return HasAny(f, {L"scph5500.bin", L"scph5501.bin", L"scph5502.bin"}); }))
+        return Missing(L"a BIOS do PS1 (scph5500.bin, scph5501.bin ou scph5502.bin)", shown);
+    if (id == L"SEGACD" && (core == L"genesis_plus_gx" || core == L"picodrive") &&
+        !inSystem([](const std::wstring& f) { return HasAny(f, {L"bios_CD_U.bin", L"bios_CD_E.bin", L"bios_CD_J.bin"}); }))
+        return Missing(L"a BIOS do Sega CD (bios_CD_U.bin, bios_CD_E.bin ou bios_CD_J.bin)", shown);
+    if (core == L"mednafen_saturn" && !inSystem([](const std::wstring& f) { return HasAny(f, {L"mpr-17933.bin", L"sega_101.bin"}); }))
+        return Missing(L"a BIOS do Saturn (mpr-17933.bin ou sega_101.bin)", shown);
+    if (core == L"xemu") {
+        std::wstring absent;
+        for (const wchar_t* name : {L"mcpx_1.0.bin", L"Complex_4627v1.03.bin", L"xbox_hdd.qcow2"}) {
+            if (!Exists(shown + L"\\xemu\\" + name)) absent += (absent.empty() ? L"" : L", ") + std::wstring(name);
+        }
+        if (!absent.empty()) return Missing(L"o que o xemu precisa do seu Xbox (" + absent + L")", shown + L"\\xemu");
+    }
+    if (core == L"eden") {
+        if (!Exists(shown + L"\\eden\\keys\\prod.keys")) return Missing(L"a prod.keys do Switch", shown + L"\\eden\\keys");
+        if (!HasMatch(shown + L"\\eden\\nand\\system\\Contents\\registered\\*.nca"))
+            return Missing(L"o firmware do Switch", shown + L"\\eden\\nand\\system\\Contents\\registered");
+    }
+    // The PS3 firmware is the one Sony publishes on its site; RPCS3 installs it (File > Install Firmware).
+    const std::wstring vsh = L"\\dev_flash\\vsh\\module\\vsh.self";
+    if ((core == L"rpcs3" && !Exists(shown + L"\\rpcs3" + vsh)) || (core.empty() && id == L"PS3" && !Exists(exeDir + vsh)))
+        return L"Falta o firmware do PS3. Baixe o PS3UPDAT.PUP no site da Sony e instale pelo RPCS3 (File > Install Firmware).";
+    if ((ext == L".wud" || ext == L".wux") &&
+        ((core == L"cemu" && !Exists(shown + L"\\Cemu\\keys.txt")) || (core.empty() && id == L"WIIU" && !Exists(exeDir + L"\\keys.txt"))))
+        return Missing(L"a chave do seu Wii U para jogos WUD e WUX (keys.txt)", core.empty() ? exeDir : shown + L"\\Cemu");
+    if (ext == L".fds" && !core.empty() && !inSystem([](const std::wstring& f) { return Exists(f + L"\\disksys.rom"); }))
+        return Missing(L"a BIOS do Famicom Disk System (disksys.rom)", shown);
+    return L"";
 }
 
 namespace {

@@ -432,6 +432,8 @@ struct Client {
     bool enginesPage = false;
     // Each console's emulator, read again whenever the page changes one, so drawing never reads engines.ini.
     std::map<std::wstring, Engine> engines;
+    std::wstring missingKey, missingText;
+    ULONGLONG missingAt = 0;
     std::map<std::wstring, std::array<char, 1024>> argsEdit, fullscreenEdit;
     // A game file whose extension fits several consoles waits here until the user says which.
     std::wstring askFile;
@@ -458,6 +460,7 @@ struct Client {
             snprintf(fullscreen.data(), fullscreen.size(), "%s", Utf8(engine.fullscreen).c_str());
             engines.emplace(system.id, engine);
         }
+        missingKey.clear();
     }
 
     const Engine& EngineFor(const std::wstring& system) {
@@ -467,6 +470,19 @@ struct Client {
     }
 
     static bool External(const Game& game) { return game.system != L"PS5" && !ProfileFor(game.titleId).bloodborne; }
+
+    // The BIOS, keys or firmware a console's emulator is missing (MissingFiles) for one game, or for the console's own
+    // system when folder is empty. It reads folders, so the answer is kept for 2 s.
+    const std::wstring& MissingFor(const std::wstring& system, const std::wstring& folder) {
+        const std::wstring key = system + L"|" + folder;
+        if (key != missingKey || GetTickCount64() - missingAt > 2000) {
+            missingKey = key;
+            missingAt = GetTickCount64();
+            const Engine& engine = EngineFor(system);
+            missingText = engine.ready ? MissingFiles(library.Root(), system, engine, folder.empty() ? L"" : GameRom(system, folder)) : L"";
+        }
+        return missingText;
+    }
 
     Game* Current() { return selected >= 0 && selected < static_cast<int>(library.Games().size()) ? &library.Games()[static_cast<size_t>(selected)] : nullptr; }
 
@@ -836,13 +852,22 @@ struct Client {
         ImGui::PopFont();
         ImGui::PopStyleColor(4);
         const Engine& engine = EngineFor(console);
-        if (const char* label = SystemButton(console); label != nullptr && engine.native && engine.ready) {
+        const std::wstring missing = console == L"PS5" || console == L"PS4" ? L"" : MissingFor(console, L"");
+        if (const char* label = SystemButton(console); label != nullptr && engine.native && engine.ready && missing.empty()) {
             ImGui::SameLine(0, 12 * scale);
             ImGui::PushFont(semibold, 18);
             ImGui::BeginDisabled(runner.Busy());
             if (ImGui::Button(label, ImVec2(0, 44 * scale))) pending = [this] { runner.StartSystem(library.Root(), console); };
             ImGui::EndDisabled();
             ImGui::PopFont();
+        }
+        if (!missing.empty()) {
+            ImGui::Dummy(ImVec2(0, 4 * scale));
+            ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
+            ImGui::PushTextWrapPos(origin.x + size.x - left - ImGui::GetWindowPos().x);
+            ImGui::TextWrapped("%s", Utf8(missing).c_str());
+            ImGui::PopTextWrapPos();
+            ImGui::PopStyleColor();
         }
         ImGui::EndGroup();
 
@@ -1037,9 +1062,9 @@ struct Client {
                 enginesPage = true;
                 RefreshEngines();
             }
-            if (!engine.ready) {
+            if (const std::wstring& problem = engine.ready ? MissingFor(game.system, game.folder) : engine.problem; !problem.empty()) {
                 ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
-                ImGui::TextWrapped("%s", Utf8(engine.problem).c_str());
+                ImGui::TextWrapped("%s", Utf8(problem).c_str());
                 ImGui::PopStyleColor();
             }
             if (const System* system = FindSystem(game.system)) {
@@ -1484,8 +1509,10 @@ struct Client {
         bool good = profile.tested;
         if (External(*game)) {
             const Engine& engine = EngineFor(game->system);
-            good = engine.ready;
-            tag = !engine.ready ? "falta emulador" : "via " + (engine.presetName.empty() ? Utf8(FileName(engine.exe)) : Utf8(engine.presetName));
+            const bool missing = engine.ready && !MissingFor(game->system, game->folder).empty();
+            good = engine.ready && !missing;
+            tag = !engine.ready ? "falta emulador" : missing ? "falta arquivo do console"
+                                                            : "via " + (engine.presetName.empty() ? Utf8(FileName(engine.exe)) : Utf8(engine.presetName));
         }
         ImGui::PushStyleColor(ImGuiCol_Text, Color(good ? kGreen : kAmber));
         ImGui::TextUnformatted(tag.c_str());
