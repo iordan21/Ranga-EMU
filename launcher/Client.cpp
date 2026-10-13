@@ -1,6 +1,7 @@
 // Ranga Emu client: a library of games of every console on the left, the chosen game on the right, with Play and its
 // options, cheats and logs, and an Emulators page where each console other than PS5 gets the emulator that runs it.
 #include "Common.hpp"
+#include "Covers.hpp"
 #include "Dlss5.hpp"
 #include "Library.hpp"
 #include "Runner.hpp"
@@ -17,6 +18,10 @@
 #include "imgui.h"
 #include "imgui_impl_dx11.h"
 #include "imgui_impl_win32.h"
+#include "imgui_internal.h"
+
+#define SDL_MAIN_HANDLED
+#include <SDL.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_PNG
@@ -85,13 +90,38 @@ struct Texture {
     ImTextureRef Ref() const { return ImTextureRef(static_cast<ImTextureID>(reinterpret_cast<intptr_t>(view))); }
 };
 
-Texture LoadTexture(const std::wstring& path) {
+// maxSide > 0 shrinks a bigger image by a whole factor (box filter): a library of box art at full size would fill the
+// video memory.
+Texture LoadTexture(const std::wstring& path, int maxSide = 0) {
     Texture texture;
     const std::string bytes = ReadBytes(path);
     if (bytes.empty()) return texture;
     int channels = 0;
     unsigned char* pixels = stbi_load_from_memory(reinterpret_cast<const stbi_uc*>(bytes.data()), static_cast<int>(bytes.size()), &texture.width, &texture.height, &channels, 4);
     if (pixels == nullptr) return texture;
+    if (const int side = std::max(texture.width, texture.height); maxSide > 0 && side > maxSide) {
+        const int factor = (side + maxSide - 1) / maxSide;
+        const int width = texture.width / factor, height = texture.height / factor;
+        auto* small = static_cast<unsigned char*>(STBI_MALLOC(static_cast<size_t>(width) * height * 4));
+        if (small != nullptr && width > 0 && height > 0) {
+            for (int y = 0; y < height; ++y) {
+                for (int x = 0; x < width; ++x) {
+                    unsigned sum[4] = {};
+                    for (int dy = 0; dy < factor; ++dy) {
+                        const unsigned char* row = pixels + (static_cast<size_t>(y * factor + dy) * texture.width + x * factor) * 4;
+                        for (int dx = 0; dx < factor * 4; ++dx) sum[dx & 3] += row[dx];
+                    }
+                    for (int c = 0; c < 4; ++c) small[(static_cast<size_t>(y) * width + x) * 4 + c] = static_cast<unsigned char>(sum[c] / (factor * factor));
+                }
+            }
+            stbi_image_free(pixels);
+            pixels = small;
+            texture.width = width;
+            texture.height = height;
+        } else if (small != nullptr) {
+            STBI_FREE(small);
+        }
+    }
     D3D11_TEXTURE2D_DESC description{};
     description.Width = static_cast<UINT>(texture.width);
     description.Height = static_cast<UINT>(texture.height);
@@ -169,6 +199,216 @@ void ApplyTheme(float scale) {
     style.FontScaleDpi = scale;
 }
 
+// Each console's card on the home screen: Ranga's own art, two colors and a drawn outline of its kind of machine, not
+// the makers' logos.
+enum class Glyph { Pad, Handheld, Cartridge, Disc, Arcade };
+
+struct Look {
+    const wchar_t* id;
+    const char* tag;
+    unsigned top, bottom;
+    Glyph glyph;
+};
+
+constexpr Look kLooks[] = {
+    {L"PS5", "PS5", 0x3a7bf0, 0x0b1d4a, Glyph::Pad}, {L"PS4", "PS4", 0x2459b8, 0x081633, Glyph::Pad},
+    {L"PS3", "PS3", 0x4a4e57, 0x0c0d10, Glyph::Pad}, {L"PS2", "PS2", 0x2b3f8f, 0x070b1f, Glyph::Pad},
+    {L"PS1", "PS1", 0x9097a3, 0x2a2c33, Glyph::Disc}, {L"PSP", "PSP", 0x585c66, 0x111216, Glyph::Handheld},
+    {L"SWITCH", "Switch", 0xe4002b, 0x4a0010, Glyph::Handheld}, {L"WIIU", "Wii U", 0x0aa6d6, 0x00303f, Glyph::Pad},
+    {L"WII", "Wii", 0xa9bfcf, 0x2e3a44, Glyph::Pad}, {L"GC", "GC", 0x7357c0, 0x1d1238, Glyph::Pad},
+    {L"3DS", "3DS", 0xd8303b, 0x3d070b, Glyph::Handheld}, {L"NDS", "DS", 0x878a93, 0x24262b, Glyph::Handheld},
+    {L"GBA", "GBA", 0x6550c8, 0x170f3d, Glyph::Handheld}, {L"GB", "GB", 0x93b31c, 0x1f3a0b, Glyph::Handheld},
+    {L"N64", "N64", 0x24a05a, 0x06281a, Glyph::Cartridge}, {L"SNES", "SNES", 0x7a6abd, 0x1e1838, Glyph::Cartridge},
+    {L"NES", "NES", 0xd21a38, 0x3b0610, Glyph::Cartridge}, {L"MD", "MD", 0x45474d, 0x0a0a0a, Glyph::Cartridge},
+    {L"SMS", "SMS", 0xd03434, 0x2d0808, Glyph::Cartridge}, {L"SEGACD", "Sega CD", 0x3a4aa0, 0x0a0f2b, Glyph::Disc},
+    {L"SATURN", "Saturn", 0x4a4e94, 0x101129, Glyph::Disc}, {L"DC", "DC", 0xf47a30, 0x4a1a03, Glyph::Disc},
+    {L"XBOX", "Xbox", 0x36a336, 0x0a2a0a, Glyph::Pad}, {L"X360", "360", 0x78cc56, 0x1b3a10, Glyph::Pad},
+    {L"PCE", "PCE", 0xf2962a, 0x46230a, Glyph::Cartridge}, {L"A2600", "2600", 0xa8784a, 0x2b1a0c, Glyph::Cartridge},
+    {L"ARCADE", "Arcade", 0xe0306e, 0x3a0620, Glyph::Arcade},
+};
+
+const Look& LookFor(const std::wstring& id) {
+    for (const Look& look : kLooks) if (id == look.id) return look;
+    static const Look other{L"", "?", 0x55575e, 0x16171a, Glyph::Pad};
+    return other;
+}
+
+unsigned Mix(unsigned a, unsigned b, float t) {
+    auto channel = [&](int shift) { return static_cast<unsigned>(((a >> shift) & 0xff) * (1 - t) + ((b >> shift) & 0xff) * t) << shift; };
+    return channel(16) | channel(8) | channel(0);
+}
+
+// A rounded rectangle shaded from top to bottom.
+void GradientRect(ImDrawList* draw, ImVec2 min, ImVec2 max, unsigned top, unsigned bottom, float rounding, float alpha = 1.0f) {
+    const int start = draw->VtxBuffer.Size;
+    draw->AddRectFilled(min, max, IM_COL32_WHITE, rounding);
+    ImGui::ShadeVertsLinearColorGradientKeepAlpha(draw, start, draw->VtxBuffer.Size, min, ImVec2(min.x, max.y), Packed(top, alpha), Packed(bottom, alpha));
+}
+
+// The outline of a kind of console, centered on center, about size wide, in color; its details are cut in shade.
+void DrawGlyph(ImDrawList* draw, Glyph glyph, ImVec2 c, float s, ImU32 color, ImU32 shade) {
+    switch (glyph) {
+        case Glyph::Pad: {
+            draw->AddCircleFilled(ImVec2(c.x - s * 0.32f, c.y + s * 0.12f), s * 0.2f, color, 32);
+            draw->AddCircleFilled(ImVec2(c.x + s * 0.32f, c.y + s * 0.12f), s * 0.2f, color, 32);
+            draw->AddRectFilled(ImVec2(c.x - s * 0.45f, c.y - s * 0.2f), ImVec2(c.x + s * 0.45f, c.y + s * 0.14f), color, s * 0.14f);
+            const float arm = s * 0.07f, length = s * 0.2f;
+            const ImVec2 dpad(c.x - s * 0.27f, c.y - s * 0.03f);
+            draw->AddRectFilled(ImVec2(dpad.x - length / 2, dpad.y - arm / 2), ImVec2(dpad.x + length / 2, dpad.y + arm / 2), shade, arm * 0.3f);
+            draw->AddRectFilled(ImVec2(dpad.x - arm / 2, dpad.y - length / 2), ImVec2(dpad.x + arm / 2, dpad.y + length / 2), shade, arm * 0.3f);
+            const ImVec2 face(c.x + s * 0.27f, c.y - s * 0.03f);
+            const float r = s * 0.045f, d = s * 0.085f;
+            for (const ImVec2 offset : {ImVec2(0, -d), ImVec2(0, d), ImVec2(-d, 0), ImVec2(d, 0)}) draw->AddCircleFilled(ImVec2(face.x + offset.x, face.y + offset.y), r, shade, 16);
+            draw->AddCircleFilled(ImVec2(c.x - s * 0.1f, c.y + s * 0.13f), s * 0.07f, shade, 20);
+            draw->AddCircleFilled(ImVec2(c.x + s * 0.1f, c.y + s * 0.13f), s * 0.07f, shade, 20);
+            break;
+        }
+        case Glyph::Handheld: {
+            const ImVec2 min(c.x - s * 0.27f, c.y - s * 0.42f), max(c.x + s * 0.27f, c.y + s * 0.42f);
+            draw->AddRectFilled(min, max, color, s * 0.07f);
+            draw->AddRectFilled(ImVec2(min.x + s * 0.06f, min.y + s * 0.07f), ImVec2(max.x - s * 0.06f, c.y - s * 0.02f), shade, s * 0.02f);
+            const float arm = s * 0.05f, length = s * 0.16f;
+            const ImVec2 dpad(c.x - s * 0.12f, c.y + s * 0.2f);
+            draw->AddRectFilled(ImVec2(dpad.x - length / 2, dpad.y - arm / 2), ImVec2(dpad.x + length / 2, dpad.y + arm / 2), shade, arm * 0.3f);
+            draw->AddRectFilled(ImVec2(dpad.x - arm / 2, dpad.y - length / 2), ImVec2(dpad.x + arm / 2, dpad.y + length / 2), shade, arm * 0.3f);
+            draw->AddCircleFilled(ImVec2(c.x + s * 0.09f, c.y + s * 0.24f), s * 0.045f, shade, 16);
+            draw->AddCircleFilled(ImVec2(c.x + s * 0.17f, c.y + s * 0.16f), s * 0.045f, shade, 16);
+            break;
+        }
+        case Glyph::Cartridge: {
+            const ImVec2 min(c.x - s * 0.34f, c.y - s * 0.4f), max(c.x + s * 0.34f, c.y + s * 0.4f);
+            const ImVec2 shape[] = {min, ImVec2(max.x - s * 0.12f, min.y), ImVec2(max.x, min.y + s * 0.12f), max, ImVec2(min.x, max.y)};
+            draw->AddConvexPolyFilled(shape, 5, color);
+            draw->AddRectFilled(ImVec2(min.x + s * 0.09f, min.y + s * 0.1f), ImVec2(max.x - s * 0.09f, c.y + s * 0.12f), shade, s * 0.03f);
+            for (int i = 0; i < 4; ++i) {
+                const float x = min.x + s * (0.16f + i * 0.12f);
+                draw->AddRectFilled(ImVec2(x, c.y + s * 0.22f), ImVec2(x + s * 0.06f, max.y - s * 0.05f), shade, s * 0.01f);
+            }
+            break;
+        }
+        case Glyph::Disc:
+            draw->AddCircleFilled(c, s * 0.42f, color, 64);
+            draw->AddCircle(c, s * 0.3f, shade, 64, s * 0.02f);
+            draw->AddCircleFilled(c, s * 0.12f, shade, 32);
+            draw->AddCircleFilled(c, s * 0.05f, color, 24);
+            break;
+        case Glyph::Arcade: {
+            const ImVec2 cabinet[] = {ImVec2(c.x - s * 0.26f, c.y - s * 0.44f), ImVec2(c.x + s * 0.26f, c.y - s * 0.44f), ImVec2(c.x + s * 0.26f, c.y + s * 0.44f), ImVec2(c.x - s * 0.26f, c.y + s * 0.44f)};
+            draw->AddConvexPolyFilled(cabinet, 4, color);
+            draw->AddRectFilled(ImVec2(c.x - s * 0.2f, c.y - s * 0.38f), ImVec2(c.x + s * 0.2f, c.y - s * 0.28f), shade, s * 0.02f);
+            draw->AddRectFilled(ImVec2(c.x - s * 0.19f, c.y - s * 0.22f), ImVec2(c.x + s * 0.19f, c.y + s * 0.06f), shade, s * 0.02f);
+            draw->AddLine(ImVec2(c.x - s * 0.1f, c.y + s * 0.2f), ImVec2(c.x - s * 0.1f, c.y + s * 0.12f), shade, s * 0.03f);
+            draw->AddCircleFilled(ImVec2(c.x - s * 0.1f, c.y + s * 0.11f), s * 0.04f, shade, 16);
+            draw->AddCircleFilled(ImVec2(c.x + s * 0.06f, c.y + s * 0.18f), s * 0.03f, shade, 12);
+            draw->AddCircleFilled(ImVec2(c.x + s * 0.15f, c.y + s * 0.18f), s * 0.03f, shade, 12);
+            break;
+        }
+    }
+}
+
+// A soft round light of color, strongest at the center.
+void Glow(ImDrawList* draw, ImVec2 center, float radius, unsigned color, float strength) {
+    constexpr int kRings = 24;
+    for (int i = 0; i < kRings; ++i) draw->AddCircleFilled(center, radius * (1.0f - static_cast<float>(i) / kRings), Packed(color, strength / kRings), 96);
+}
+
+// The console's card: its colors, its outline and its short name.
+void ConsoleCard(ImDrawList* draw, ImFont* font, const Look& look, ImVec2 min, ImVec2 max, float scale, float alpha) {
+    const float size = max.x - min.x, rounding = 14 * scale;
+    GradientRect(draw, min, max, look.top, look.bottom, rounding, alpha);
+    DrawGlyph(draw, look.glyph, ImVec2((min.x + max.x) / 2, min.y + size * 0.42f), size * 0.56f, Packed(0xffffff, 0.92f * alpha), Packed(look.bottom, 0.85f * alpha));
+    const float text = std::max(13.0f, size * 0.13f);
+    draw->AddText(font, text, ImVec2(min.x + size * 0.09f, max.y - size * 0.09f - text), Packed(0xffffff, alpha), look.tag);
+}
+
+// DualSense, Xbox and other controllers for moving around the client, through SDL like Ranga Retro. They are let go
+// while a game runs, so the game's emulator has them to itself.
+class Gamepads {
+public:
+    enum Button { Left, Right, Up, Down, Accept, Back, Count };
+
+    ~Gamepads() { Stop(); }
+
+    void Start() {
+        if (started) return;
+        SDL_SetMainReady();
+        if (SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) != 0) return;
+        started = true;
+        Open();
+    }
+
+    void Stop() {
+        if (!started) return;
+        for (auto* pad : pads) SDL_GameControllerClose(pad);
+        pads.clear();
+        SDL_QuitSubSystem(SDL_INIT_GAMECONTROLLER);
+        started = false;
+        held = {};
+    }
+
+    bool Connected() const { return !pads.empty(); }
+
+    // Reads the controllers; pressed() then tells which buttons went down this frame, arrows repeating while held.
+    void Update(bool active) {
+        pressed = {};
+        if (!started) return;
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_CONTROLLERDEVICEADDED) Open();
+            if (event.type == SDL_CONTROLLERDEVICEREMOVED) {
+                for (size_t i = 0; i < pads.size(); ++i) {
+                    if (SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(pads[i])) == event.cdevice.which) {
+                        SDL_GameControllerClose(pads[i]);
+                        pads.erase(pads.begin() + static_cast<long long>(i));
+                        break;
+                    }
+                }
+            }
+        }
+        std::array<bool, Count> now{};
+        for (auto* pad : pads) {
+            const int x = SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_LEFTX), y = SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_LEFTY);
+            now[Left] = now[Left] || SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_DPAD_LEFT) || x < -20000;
+            now[Right] = now[Right] || SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_DPAD_RIGHT) || x > 20000;
+            now[Up] = now[Up] || SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_DPAD_UP) || y < -20000;
+            now[Down] = now[Down] || SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_DPAD_DOWN) || y > 20000;
+            // By position: Cross on a DualSense, A on an Xbox pad enters; Circle or B goes back.
+            now[Accept] = now[Accept] || SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_A);
+            now[Back] = now[Back] || SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_B);
+        }
+        const double time = ImGui::GetTime();
+        for (int b = 0; b < Count; ++b) {
+            if (!now[b]) { held[b] = 0; continue; }
+            if (held[b] == 0) {
+                held[b] = time;
+                next[b] = time + 0.4;
+                pressed[b] = active;
+            } else if (b <= Down && time >= next[b]) {
+                next[b] = time + 0.11;
+                pressed[b] = active;
+            }
+        }
+    }
+
+    bool Pressed(Button button) const { return pressed[button]; }
+
+private:
+    void Open() {
+        for (int i = 0; i < SDL_NumJoysticks(); ++i) {
+            if (!SDL_IsGameController(i)) continue;
+            const SDL_JoystickID id = SDL_JoystickGetDeviceInstanceID(i);
+            bool open = false;
+            for (auto* pad : pads) open = open || SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(pad)) == id;
+            if (!open) if (auto* pad = SDL_GameControllerOpen(i)) pads.push_back(pad);
+        }
+    }
+
+    bool started = false;
+    std::vector<SDL_GameController*> pads;
+    std::array<double, Count> held{}, next{};
+    std::array<bool, Count> pressed{};
+};
+
 const char* kLogFiles[] = {"game.err", "game.log", "prepare.log", "launcher.log", "dlss5.log"};
 
 struct Client {
@@ -196,8 +436,17 @@ struct Client {
     // A game file whose extension fits several consoles waits here until the user says which.
     std::wstring askFile;
     Detected askDetected;
+    CoverFetcher covers;
+    Gamepads gamepads;
+    // Home is the row of consoles; Console the grid of one console's games; Game the chosen game.
+    enum class Page { Home, Console, Game };
+    Page page = Page::Home;
+    std::wstring console = L"PS5";
+    int gridFocus = 0;
+    bool gridMoved = false;
+    float homeScroll = 0, homeTarget = 0;
 
-    explicit Client(const std::wstring& root) : library(root) {}
+    explicit Client(const std::wstring& root) : library(root), covers(root) {}
 
     void RefreshEngines() {
         engines.clear();
@@ -246,26 +495,30 @@ struct Client {
         Select(index);
     }
 
-    // A cover the user chose wins; otherwise the art the game itself carries, when its console has any.
+    // A cover the user chose wins; then the art the game itself carries, when its console has any; then the box art
+    // the client fetched (Covers.hpp).
     static std::wstring ArtFile(const Game& game, bool icon) {
         const std::wstring art = game.workspace + L"\\art";
-        if (Exists(art + L"\\cover.png")) return art + L"\\cover.png";
+        std::vector<std::wstring> files = {art + L"\\cover.png"};
         if (game.system == L"PS5" || game.system == L"PS4") {
             // PS4 games have their background in pic1.png.
-            if (icon) return game.folder + L"\\sce_sys\\icon0.png";
-            return game.folder + (Exists(game.folder + L"\\sce_sys\\pic0.png") ? L"\\sce_sys\\pic0.png" : L"\\sce_sys\\pic1.png");
+            if (icon) files.push_back(game.folder + L"\\sce_sys\\icon0.png");
+            else files.insert(files.end(), {game.folder + L"\\sce_sys\\pic0.png", game.folder + L"\\sce_sys\\pic1.png"});
         }
         if (game.system == L"PS3" && IsDirectory(game.folder)) {
             const std::wstring base = IsDirectory(game.folder + L"\\PS3_GAME") ? game.folder + L"\\PS3_GAME" : game.folder;
-            return base + (icon ? L"\\ICON0.PNG" : L"\\PIC1.PNG");
+            files.push_back(base + (icon ? L"\\ICON0.PNG" : L"\\PIC1.PNG"));
         }
-        if (game.system == L"PSP") return art + (icon ? L"\\ICON0.PNG" : L"\\PIC1.PNG");
+        if (game.system == L"PSP") files.push_back(art + (icon ? L"\\ICON0.PNG" : L"\\PIC1.PNG"));
+        files.push_back(BoxartFile(game));
+        for (const auto& file : files) if (Exists(file)) return file;
         return L"";
     }
 
     const Texture& Icon(const Game& game) {
         auto found = icons.find(game.titleId);
-        if (found == icons.end()) found = icons.emplace(game.titleId, LoadTexture(ArtFile(game, true))).first;
+        if (found == icons.end()) found = icons.emplace(game.titleId, LoadTexture(ArtFile(game, true), 512)).first;
+        if (found->second.view == nullptr) covers.Request(game);
         return found->second;
     }
 
@@ -293,8 +546,7 @@ struct Client {
             MessageBoxW(window, error.c_str(), kAppName, MB_OK | MB_ICONWARNING);
             return;
         }
-        enginesPage = false;
-        Select(index);
+        OpenGame(index);
     }
 
     void AddGameFile() {
@@ -326,6 +578,7 @@ struct Client {
         if (unknown > 0) text += L"\n" + std::to_wstring(unknown) + L" arquivo(s) não são de nenhum console que o Ranga conhece.";
         MessageBoxW(window, text.c_str(), kAppName, MB_OK | MB_ICONINFORMATION);
         enginesPage = false;
+        page = Page::Home;
         if (selected < 0 && !library.Games().empty()) Select(0);
     }
 
@@ -336,8 +589,7 @@ struct Client {
             MessageBoxW(window, error.c_str(), kAppName, MB_OK | MB_ICONWARNING);
             return;
         }
-        enginesPage = false;
-        Select(index);
+        OpenGame(index);
     }
 
     void AskSystem(float scale) {
@@ -369,85 +621,326 @@ struct Client {
         if (Game* game = Current()) SaveOptions(*game, options);
     }
 
-    void Sidebar(float scale) {
-        const float width = 290 * scale;
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, Color(kSidebar));
-        ImGui::BeginChild("##sidebar", ImVec2(width, 0), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar);
-        ImGui::SetCursorPos(ImVec2(20 * scale, 20 * scale));
-        ImGui::PushFont(semibold, 22);
-        ImGui::TextUnformatted("Ranga Emu");
-        ImGui::PopFont();
-        ImGui::SetCursorPosX(20 * scale);
-        ImGui::TextDisabled("Biblioteca");
-        ImGui::Dummy(ImVec2(0, 4 * scale));
+    // What the arrows, Enter and Esc, or a controller's d-pad, Cross/A and Circle/B, asked for this frame. Nothing while
+    // the window is in the back, a popup is open or a field takes the keys.
+    struct Nav {
+        bool left = false, right = false, up = false, down = false, accept = false, back = false, padAccept = false;
+    };
 
-        const float listHeight = ImGui::GetContentRegionAvail().y - 106 * scale;
-        ImGui::BeginChild("##games", ImVec2(0, listHeight), ImGuiChildFlags_None);
-        const float row = 64 * scale;
-        auto& games = library.Games();
-        for (size_t i = 0; i < games.size(); ++i) {
-            const Game& game = games[i];
-            ImGui::PushID(static_cast<int>(i));
-            ImGui::SetCursorPosX(10 * scale);
-            const bool isSelected = static_cast<int>(i) == selected;
-            if (ImGui::Selectable("##game", isSelected, ImGuiSelectableFlags_None, ImVec2(width - 20 * scale, row)) && !isSelected) Select(static_cast<int>(i));
-            const ImVec2 min = ImGui::GetItemRectMin();
-            ImDrawList* draw = ImGui::GetWindowDrawList();
-            const float iconSize = row - 16 * scale;
-            const ImVec2 iconMin(min.x + 8 * scale, min.y + 8 * scale), iconMax(iconMin.x + iconSize, iconMin.y + iconSize);
-            const Texture& icon = Icon(game);
-            if (icon.view != nullptr) draw->AddImageRounded(icon.Ref(), iconMin, iconMax, ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, 6 * scale);
-            else {
-                // No art: the console's short name stands in for it.
-                draw->AddRectFilled(iconMin, iconMax, Packed(kSurface), 6 * scale);
-                const std::string tag = Utf8(game.system);
-                const float size = ImGui::GetFontSize() * (tag.size() > 4 ? 0.62f : 0.8f);
-                const ImVec2 extent = semibold->CalcTextSizeA(size, FLT_MAX, 0, tag.c_str());
-                draw->AddText(semibold, size, ImVec2((iconMin.x + iconMax.x - extent.x) / 2, (iconMin.y + iconMax.y - extent.y) / 2), Packed(kDim), tag.c_str());
-            }
-            const float textX = iconMax.x + 12 * scale;
-            const float textWidth = min.x + width - 20 * scale - textX - 8 * scale;
-            const std::string title = Utf8(game.title);
-            ImGui::PushClipRect(ImVec2(textX, min.y), ImVec2(textX + textWidth, min.y + row), true);
-            draw->AddText(semibold, ImGui::GetFontSize(), ImVec2(textX, min.y + 12 * scale), Packed(kText), title.c_str());
-            ImGui::PopClipRect();
-            const Profile gameProfile = ProfileFor(game.titleId);
-            const bool missing = !GameAvailable(game);
-            bool ready = gameProfile.tested;
-            std::string status = gameProfile.bloodborne ? "experimento (PS4)" : gameProfile.tested ? "testado" : "experimental";
-            if (External(game)) {
-                const Engine& engine = EngineFor(game.system);
-                ready = engine.ready;
-                status = Utf8(game.system) + "  ·  " + (!engine.ready ? std::string("falta emulador") : engine.presetName.empty() ? Utf8(FileName(engine.exe)) : Utf8(engine.presetName));
-            }
-            if (missing) status = "não encontrado";
-            const unsigned dot = missing ? kRed : ready ? kGreen : kAmber;
-            const char* label = status.c_str();
-            const float small = ImGui::GetFontSize() * 0.85f;
-            draw->AddCircleFilled(ImVec2(textX + 4 * scale, min.y + row - 20 * scale), 3.5f * scale, Packed(dot));
-            draw->AddText(nullptr, small, ImVec2(textX + 14 * scale, min.y + row - 20 * scale - small / 2), Packed(kDim), label);
-            ImGui::PopID();
-        }
-        if (games.empty()) {
-            ImGui::SetCursorPosX(20 * scale);
-            ImGui::PushTextWrapPos(width - 20 * scale);
-            ImGui::TextDisabled("Nenhum jogo ainda.");
-            ImGui::PopTextWrapPos();
-        }
-        ImGui::EndChild();
+    Nav ReadNav() {
+        Nav nav;
+        // RANGA_CLIENT_TEST_INPUT=1: keys posted to a window in the back count too (the interface tests).
+        static const bool testInput = _wgetenv(L"RANGA_CLIENT_TEST_INPUT") != nullptr;
+        const bool front = testInput || GetForegroundWindow() == window;
+        const bool free = front && !ImGui::GetIO().WantTextInput && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId) && !ImGui::IsAnyItemActive();
+        gamepads.Update(free);
+        if (!free) return nav;
+        nav.left = ImGui::IsKeyPressed(ImGuiKey_LeftArrow) || gamepads.Pressed(Gamepads::Left);
+        nav.right = ImGui::IsKeyPressed(ImGuiKey_RightArrow) || gamepads.Pressed(Gamepads::Right);
+        nav.up = ImGui::IsKeyPressed(ImGuiKey_UpArrow) || gamepads.Pressed(Gamepads::Up);
+        nav.down = ImGui::IsKeyPressed(ImGuiKey_DownArrow) || gamepads.Pressed(Gamepads::Down);
+        nav.padAccept = gamepads.Pressed(Gamepads::Accept);
+        nav.accept = ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false) || nav.padAccept;
+        nav.back = ImGui::IsKeyPressed(ImGuiKey_Escape, false) || ImGui::IsKeyPressed(ImGuiKey_Backspace, false) || gamepads.Pressed(Gamepads::Back);
+        return nav;
+    }
 
-        ImGui::SetCursorPos(ImVec2(16 * scale, ImGui::GetWindowHeight() - 94 * scale));
-        if (ImGui::Button("+  Adicionar jogo", ImVec2(width - 32 * scale, 36 * scale))) ImGui::OpenPopup("##add");
+    // The consoles on the home row: PS5 first, the ones with games before the ones without.
+    struct Shelf {
+        std::wstring id;
+        int count = 0;
+    };
+
+    std::vector<Shelf> Shelves() {
+        std::vector<Shelf> shelves = {{L"PS5"}};
+        for (const auto& game : library.Games()) {
+            if (game.system == L"PS4") { shelves.push_back({L"PS4"}); break; }
+        }
+        for (const auto& system : Systems()) shelves.push_back({system.id});
+        for (auto& shelf : shelves) {
+            for (const auto& game : library.Games()) shelf.count += game.system == shelf.id;
+        }
+        std::stable_partition(shelves.begin(), shelves.end(), [](const Shelf& shelf) { return shelf.count > 0; });
+        return shelves;
+    }
+
+    std::vector<int> ConsoleGames(const std::wstring& id) {
+        std::vector<int> found;
+        for (size_t i = 0; i < library.Games().size(); ++i) {
+            if (library.Games()[i].system == id) found.push_back(static_cast<int>(i));
+        }
+        return found;
+    }
+
+    void OpenGame(int index) {
+        Select(index);
+        enginesPage = false;
+        if (Game* game = Current()) {
+            console = game->system;
+            page = Page::Game;
+        }
+    }
+
+    void OpenConsole() {
+        page = Page::Console;
+        gridFocus = 0;
+        const auto games = ConsoleGames(console);
+        for (size_t k = 0; k < games.size(); ++k) if (games[k] == selected) gridFocus = static_cast<int>(k);
+        gridMoved = true;
+    }
+
+    // How a console's games run, in a few words for the home screen.
+    std::string HowItRuns(const std::wstring& id) {
+        if (id == L"PS5") return "Roda no próprio Ranga";
+        if (id == L"PS4") return "Só o Bloodborne, como experimento";
+        const Engine& engine = EngineFor(id);
+        if (engine.native) return engine.ready ? "Roda dentro do Ranga" : "Falta: " + Utf8(engine.problem);
+        if (engine.ready) return "Pelo " + (engine.presetName.empty() ? Utf8(FileName(engine.exe)) : Utf8(engine.presetName));
+        return "Sem emulador: escolha um em Emuladores";
+    }
+
+    void TopButtons(float scale, float right) {
+        const float wide = 170 * scale, narrow = 130 * scale, height = 36 * scale;
+        ImGui::SetCursorPos(ImVec2(right - wide - narrow - 10 * scale, 22 * scale));
+        if (ImGui::Button("+  Adicionar jogo", ImVec2(wide, height))) ImGui::OpenPopup("##add");
         AddMenu(scale);
-        ImGui::SetCursorPosX(16 * scale);
-        ImGui::PushStyleColor(ImGuiCol_Button, Color(enginesPage ? kSelected : kSurface));
-        if (ImGui::Button("Emuladores", ImVec2(width - 32 * scale, 36 * scale))) {
-            enginesPage = !enginesPage;
+        ImGui::SameLine(0, 10 * scale);
+        if (ImGui::Button("Emuladores", ImVec2(narrow, height))) {
+            enginesPage = true;
             RefreshEngines();
         }
-        ImGui::PopStyleColor();
+    }
+
+    // The art of a game in a box: its own square art fills it; box art of another shape sits whole on the console's
+    // colors; no art at all is the console's colors with the title.
+    void GameArt(ImDrawList* draw, const Game& game, ImVec2 min, ImVec2 max, float scale) {
+        const Look& look = LookFor(game.system);
+        const float rounding = 10 * scale, width = max.x - min.x, height = max.y - min.y;
+        const Texture& icon = Icon(game);
+        if (icon.view == nullptr) {
+            GradientRect(draw, min, max, Mix(look.top, kBackground, 0.25f), Mix(look.bottom, kBackground, 0.3f), rounding);
+            DrawGlyph(draw, look.glyph, ImVec2(min.x + width * 0.5f, min.y + height * 0.36f), width * 0.42f, Packed(0xffffff, 0.16f), Packed(look.bottom, 0.0f));
+            const std::string title = Utf8(game.title);
+            const float size = ImGui::GetFontSize() * 1.05f;
+            ImGui::PushClipRect(min, max, true);
+            draw->AddText(semibold, size, ImVec2(min.x + 12 * scale, min.y + height * 0.62f), Packed(0xffffff, 0.95f), title.c_str(), nullptr, width - 24 * scale);
+            ImGui::PopClipRect();
+            return;
+        }
+        const float imageAspect = static_cast<float>(icon.width) / static_cast<float>(icon.height), boxAspect = width / height;
+        if (imageAspect > boxAspect * 0.8f && imageAspect < boxAspect * 1.25f) {
+            ImVec2 uv0(0, 0), uv1(1, 1);
+            if (imageAspect < boxAspect) {
+                const float visible = imageAspect / boxAspect;
+                uv0.y = (1 - visible) / 2;
+                uv1.y = uv0.y + visible;
+            } else {
+                const float visible = boxAspect / imageAspect;
+                uv0.x = (1 - visible) / 2;
+                uv1.x = uv0.x + visible;
+            }
+            draw->AddImageRounded(icon.Ref(), min, max, uv0, uv1, IM_COL32_WHITE, rounding);
+            return;
+        }
+        GradientRect(draw, min, max, Mix(look.top, kBackground, 0.45f), Mix(look.bottom, kBackground, 0.5f), rounding);
+        const float inset = 8 * scale;
+        float w = width - 2 * inset, h = w / imageAspect;
+        if (h > height - 2 * inset) {
+            h = height - 2 * inset;
+            w = h * imageAspect;
+        }
+        const ImVec2 at(min.x + (width - w) / 2, min.y + (height - h) / 2);
+        draw->AddImageRounded(icon.Ref(), at, ImVec2(at.x + w, at.y + h), ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, 4 * scale);
+    }
+
+    void Focus(ImDrawList* draw, ImVec2 min, ImVec2 max, float scale, float rounding) {
+        const float grow = 4 * scale;
+        draw->AddRect(ImVec2(min.x - grow, min.y - grow), ImVec2(max.x + grow, max.y + grow), Packed(0xffffff), rounding + grow, 0, 3 * scale);
+    }
+
+    void Home(float scale, const Nav& nav) {
+        const auto shelves = Shelves();
+        int focus = 0;
+        for (size_t i = 0; i < shelves.size(); ++i) if (shelves[i].id == console) focus = static_cast<int>(i);
+        if (nav.left && focus > 0) --focus;
+        if (nav.right && focus + 1 < static_cast<int>(shelves.size())) ++focus;
+        console = shelves[static_cast<size_t>(focus)].id;
+        const Shelf& shelf = shelves[static_cast<size_t>(focus)];
+        if (nav.accept) {
+            pending = [this] { OpenConsole(); };
+        }
+
+        ImDrawList* draw = ImGui::GetWindowDrawList();
+        const ImVec2 origin = ImGui::GetWindowPos(), size = ImGui::GetWindowSize();
+        const Look& look = LookFor(console);
+        GradientRect(draw, origin, ImVec2(origin.x + size.x, origin.y + size.y), Mix(look.top, kBackground, 0.5f), kBackground, 0);
+        Glow(draw, ImVec2(origin.x + size.x * 0.78f, origin.y + size.y * 0.62f), size.y * 0.75f, look.top, 0.4f);
+
+        const float left = 40 * scale;
+        ImGui::SetCursorPos(ImVec2(left, 24 * scale));
+        ImGui::PushFont(semibold, 24);
+        ImGui::TextUnformatted("Ranga Emu");
+        ImGui::PopFont();
+        TopButtons(scale, size.x - left);
+
+        // The row of consoles slides so the chosen one stays in view.
+        const float tile = 124 * scale, big = 160 * scale, gap = 20 * scale, rowY = origin.y + 92 * scale;
+        const float view = size.x - 2 * left - big;
+        const float at = focus * (tile + gap);
+        if (at - homeTarget < 0) homeTarget = at;
+        if (at - homeTarget > view) homeTarget = at - view;
+        homeScroll += (homeTarget - homeScroll) * std::min(1.0f, ImGui::GetIO().DeltaTime * 14);
+        if (std::fabs(homeTarget - homeScroll) < 0.5f) homeScroll = homeTarget;
+        for (size_t i = 0; i < shelves.size(); ++i) {
+            const bool chosen = static_cast<int>(i) == focus;
+            const float x = origin.x + left + i * (tile + gap) - homeScroll + (static_cast<int>(i) > focus ? big - tile : 0);
+            const float side = chosen ? big : tile;
+            if (x > origin.x + size.x || x + side < origin.x) continue;
+            const ImVec2 min(x, rowY), max(x + side, rowY + side);
+            ConsoleCard(draw, semibold, LookFor(shelves[i].id), min, max, scale, chosen || shelves[i].count > 0 ? 1.0f : 0.45f);
+            if (chosen) Focus(draw, min, max, scale, 14 * scale);
+            ImGui::SetCursorScreenPos(min);
+            ImGui::PushID(static_cast<int>(i));
+            if (ImGui::InvisibleButton("##console", ImVec2(side, side))) {
+                if (chosen) pending = [this] { OpenConsole(); };
+                else console = shelves[i].id;
+            }
+            ImGui::PopID();
+        }
+
+        float y = rowY + big + 30 * scale;
+        ImGui::SetCursorScreenPos(ImVec2(origin.x + left, y));
+        ImGui::BeginGroup();
+        ImGui::PushFont(semibold, 40);
+        ImGui::TextUnformatted(SystemName(console).c_str());
+        ImGui::PopFont();
+        const std::string count = shelf.count == 0 ? "Nenhum jogo ainda" : shelf.count == 1 ? "1 jogo" : std::to_string(shelf.count) + " jogos";
+        ImGui::TextDisabled("%s   ·   %s", count.c_str(), HowItRuns(console).c_str());
+        ImGui::Dummy(ImVec2(0, 6 * scale));
+        ImGui::PushStyleColor(ImGuiCol_Button, Color(kAccent));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Color(kAccentHover));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, Color(kAccent));
+        ImGui::PushStyleColor(ImGuiCol_Text, Color(0xffffff));
+        ImGui::PushFont(semibold, 18);
+        if (ImGui::Button(shelf.count > 0 ? "Abrir biblioteca" : "Ver console", ImVec2(190 * scale, 44 * scale))) pending = [this] { OpenConsole(); };
+        ImGui::PopFont();
+        ImGui::PopStyleColor(4);
+        ImGui::EndGroup();
+
+        // A few of its games, straight to their page.
+        const auto games = ConsoleGames(console);
+        y = ImGui::GetItemRectMax().y + 28 * scale;
+        const float cover = 112 * scale, coverGap = 14 * scale;
+        if (!games.empty() && y + cover < origin.y + size.y - 30 * scale) {
+            for (size_t k = 0; k < games.size(); ++k) {
+                const float x = origin.x + left + k * (cover + coverGap);
+                if (x + cover > origin.x + size.x - left) break;
+                const ImVec2 min(x, y), max(x + cover, y + cover);
+                GameArt(draw, library.Games()[static_cast<size_t>(games[k])], min, max, scale);
+                ImGui::SetCursorScreenPos(min);
+                ImGui::PushID(games[k]);
+                if (ImGui::InvisibleButton("##recent", ImVec2(cover, cover))) pending = [this, index = games[k]] { OpenGame(index); };
+                if (ImGui::IsItemHovered()) {
+                    Focus(draw, min, max, scale * 0.6f, 10 * scale);
+                    ImGui::SetTooltip("%s", Utf8(library.Games()[static_cast<size_t>(games[k])].title).c_str());
+                }
+                ImGui::PopID();
+            }
+        }
+        const char* hint = "Setas ou direcional: escolher    Enter, X ou A: abrir    Esc, O ou B: voltar";
+        draw->AddText(nullptr, ImGui::GetFontSize() * 0.9f, ImVec2(origin.x + left, origin.y + size.y - 30 * scale), Packed(kDim), hint);
+    }
+
+    void ConsolePage(float scale, const Nav& nav) {
+        const auto games = ConsoleGames(console);
+        ImDrawList* draw = ImGui::GetWindowDrawList();
+        const ImVec2 origin = ImGui::GetWindowPos(), size = ImGui::GetWindowSize();
+        const Look& look = LookFor(console);
+        GradientRect(draw, origin, ImVec2(origin.x + size.x, origin.y + size.y * 0.6f), Mix(look.top, kBackground, 0.7f), kBackground, 0);
+        if (nav.back) {
+            page = Page::Home;
+            return;
+        }
+
+        const float left = 32 * scale;
+        ImGui::SetCursorPos(ImVec2(left, 22 * scale));
+        if (ImGui::Button("<  Consoles", ImVec2(0, 36 * scale))) pending = [this] { page = Page::Home; };
+        ImGui::SameLine(0, 18 * scale);
+        ImGui::PushFont(semibold, 28);
+        ImGui::TextUnformatted(SystemName(console).c_str());
+        ImGui::PopFont();
+        ImGui::SameLine(0, 12 * scale);
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10 * scale);
+        ImGui::TextDisabled("%s", games.size() == 1 ? "1 jogo" : (std::to_string(games.size()) + " jogos").c_str());
+        TopButtons(scale, size.x - left);
+
+        if (games.empty()) {
+            ImGui::SetCursorPos(ImVec2(left, 110 * scale));
+            ImGui::BeginGroup();
+            ImGui::PushFont(semibold, 22);
+            ImGui::TextUnformatted("Nenhum jogo deste console ainda");
+            ImGui::PopFont();
+            ImGui::TextDisabled("%s", HowItRuns(console).c_str());
+            ImGui::Dummy(ImVec2(0, 6 * scale));
+            if (ImGui::Button("Pasta do jogo...", ImVec2(190 * scale, 38 * scale))) pending = [this] { AddGame(); };
+            ImGui::SameLine();
+            if (ImGui::Button("Arquivo do jogo...", ImVec2(190 * scale, 38 * scale))) pending = [this] { AddGameFile(); };
+            ImGui::SameLine();
+            if (ImGui::Button("Pasta de ROMs...", ImVec2(190 * scale, 38 * scale))) pending = [this] { AddRomFolder(); };
+            ImGui::EndGroup();
+            return;
+        }
+
+        const float tile = 168 * scale, gap = 22 * scale, label = ImGui::GetFontSize() * 2.7f;
+        ImGui::SetCursorPos(ImVec2(left, 80 * scale));
+        ImGui::BeginChild("##grid", ImVec2(size.x - left, 0), ImGuiChildFlags_None);
+        const int columns = std::max(1, static_cast<int>((ImGui::GetContentRegionAvail().x - left + gap) / (tile + gap)));
+        const int total = static_cast<int>(games.size());
+        gridFocus = std::clamp(gridFocus, 0, total - 1);
+        const int before = gridFocus;
+        if (nav.left && gridFocus > 0) --gridFocus;
+        if (nav.right && gridFocus + 1 < total) ++gridFocus;
+        if (nav.up && gridFocus - columns >= 0) gridFocus -= columns;
+        if (nav.down) gridFocus = std::min(total - 1, gridFocus + columns);
+        if (gridFocus != before) gridMoved = true;
+        if (nav.accept) pending = [this, index = games[static_cast<size_t>(gridFocus)]] { OpenGame(index); };
+
+        ImDrawList* grid = ImGui::GetWindowDrawList();
+        for (int k = 0; k < total; ++k) {
+            const int index = games[static_cast<size_t>(k)];
+            const Game& game = library.Games()[static_cast<size_t>(index)];
+            ImGui::SetCursorPos(ImVec2((k % columns) * (tile + gap) + 6 * scale, (k / columns) * (tile + label + gap) + 6 * scale));
+            ImGui::PushID(index);
+            if (ImGui::InvisibleButton("##game", ImVec2(tile, tile + label))) pending = [this, index] { OpenGame(index); };
+            const bool hovered = ImGui::IsItemHovered();
+            if (gridMoved && k == gridFocus) {
+                ImGui::SetScrollHereY(0.5f);
+                gridMoved = false;
+            }
+            ImGui::PopID();
+            const ImVec2 min = ImGui::GetItemRectMin(), max(min.x + tile, min.y + tile);
+            if (!ImGui::IsRectVisible(min, ImVec2(max.x, max.y + label))) continue;
+            GameArt(grid, game, min, max, scale);
+            if (k == gridFocus) Focus(grid, min, max, scale, 10 * scale);
+            else if (hovered) grid->AddRect(min, max, Packed(0xffffff, 0.5f), 10 * scale, 0, 2 * scale);
+            // A game that cannot start says why on its art.
+            std::string problem;
+            if (!GameAvailable(game)) problem = "não encontrado";
+            else if (External(game) && !EngineFor(game.system).ready) problem = "falta emulador";
+            if (!problem.empty()) {
+                const float small = ImGui::GetFontSize() * 0.8f;
+                const ImVec2 extent = ImGui::GetFont()->CalcTextSizeA(small, FLT_MAX, 0, problem.c_str());
+                const ImVec2 badge(min.x + 8 * scale, min.y + 8 * scale);
+                grid->AddRectFilled(badge, ImVec2(badge.x + extent.x + 12 * scale, badge.y + extent.y + 6 * scale), Packed(0x000000, 0.7f), 6 * scale);
+                grid->AddText(nullptr, small, ImVec2(badge.x + 6 * scale, badge.y + 3 * scale), Packed(GameAvailable(game) ? kAmber : kRed), problem.c_str());
+            }
+            const std::string title = Utf8(game.title);
+            ImGui::PushClipRect(ImVec2(min.x, max.y), ImVec2(max.x, max.y + label - 4 * scale), true);
+            grid->AddText(semibold, ImGui::GetFontSize(), ImVec2(min.x + 2 * scale, max.y + 8 * scale), Packed(k == gridFocus ? 0xffffff : kText), title.c_str(), nullptr, tile - 4 * scale);
+            ImGui::PopClipRect();
+        }
+        ImGui::Dummy(ImVec2(0, 30 * scale));
         ImGui::EndChild();
-        ImGui::PopStyleColor();
     }
 
     void AddMenu(float scale) {
@@ -566,7 +1059,7 @@ struct Client {
                         std::wstring error;
                         const int index = library.Add(path, error);
                         if (index < 0) MessageBoxW(window, error.c_str(), kAppName, MB_OK | MB_ICONWARNING);
-                        else Select(index);
+                        else OpenGame(index);
                         return;
                     }
                     library.Relocate(titleId, path);
@@ -596,6 +1089,9 @@ struct Client {
                 pending = [this, index = static_cast<size_t>(selected)] {
                     library.Remove(index);
                     Reload(L"");
+                    // Back to the console's games, or to the consoles when it was the last one.
+                    if (ConsoleGames(console).empty()) page = Page::Home;
+                    else OpenConsole();
                 };
             }
         }
@@ -760,7 +1256,7 @@ struct Client {
         ImGui::PopFont();
         ImGui::TextDisabled("Jogos de PS5 rodam no Ranga e o Bloodborne, como experimento, no port nativo; outros jogos de PS4 não rodam. Cada outro console roda no emulador que você escolher aqui. O Ranga não baixa nenhum: baixe do site oficial, extraia onde quiser e aponte o .exe. BIOS, firmware e chaves vêm do seu próprio console.");
         ImGui::Dummy(ImVec2(0, 6 * scale));
-        if (ImGui::Button("Voltar para o jogo")) enginesPage = false;
+        if (ImGui::Button("Voltar")) enginesPage = false;
         ImGui::SameLine();
         if (ImGui::Button("Verificar de novo")) RefreshEngines();
         ImGui::Dummy(ImVec2(0, 6 * scale));
@@ -892,36 +1388,45 @@ struct Client {
         ImGui::EndChild();
     }
 
-    void Detail(float scale) {
-        if (enginesPage) {
-            EnginesPage(scale);
-            return;
-        }
-        ImGui::BeginChild("##detail", ImVec2(0, 0), ImGuiChildFlags_None);
+    void Play(Game& game) {
+        Save();
+        RefreshEngines();
+        runner.Start(library.Root(), game, options);
+        logDirty = true;
+    }
+
+    void Detail(float scale, const Nav& nav) {
         Game* game = Current();
         if (game == nullptr) {
-            const ImVec2 size = ImGui::GetContentRegionAvail();
-            ImGui::SetCursorPos(ImVec2(size.x / 2 - 170 * scale, size.y / 2 - 50 * scale));
-            ImGui::BeginGroup();
-            ImGui::PushFont(semibold, 24);
-            ImGui::TextUnformatted("Nenhum jogo na biblioteca");
-            ImGui::PopFont();
-            ImGui::TextDisabled("Adicione a pasta ou o arquivo de um jogo do seu console.");
-            ImGui::Dummy(ImVec2(0, 6 * scale));
-            if (ImGui::Button("Pasta do jogo...", ImVec2(200 * scale, 38 * scale))) pending = [this] { AddGame(); };
-            ImGui::SameLine();
-            if (ImGui::Button("Arquivo do jogo...", ImVec2(200 * scale, 38 * scale))) pending = [this] { AddGameFile(); };
-            ImGui::EndGroup();
-            ImGui::EndChild();
+            page = Page::Home;
             return;
         }
+        if (nav.back) {
+            pending = [this] { OpenConsole(); };
+            return;
+        }
+        // Cross / A plays, as on a console; Enter stays with whatever button has the keyboard focus.
+        if (nav.padAccept && !runner.Busy()) {
+            Play(*game);
+        }
+        ImGui::BeginChild("##detail", ImVec2(0, 0), ImGuiChildFlags_None);
         const Profile profile = ProfileFor(game->titleId);
         const float width = ImGui::GetContentRegionAvail().x;
-        const float bannerHeight = std::min(260 * scale, ImGui::GetContentRegionAvail().y * 0.36f);
+        const float bannerHeight = std::min(300 * scale, ImGui::GetContentRegionAvail().y * 0.4f);
         ImDrawList* draw = ImGui::GetWindowDrawList();
         const ImVec2 origin = ImGui::GetCursorScreenPos();
         const Texture& banner = Banner(*game);
-        if (banner.view != nullptr) {
+        if (banner.view == nullptr || banner.width < banner.height * 1.3f) {
+            // No wide art of its own: the console's colors, with the box art standing on the right.
+            const Look& look = LookFor(game->system);
+            GradientRect(draw, origin, ImVec2(origin.x + width, origin.y + bannerHeight), Mix(look.top, kBackground, 0.35f), Mix(look.bottom, kBackground, 0.4f), 0);
+            Glow(draw, ImVec2(origin.x + width * 0.7f, origin.y + bannerHeight * 0.4f), bannerHeight * 1.4f, look.top, 0.25f);
+            if (const Texture& poster = Icon(*game); poster.view != nullptr) {
+                const float h = bannerHeight - 48 * scale, w = h * poster.width / poster.height;
+                const ImVec2 at(origin.x + width - 40 * scale - w, origin.y + 24 * scale);
+                draw->AddImageRounded(poster.Ref(), at, ImVec2(at.x + w, at.y + h), ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, 8 * scale);
+            }
+        } else {
             // The art is cropped to the banner's shape around its middle.
             const float imageAspect = static_cast<float>(banner.width) / static_cast<float>(banner.height), boxAspect = width / bannerHeight;
             ImVec2 uv0(0, 0), uv1(1, 1);
@@ -935,11 +1440,12 @@ struct Client {
                 uv1.x = uv0.x + visible;
             }
             draw->AddImage(banner.Ref(), origin, ImVec2(origin.x + width, origin.y + bannerHeight), uv0, uv1);
-        } else {
-            draw->AddRectFilled(origin, ImVec2(origin.x + width, origin.y + bannerHeight), Packed(kSurface));
         }
         draw->AddRectFilledMultiColor(ImVec2(origin.x, origin.y + bannerHeight * 0.35f), ImVec2(origin.x + width, origin.y + bannerHeight),
                                       Packed(kBackground, 0), Packed(kBackground, 0), Packed(kBackground), Packed(kBackground));
+        ImGui::SetCursorScreenPos(ImVec2(origin.x + 20 * scale, origin.y + 18 * scale));
+        if (ImGui::Button(("<  " + SystemName(game->system)).c_str(), ImVec2(0, 34 * scale))) pending = [this] { OpenConsole(); };
+        ImGui::SetCursorScreenPos(origin);
         ImGui::Dummy(ImVec2(width, bannerHeight - 40 * scale));
 
         const float pad = 32 * scale;
@@ -976,12 +1482,7 @@ struct Client {
         ImGui::PushFont(semibold, 18);
         ImGui::BeginDisabled(busy);
         const char* playLabel = !busy ? "Jogar" : runner.Current() == Runner::State::Preparing ? "Preparando..." : "Rodando...";
-        if (ImGui::Button(playLabel, ImVec2(170 * scale, 44 * scale))) {
-            Save();
-            RefreshEngines();
-            runner.Start(library.Root(), *game, options);
-            logDirty = true;
-        }
+        if (ImGui::Button(playLabel, ImVec2(170 * scale, 44 * scale))) Play(*game);
         ImGui::EndDisabled();
         ImGui::PopFont();
         ImGui::PopStyleColor(4);
@@ -1035,6 +1536,10 @@ struct Client {
         ImGui::EndChild();
     }
 
+    bool NeedsFrames() const {
+        return (gamepads.Connected() && GetForegroundWindow() == window) || std::fabs(homeTarget - homeScroll) > 0.0f;
+    }
+
     // The client gets out of the way while a game runs and comes back when it ends.
     void Watch() {
         const auto state = runner.Current();
@@ -1055,13 +1560,33 @@ struct Client {
             pending = nullptr;
             action();
         }
+        for (const auto& titleId : covers.TakeDone()) {
+            for (const auto& game : library.Games()) if (game.titleId == titleId) ForgetArt(game);
+        }
+        // The controllers belong to the game while it runs.
+        if (runner.Busy()) gamepads.Stop();
+        else gamepads.Start();
+        const Nav nav = ReadNav();
+        // Arrows move the keyboard focus only where there are fields and tabs; on the console row and the grid they
+        // move the selection.
+        ImGuiIO& io = ImGui::GetIO();
+        if (enginesPage || page == Page::Game) io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+        else io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableKeyboard;
+
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
         ImGui::SetNextWindowPos(viewport->WorkPos);
         ImGui::SetNextWindowSize(viewport->WorkSize);
         ImGui::Begin("##root", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus);
-        Sidebar(scale);
-        ImGui::SameLine(0, 0);
-        Detail(scale);
+        if (enginesPage) {
+            if (nav.back) enginesPage = false;
+            EnginesPage(scale);
+        } else if (page == Page::Home) {
+            Home(scale, nav);
+        } else if (page == Page::Console) {
+            ConsolePage(scale, nav);
+        } else {
+            Detail(scale, nav);
+        }
         AskSystem(scale);
         ImGui::End();
     }
@@ -1121,8 +1646,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     monitor.cbSize = sizeof(monitor);
     GetMonitorInfoW(MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY), &monitor);
     const RECT work = monitor.rcWork;
-    const int width = std::min(static_cast<int>(1040 * scale), static_cast<int>(work.right - work.left));
-    const int height = std::min(static_cast<int>(660 * scale), static_cast<int>(work.bottom - work.top));
+    const int width = std::min(static_cast<int>(1280 * scale), static_cast<int>(work.right - work.left));
+    const int height = std::min(static_cast<int>(760 * scale), static_cast<int>(work.bottom - work.top));
     HWND hwnd = CreateWindowW(kWindowClass, kAppName, WS_OVERLAPPEDWINDOW, work.left + (work.right - work.left - width) / 2, work.top + (work.bottom - work.top - height) / 2,
                               width, height, nullptr, nullptr, instance, nullptr);
     // The dark title bar matches the window (DWMWA_USE_IMMERSIVE_DARK_MODE, Windows 10 20H1 and later).
@@ -1162,12 +1687,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     client.semibold = semibold != nullptr ? semibold : regular;
     g_runner = &client.runner;
     client.Reload(client.library.Selected());
+    if (const Game* game = client.Current()) client.console = game->system;
 
     bool done = false;
     while (!done) {
         MSG message;
         // Idle frames wait for input, so the client costs nothing while a game runs; a busy runner keeps it ticking for status.
-        if (!client.runner.Busy()) MsgWaitForMultipleObjects(0, nullptr, FALSE, 250, QS_ALLINPUT);
+        // A controller is read, not told by a message, and the console row slides: those need frames meanwhile.
+        if (!client.runner.Busy()) MsgWaitForMultipleObjects(0, nullptr, FALSE, client.NeedsFrames() ? 16 : 250, QS_ALLINPUT);
         while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
             TranslateMessage(&message);
             DispatchMessageW(&message);
