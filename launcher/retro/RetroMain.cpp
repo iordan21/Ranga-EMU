@@ -1127,29 +1127,6 @@ struct Saves {
 // keys it understands.
 enum MenuCommand { kContinue = 1, kSave, kLoad, kReset, kFullscreen, kQuit, kSlot = 10, kOption = 1000 };
 
-void SendKey(WORD key) {
-    INPUT input[2]{};
-    input[0].type = input[1].type = INPUT_KEYBOARD;
-    input[0].ki.wVk = input[1].ki.wVk = key;
-    input[1].ki.dwFlags = KEYEVENTF_KEYUP;
-    SendInput(2, input, sizeof(INPUT));
-}
-
-void CALLBACK MenuPadTimer(HWND, UINT, UINT_PTR, DWORD) {
-    static bool held[8];
-    SDL_GameControllerUpdate();
-    const SDL_GameControllerButton buttons[8] = {SDL_CONTROLLER_BUTTON_DPAD_UP, SDL_CONTROLLER_BUTTON_DPAD_DOWN, SDL_CONTROLLER_BUTTON_DPAD_LEFT,
-                                                 SDL_CONTROLLER_BUTTON_DPAD_RIGHT, SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_B,
-                                                 SDL_CONTROLLER_BUTTON_GUIDE, SDL_CONTROLLER_BUTTON_START};
-    const WORD keys[8] = {VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT, VK_RETURN, VK_ESCAPE, VK_ESCAPE, VK_ESCAPE};
-    for (int i = 0; i < 8; ++i) {
-        bool down = false;
-        for (auto* pad : g_pads) down |= pad != nullptr && SDL_GameControllerGetButton(pad, buttons[i]) != 0;
-        if (down && !held[i]) SendKey(keys[i]);
-        held[i] = down;
-    }
-}
-
 // Remembers a core option the user picked in the game's options file, so the game starts with it next time.
 void PersistOption(const std::string& key, const std::string& value) {
     if (g.optionsPath.empty()) return;
@@ -1176,69 +1153,375 @@ void PersistOption(const std::string& key, const std::string& value) {
     WriteFile(g.optionsPath, out.data(), out.size());
 }
 
-// Shows the menu and returns what was picked; the core options are applied here.
-int ShowMenu(int slot) {
-    HMENU menu = CreatePopupMenu();
-    const std::wstring slotText = L" (posição " + std::to_wstring(slot + 1) + L")";
-    AppendMenuW(menu, MF_STRING, kContinue, L"Continuar\tEsc");
-    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, kSave, (L"Salvar estado" + slotText + L"\tF5").c_str());
-    AppendMenuW(menu, MF_STRING, kLoad, (L"Carregar estado" + slotText + L"\tF7").c_str());
-    HMENU slots = CreatePopupMenu();
-    for (int i = 0; i < 5; ++i) AppendMenuW(slots, MF_STRING | (i == slot ? MF_CHECKED : 0), kSlot + i, (L"Posição " + std::to_wstring(i + 1)).c_str());
-    AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(slots), L"Posição do estado");
-    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    // Each option is a submenu of its values, the current one checked; ids encode option and value.
-    HMENU options = CreatePopupMenu();
-    int shown = 0;
-    for (size_t i = 0; i < g.optionOrder.size() && i < 200; ++i) {
-        const std::string& key = g.optionOrder[i];
-        const auto& info = g.optionInfo[key];
-        if (info.values.size() < 2) continue;
-        HMENU values = CreatePopupMenu();
-        const std::string current = g.options[key];
-        for (size_t v = 0; v < info.values.size() && v < 64; ++v) {
-            const std::string label = info.values[v].second.empty() ? info.values[v].first : info.values[v].second;
-            AppendMenuW(values, MF_STRING | (info.values[v].first == current ? MF_CHECKED : 0), kOption + i * 64 + v, Wide(label).c_str());
-        }
-        AppendMenuW(options, MF_POPUP, reinterpret_cast<UINT_PTR>(values), Wide(info.description.empty() ? key : info.description).c_str());
-        ++shown;
-    }
-    AppendMenuW(menu, MF_POPUP | (shown == 0 ? MF_GRAYED : 0), reinterpret_cast<UINT_PTR>(options), L"Opções do core");
-    AppendMenuW(menu, MF_STRING | (g_fullscreen ? MF_CHECKED : 0), kFullscreen, L"Tela cheia\tF11");
-    AppendMenuW(menu, MF_STRING, kReset, L"Reiniciar o jogo");
-    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, kQuit, L"Sair do jogo");
+// The menu over the game (Esc, or the gamepad's PS/Guide button), drawn by Ranga in its own colors instead of a
+// Windows menu: up and down choose, left and right change a value (the save slot, full screen, a core option), A or
+// Enter picks, B or Esc goes back and closes. The game waits while it is open; the page behind it is dimmed.
+namespace menu {
 
-    RECT client{};
-    GetClientRect(g_window, &client);
-    POINT center{client.right / 2, client.bottom / 2};
-    ClientToScreen(g_window, &center);
-    if (g_fullscreen) ShowCursor(TRUE);
-    SetForegroundWindow(g_window);
-    const UINT_PTR timer = SetTimer(nullptr, 0, 40, MenuPadTimer);
-    // The first press of the button that opened the menu must not also pick an item.
-    MenuPadTimer(nullptr, 0, 0, 0);
-    const int picked = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_CENTERALIGN | TPM_VCENTERALIGN | TPM_RIGHTBUTTON, center.x, center.y, 0, g_window, nullptr);
-    KillTimer(nullptr, timer);
-    Log("[retro] menu: escolha %d, janela na frente: %s\n", picked, GetForegroundWindow() == g_window ? "sim" : "nao");
-    if (g_fullscreen) ShowCursor(FALSE);
-    DestroyMenu(menu);
-    if (picked >= kOption) {
-        const size_t option = static_cast<size_t>(picked - kOption) / 64, value = static_cast<size_t>(picked - kOption) % 64;
-        if (option < g.optionOrder.size()) {
-            const std::string& key = g.optionOrder[option];
-            const auto& values = g.optionInfo[key].values;
-            if (value < values.size()) {
-                g.options[key] = values[value].first;
-                g.optionsChanged = true;
-                PersistOption(key, values[value].first);
-                ShowMessage(L"Opção alterada; alguns cores só aplicam ao reiniciar o jogo", 0);
-            }
+const COLORREF kPanel = RGB(0x1f, 0x20, 0x24), kRow = RGB(0x2d, 0x2e, 0x34), kText = RGB(0xe8, 0xe8, 0xea),
+               kDim = RGB(0x8b, 0x8d, 0x93), kAccent = RGB(0xe5, 0x48, 0x4d), kLine = RGB(0x33, 0x34, 0x3a);
+constexpr int kShown = 10;
+
+struct Row {
+    std::wstring label, value;
+    // Left and right change it; the value is drawn between ‹ › while the row has the focus.
+    bool changes = false;
+};
+
+struct MenuState {
+    HWND window = nullptr, dim = nullptr;
+    // 0 the menu, 1 the core options.
+    int page = 0, focus = 0, top = 0;
+    int slot = 0;
+    bool fullscreen = false, optionChanged = false;
+    // The command picked; 0 while the menu is open.
+    int result = 0;
+    // The core options with a choice, as indices into g.optionOrder.
+    std::vector<size_t> options;
+    float scale = 1;
+};
+MenuState s;
+
+std::vector<Row> Rows() {
+    std::vector<Row> rows;
+    if (s.page == 0) {
+        const std::wstring slot = L"posição " + std::to_wstring(s.slot + 1);
+        rows = {{L"Continuar", L""},
+                {L"Salvar estado", slot},
+                {L"Carregar estado", slot},
+                {L"Posição do estado", std::to_wstring(s.slot + 1) + L" de 5", true},
+                {L"Opções do core", s.options.empty() ? L"nenhuma" : std::to_wstring(s.options.size()) + L"  ›"},
+                {L"Tela cheia", s.fullscreen ? L"sim" : L"não", true},
+                {L"Reiniciar o jogo", L""},
+                {L"Sair do jogo", L""}};
+        return rows;
+    }
+    for (const size_t index : s.options) {
+        const std::string& key = g.optionOrder[index];
+        const auto& info = g.optionInfo[key];
+        const std::string& current = g.options[key];
+        std::wstring value = Wide(current);
+        for (const auto& [name, label] : info.values) {
+            if (name == current) value = Wide(label.empty() ? name : label);
         }
+        rows.push_back({Wide(info.description.empty() ? key : info.description), value, true});
+    }
+    return rows;
+}
+
+int Visible(size_t rows) { return static_cast<int>(std::min<size_t>(rows, kShown)); }
+
+// The panel's size for the page, centered on the game's window, with round corners.
+void Place() {
+    const int rows = Visible(Rows().size());
+    const int width = static_cast<int>(560 * s.scale), height = static_cast<int>((74 + 46 * rows + 50) * s.scale);
+    RECT game{};
+    GetWindowRect(g_window, &game);
+    const int x = (game.left + game.right - width) / 2, y = (game.top + game.bottom - height) / 2;
+    SetWindowPos(s.window, HWND_TOPMOST, x, y, width, height, SWP_NOACTIVATE);
+    const int round = static_cast<int>(16 * s.scale);
+    SetWindowRgn(s.window, CreateRoundRectRgn(0, 0, width + 1, height + 1, round, round), TRUE);
+    if (s.dim != nullptr) SetWindowPos(s.dim, s.window, game.left, game.top, game.right - game.left, game.bottom - game.top, SWP_NOACTIVATE);
+    InvalidateRect(s.window, nullptr, FALSE);
+}
+
+void Move(int step) {
+    const int count = static_cast<int>(Rows().size());
+    if (count == 0) return;
+    s.focus = (s.focus + step + count) % count;
+    if (s.focus < s.top) s.top = s.focus;
+    if (s.focus >= s.top + kShown) s.top = s.focus - kShown + 1;
+    InvalidateRect(s.window, nullptr, FALSE);
+}
+
+void Change(int step) {
+    if (s.page == 0) {
+        if (s.focus == 3) s.slot = (s.slot + 5 + step) % 5;
+        else if (s.focus == 5) s.fullscreen = !s.fullscreen;
+    } else if (s.focus < static_cast<int>(s.options.size())) {
+        const std::string& key = g.optionOrder[s.options[static_cast<size_t>(s.focus)]];
+        const auto& values = g.optionInfo[key].values;
+        size_t at = 0;
+        for (size_t v = 0; v < values.size(); ++v) {
+            if (values[v].first == g.options[key]) at = v;
+        }
+        at = step > 0 ? (at + 1) % values.size() : (at + values.size() - 1) % values.size();
+        g.options[key] = values[at].first;
+        g.optionsChanged = true;
+        s.optionChanged = true;
+        PersistOption(key, values[at].first);
+    }
+    InvalidateRect(s.window, nullptr, FALSE);
+}
+
+void Pick() {
+    if (s.page == 1) {
+        Change(1);
+        return;
+    }
+    switch (s.focus) {
+        case 0: s.result = kContinue; break;
+        case 1: s.result = kSave; break;
+        case 2: s.result = kLoad; break;
+        case 4:
+            if (!s.options.empty()) {
+                s.page = 1;
+                s.focus = s.top = 0;
+                Place();
+            }
+            break;
+        case 6: s.result = kReset; break;
+        case 7: s.result = kQuit; break;
+        default: Change(1); break;
+    }
+}
+
+void Back() {
+    if (s.page == 1) {
+        s.page = 0;
+        s.focus = 4;
+        s.top = 0;
+        Place();
+    } else {
+        s.result = kContinue;
+    }
+}
+
+void Paint(HWND window) {
+    PAINTSTRUCT paint;
+    HDC target = BeginPaint(window, &paint);
+    RECT client{};
+    GetClientRect(window, &client);
+    HDC dc = CreateCompatibleDC(target);
+    HBITMAP bitmap = CreateCompatibleBitmap(target, client.right, client.bottom);
+    HGDIOBJ oldBitmap = SelectObject(dc, bitmap);
+    const auto fill = [&](RECT rect, COLORREF color) {
+        HBRUSH brush = CreateSolidBrush(color);
+        FillRect(dc, &rect, brush);
+        DeleteObject(brush);
+    };
+    const auto px = [](float value) { return static_cast<int>(value * s.scale); };
+    fill(client, kPanel);
+    SetBkMode(dc, TRANSPARENT);
+    HFONT title = CreateFontW(-px(22), 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
+    HFONT text = CreateFontW(-px(17), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
+    HFONT small = CreateFontW(-px(14), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
+    HGDIOBJ oldFont = SelectObject(dc, title);
+    SetTextColor(dc, kText);
+    RECT head{px(28), px(22), client.right - px(28), px(56)};
+    DrawTextW(dc, s.page == 0 ? L"Menu do jogo" : L"Opções do core", -1, &head, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    SelectObject(dc, small);
+    SetTextColor(dc, kDim);
+    DrawTextW(dc, L"Ranga Emu", -1, &head, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+    fill(RECT{px(28), px(64), client.right - px(28), px(65)}, kLine);
+
+    const auto rows = Rows();
+    const int shown = Visible(rows.size());
+    SelectObject(dc, text);
+    for (int i = 0; i < shown; ++i) {
+        const int index = s.top + i;
+        if (index >= static_cast<int>(rows.size())) break;
+        const Row& row = rows[static_cast<size_t>(index)];
+        const bool focused = index == s.focus;
+        RECT line{px(16), px(74) + i * px(46), client.right - px(16), px(74) + (i + 1) * px(46) - px(4)};
+        if (focused) {
+            fill(line, kRow);
+            fill(RECT{line.left, line.top + px(8), line.left + px(4), line.bottom - px(8)}, kAccent);
+        }
+        RECT label{line.left + px(18), line.top, line.right - px(16), line.bottom};
+        if (!row.value.empty()) {
+            // The value takes at most 60% of the row, and the name what is left; both end in "…" when cut.
+            const std::wstring value = focused && row.changes ? L"‹  " + row.value + L"  ›" : row.value;
+            RECT measure{0, 0, 0, 0};
+            DrawTextW(dc, value.c_str(), -1, &measure, DT_CALCRECT | DT_SINGLELINE);
+            const int width = std::min<int>(measure.right, (label.right - label.left) * 6 / 10);
+            RECT place{label.right - width, label.top, label.right, label.bottom};
+            SetTextColor(dc, focused ? kText : kDim);
+            DrawTextW(dc, value.c_str(), -1, &place, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+            label.right = place.left - px(16);
+        }
+        SetTextColor(dc, focused ? kText : RGB(0xc8, 0xc9, 0xcd));
+        DrawTextW(dc, row.label.c_str(), -1, &label, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    }
+    if (rows.size() > static_cast<size_t>(kShown)) {
+        // Where the list is, as a thin bar on the right.
+        const int span = shown * px(46), bar = std::max(px(24), span * shown / static_cast<int>(rows.size()));
+        const int at = px(74) + (span - bar) * s.top / std::max(1, static_cast<int>(rows.size()) - shown);
+        fill(RECT{client.right - px(8), at, client.right - px(5), at + bar}, kLine);
+    }
+    SelectObject(dc, small);
+    SetTextColor(dc, kDim);
+    RECT foot{px(28), client.bottom - px(40), client.right - px(28), client.bottom - px(12)};
+    DrawTextW(dc, s.page == 0 ? L"↑↓ escolher    ←→ mudar    A / Enter: ok    B / Esc: voltar ao jogo"
+                              : L"↑↓ escolher    ←→ mudar    B / Esc: voltar", -1, &foot, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    BitBlt(target, 0, 0, client.right, client.bottom, dc, 0, 0, SRCCOPY);
+    SelectObject(dc, oldFont);
+    SelectObject(dc, oldBitmap);
+    DeleteObject(title);
+    DeleteObject(text);
+    DeleteObject(small);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+    EndPaint(window, &paint);
+}
+
+LRESULT CALLBACK Proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+    switch (message) {
+        case WM_PAINT:
+            Paint(window);
+            return 0;
+        case WM_ERASEBKGND:
+            return 1;
+        case WM_KEYDOWN:
+            if (wParam == VK_UP) Move(-1);
+            else if (wParam == VK_DOWN) Move(1);
+            else if (wParam == VK_LEFT) Change(-1);
+            else if (wParam == VK_RIGHT) Change(1);
+            else if (wParam == VK_RETURN || wParam == VK_SPACE) Pick();
+            else if (wParam == VK_ESCAPE || wParam == VK_BACK) Back();
+            return 0;
+        case WM_MOUSEMOVE:
+        case WM_LBUTTONUP: {
+            const int y = static_cast<short>(HIWORD(lParam)), row = (y - static_cast<int>(74 * s.scale)) / static_cast<int>(46 * s.scale);
+            if (y >= static_cast<int>(74 * s.scale) && row < Visible(Rows().size()) && s.top + row != s.focus) {
+                s.focus = s.top + row;
+                InvalidateRect(window, nullptr, FALSE);
+            }
+            if (message == WM_LBUTTONUP && y >= static_cast<int>(74 * s.scale) && row < Visible(Rows().size())) Pick();
+            return 0;
+        }
+        case WM_MOUSEWHEEL:
+            Move(GET_WHEEL_DELTA_WPARAM(wParam) > 0 ? -1 : 1);
+            return 0;
+        case WM_RBUTTONUP:
+            Back();
+            return 0;
+    }
+    return DefWindowProcW(window, message, wParam, lParam);
+}
+
+// The gamepads: the d-pad or left stick moves and changes (repeating while held), A picks, B goes back, PS/Guide or
+// Start closes. A button already down when the menu opened (the one that opened it) waits to be let go.
+void PollPads() {
+    enum { Up, Down, Left, Right, A, B, Close, Count };
+    static bool held[Count];
+    static ULONGLONG next[Count];
+    static bool first = true;
+    SDL_GameControllerUpdate();
+    bool now[Count]{};
+    for (auto* pad : g_pads) {
+        if (pad == nullptr) continue;
+        const auto button = [&](SDL_GameControllerButton b) { return SDL_GameControllerGetButton(pad, b) != 0; };
+        const int x = SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_LEFTX), y = SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_LEFTY);
+        now[Up] |= button(SDL_CONTROLLER_BUTTON_DPAD_UP) || y < -20000;
+        now[Down] |= button(SDL_CONTROLLER_BUTTON_DPAD_DOWN) || y > 20000;
+        now[Left] |= button(SDL_CONTROLLER_BUTTON_DPAD_LEFT) || x < -20000;
+        now[Right] |= button(SDL_CONTROLLER_BUTTON_DPAD_RIGHT) || x > 20000;
+        now[A] |= button(SDL_CONTROLLER_BUTTON_A);
+        now[B] |= button(SDL_CONTROLLER_BUTTON_B);
+        now[Close] |= button(SDL_CONTROLLER_BUTTON_GUIDE) || button(SDL_CONTROLLER_BUTTON_START);
+    }
+    // RANGA_RETRO_PAD_SCRIPT drives it too, in RetroPad names: B (the bottom button) picks, A goes back.
+    now[Up] |= ScriptedButton(RETRO_DEVICE_ID_JOYPAD_UP);
+    now[Down] |= ScriptedButton(RETRO_DEVICE_ID_JOYPAD_DOWN);
+    now[Left] |= ScriptedButton(RETRO_DEVICE_ID_JOYPAD_LEFT);
+    now[Right] |= ScriptedButton(RETRO_DEVICE_ID_JOYPAD_RIGHT);
+    now[A] |= ScriptedButton(RETRO_DEVICE_ID_JOYPAD_B);
+    now[B] |= ScriptedButton(RETRO_DEVICE_ID_JOYPAD_A);
+    now[Close] |= ScriptedButton(RETRO_DEVICE_ID_JOYPAD_START);
+    const ULONGLONG tick = GetTickCount64();
+    for (int b = 0; b < Count; ++b) {
+        if (first || !now[b]) {
+            held[b] = now[b];
+            next[b] = tick + 350;
+            continue;
+        }
+        const bool press = !held[b] || (b <= Right && tick >= next[b]);
+        if (!held[b]) next[b] = tick + 350;
+        else if (press) next[b] = tick + 90;
+        held[b] = true;
+        if (!press) continue;
+        if (b == Up) Move(-1);
+        else if (b == Down) Move(1);
+        else if (b == Left) Change(-1);
+        else if (b == Right) Change(1);
+        else if (b == A) Pick();
+        else if (b == B) Back();
+        else s.result = kContinue;
+    }
+    first = false;
+}
+
+} // namespace menu
+
+// Shows the menu and returns what was picked; slot and fullscreen come back as the menu left them, and the core
+// options are applied here.
+int ShowMenu(int& slot, bool& fullscreen) {
+    using namespace menu;
+    s = MenuState{};
+    s.slot = slot;
+    s.fullscreen = g_fullscreen;
+    for (size_t i = 0; i < g.optionOrder.size(); ++i) {
+        if (g.optionInfo[g.optionOrder[i]].values.size() >= 2) s.options.push_back(i);
+    }
+    HDC screen = GetDC(nullptr);
+    s.scale = std::max(1.0f, GetDeviceCaps(screen, LOGPIXELSY) / 96.0f);
+    ReleaseDC(nullptr, screen);
+    static bool registered = false;
+    if (!registered) {
+        WNDCLASSEXW panel{sizeof(panel)};
+        panel.lpfnWndProc = Proc;
+        panel.hInstance = GetModuleHandleW(nullptr);
+        panel.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        panel.lpszClassName = L"RangaRetroMenu";
+        RegisterClassExW(&panel);
+        WNDCLASSEXW shade{sizeof(shade)};
+        shade.lpfnWndProc = DefWindowProcW;
+        shade.hInstance = GetModuleHandleW(nullptr);
+        shade.hbrBackground = static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
+        shade.lpszClassName = L"RangaRetroMenuShade";
+        RegisterClassExW(&shade);
+        registered = true;
+    }
+    s.dim = CreateWindowExW(WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST, L"RangaRetroMenuShade", L"", WS_POPUP, 0, 0, 1, 1,
+                            g_window, nullptr, GetModuleHandleW(nullptr), nullptr);
+    if (s.dim != nullptr) SetLayeredWindowAttributes(s.dim, 0, 150, LWA_ALPHA);
+    s.window = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST, L"RangaRetroMenu", L"Ranga Emu - menu", WS_POPUP, 0, 0, 1, 1, g_window, nullptr,
+                               GetModuleHandleW(nullptr), nullptr);
+    if (s.window == nullptr) {
+        // Without its window the menu would hold the game with nothing on screen.
+        Log("[retro] o menu não abriu (erro %lu)\n", GetLastError());
+        if (s.dim != nullptr) DestroyWindow(s.dim);
         return kContinue;
     }
-    return picked;
+    Place();
+    if (s.dim != nullptr) ShowWindow(s.dim, SW_SHOWNOACTIVATE);
+    ShowWindow(s.window, SW_SHOW);
+    SetForegroundWindow(s.window);
+    SetFocus(s.window);
+    while (s.result == 0) {
+        MsgWaitForMultipleObjects(0, nullptr, FALSE, 16, QS_ALLINPUT);
+        MSG message;
+        while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+            if (message.message == WM_QUIT) {
+                PostQuitMessage(static_cast<int>(message.wParam));
+                s.result = kQuit;
+                break;
+            }
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+        PollPads();
+        if (!g_running || !IsWindow(g_window)) s.result = kQuit;
+    }
+    Log("[retro] menu: escolha %d\n", s.result);
+    DestroyWindow(s.window);
+    if (s.dim != nullptr) DestroyWindow(s.dim);
+    SetForegroundWindow(g_window);
+    slot = s.slot;
+    fullscreen = s.fullscreen;
+    if (s.optionChanged) ShowMessage(L"Opção alterada; alguns cores só aplicam ao reiniciar o jogo", 0);
+    return s.result;
 }
 
 // Ranga's own defaults for a core, applied before the game's options file, which can still change any of them: the
@@ -1468,14 +1751,14 @@ int RetroMain(int argc, wchar_t** argv) {
         guideHeld = guide;
         if (g_hotkey == VK_ESCAPE) {
             g_hotkey = 0;
-            const int picked = ShowMenu(saves.slot);
+            const int slot = saves.slot;
+            bool fullscreen = g_fullscreen;
+            const int picked = ShowMenu(saves.slot, fullscreen);
+            if (saves.slot != slot) ShowMessage(L"Posição do estado: " + std::to_wstring(saves.slot + 1), 0);
+            if (fullscreen != g_fullscreen) ToggleFullscreen();
             if (picked == kSave) saves.SaveState();
             else if (picked == kLoad) saves.LoadState();
-            else if (picked >= kSlot && picked < kSlot + 5) {
-                saves.slot = picked - kSlot;
-                ShowMessage(L"Posição do estado: " + std::to_wstring(saves.slot + 1), 0);
-            } else if (picked == kReset) g.core.reset();
-            else if (picked == kFullscreen) ToggleFullscreen();
+            else if (picked == kReset) g.core.reset();
             else if (picked == kQuit) g_running = false;
             // The pause leaves no catching up and no stale sound behind.
             audio.Clear();

@@ -174,6 +174,9 @@ void ApplyTheme(float scale) {
     colors[ImGuiCol_WindowBg] = Color(kBackground);
     colors[ImGuiCol_ChildBg] = Color(kBackground, 0);
     colors[ImGuiCol_PopupBg] = Color(kSurface);
+    // The gamepad's ring is white everywhere, as on the console row; a notice dims the page behind it to black.
+    colors[ImGuiCol_NavCursor] = Color(0xffffff);
+    colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0, 0, 0, 0.6f);
     colors[ImGuiCol_Text] = Color(kText);
     colors[ImGuiCol_TextDisabled] = Color(kDim);
     colors[ImGuiCol_FrameBg] = Color(kSurface);
@@ -459,7 +462,9 @@ struct Client {
     // the column within the row, and how many games the last frame had room for.
     int homeRow = 0, homeColumn = 0, homeGamesShown = 0;
     // The game page has just opened: the focus goes to Jogar.
-    bool focusPlay = false;
+    bool focusPlay = false, focusEngines = false;
+    // Frames left in which ImGui's focus ring is kept showing (ShowRing).
+    int ringFrames = 0;
     // The gamepad on the row of buttons at the top (TopBar): which one, -1 when it is elsewhere; the one A pressed
     // this frame, -1 when none. And which of the three buttons of an empty console page it is on.
     int barFocus = -1, barPress = -1, emptyFocus = 0;
@@ -576,7 +581,7 @@ struct Client {
         std::wstring error;
         const int index = library.Add(folder, error);
         if (index < 0) {
-            MessageBoxW(window, error.c_str(), kAppName, MB_OK | MB_ICONWARNING);
+            Notify(error);
             return;
         }
         OpenGame(index);
@@ -588,7 +593,7 @@ struct Client {
         const Detected found = DetectFile(path);
         if (found.systems.empty()) {
             const std::wstring text = L"O Ranga não sabe qual console abre arquivos " + (Extension(path).empty() ? std::wstring(L"sem extensão") : Extension(path)) + L":\n\n" + path;
-            MessageBoxW(window, text.c_str(), kAppName, MB_OK | MB_ICONWARNING);
+            Notify(text);
             return;
         }
         if (found.systems.size() > 1) {
@@ -609,7 +614,7 @@ struct Client {
         std::wstring text = std::to_wstring(added) + L" jogo(s) adicionado(s).";
         if (ambiguous > 0) text += L"\n" + std::to_wstring(ambiguous) + L" arquivo(s) servem para mais de um console e o Ranga não conseguiu ler qual: adicione esses por \"Arquivo do jogo\".";
         if (unknown > 0) text += L"\n" + std::to_wstring(unknown) + L" arquivo(s) não são de nenhum console que o Ranga conhece.";
-        MessageBoxW(window, text.c_str(), kAppName, MB_OK | MB_ICONINFORMATION);
+        Notify(text);
         enginesPage = false;
         page = Page::Home;
         if (selected < 0 && !library.Games().empty()) Select(0);
@@ -619,7 +624,7 @@ struct Client {
         std::wstring error;
         const int index = library.AddFile(path, system, found.serial, found.title, error);
         if (index < 0) {
-            MessageBoxW(window, error.c_str(), kAppName, MB_OK | MB_ICONWARNING);
+            Notify(error);
             return;
         }
         OpenGame(index);
@@ -643,6 +648,58 @@ struct Client {
             ImGui::Dummy(ImVec2(0, 4 * scale));
             if (ImGui::Button("Cancelar", ImVec2(320 * scale, 0))) {
                 askFile.clear();
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+        ImGui::PopStyleVar();
+    }
+
+    // A message or a yes/no question inside Ranga's window, in its colors and on the gamepad, instead of a Windows
+    // message box: the d-pad goes between the buttons, A presses, B answers no (or closes a message).
+    struct Notice {
+        std::wstring text;
+        // Done on Sim; a message has none and shows only OK.
+        std::function<void()> yes;
+    };
+    std::vector<Notice> notices;
+
+    void Notify(const std::wstring& text) { notices.push_back({text, nullptr}); }
+    void Confirm(const std::wstring& text, std::function<void()> yes) { notices.push_back({text, std::move(yes)}); }
+
+    void NoticeWindow(float scale) {
+        if (notices.empty()) return;
+        if (!ImGui::IsPopupOpen("##notice")) ImGui::OpenPopup("##notice");
+        ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowSizeConstraints(ImVec2(380 * scale, 0), ImVec2(620 * scale, FLT_MAX));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(24 * scale, 20 * scale));
+        if (ImGui::BeginPopupModal("##notice", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar)) {
+            const Notice& notice = notices.front();
+            const bool question = static_cast<bool>(notice.yes);
+            ImGui::PushTextWrapPos(570 * scale);
+            ImGui::TextUnformatted(Utf8(notice.text).c_str());
+            ImGui::PopTextWrapPos();
+            ImGui::Dummy(ImVec2(0, 10 * scale));
+            const ImVec2 button(130 * scale, 38 * scale);
+            int answer = -1;
+            if (question) {
+                ImGui::PushStyleColor(ImGuiCol_Button, Color(kAccent));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Color(kAccentHover));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, Color(kAccent));
+                if (ImGui::Button("Sim", button)) answer = 1;
+                ImGui::PopStyleColor(3);
+                ImGui::SameLine(0, 12 * scale);
+            }
+            if (ImGui::Button(question ? "Não" : "OK", button)) answer = 0;
+            // A question starts on Não, so a stray press undoes nothing.
+            if (ImGui::IsWindowAppearing()) {
+                ImGui::SetItemDefaultFocus();
+                ShowRing();
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) || ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false)) answer = 0;
+            if (answer >= 0) {
+                if (answer == 1) pending = notice.yes;
+                notices.erase(notices.begin());
                 ImGui::CloseCurrentPopup();
             }
             ImGui::EndPopup();
@@ -754,6 +811,12 @@ struct Client {
         if (nav.accept) barPress = barFocus;
         else if (nav.down || nav.back) barFocus = -1;
         return true;
+    }
+
+    // Keeps ImGui's focus ring showing over the next frames when a gamepad is there to move it: the focus given
+    // to a page or list that just opened lands a frame later.
+    void ShowRing() {
+        if (gamepads.Connected() || _wgetenv(L"RANGA_CLIENT_TEST_INPUT") != nullptr) ringFrames = 3;
     }
 
     // The ring on the item just drawn when the gamepad is on it.
@@ -1087,14 +1150,11 @@ struct Client {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8 * scale, 8 * scale));
         if (ImGui::BeginPopup("##add")) {
             if (ImGui::Selectable("Pasta do jogo...")) pending = [this] { AddGame(); };
-            // Opened from the gamepad, the list starts on its first entry, with its ring showing: ImGui puts the
-            // focus there a frame after the list appears, so the ring is asked for over the first frames.
-            static int showRing = 0;
+            // Opened from the gamepad, the list starts on its first entry, with its ring showing.
             if (ImGui::IsWindowAppearing()) {
                 ImGui::SetItemDefaultFocus();
-                showRing = gamepads.Connected() || _wgetenv(L"RANGA_CLIENT_TEST_INPUT") != nullptr ? 3 : 0;
+                ShowRing();
             }
-            if (showRing > 0 && showRing--) ImGui::SetNavCursorVisible(true);
             ImGui::TextDisabled("   PS5, Bloodborne, PS3, Xbox 360, Wii U");
             ImGui::Separator();
             if (ImGui::Selectable("Arquivo do jogo...")) pending = [this] { AddGameFile(); };
@@ -1206,7 +1266,7 @@ struct Client {
                     if (system == L"PS5" || system == L"PS4") {
                         std::wstring error;
                         const int index = library.Add(path, error);
-                        if (index < 0) MessageBoxW(window, error.c_str(), kAppName, MB_OK | MB_ICONWARNING);
+                        if (index < 0) Notify(error);
                         else OpenGame(index);
                         return;
                     }
@@ -1233,15 +1293,13 @@ struct Client {
         ImGui::SameLine();
         if (ImGui::Button("Remover da lista")) {
             const std::wstring question = L"Remover " + game.title + L" da lista?\n\nOs arquivos do jogo e os saves não são apagados.";
-            if (MessageBoxW(window, question.c_str(), kAppName, MB_YESNO | MB_ICONQUESTION) == IDYES) {
-                pending = [this, index = static_cast<size_t>(selected)] {
-                    library.Remove(index);
-                    Reload(L"");
-                    // Back to the console's games, or to the consoles when it was the last one.
-                    if (ConsoleGames(console).empty()) page = Page::Home;
-                    else OpenConsole();
-                };
-            }
+            Confirm(question, [this, index = static_cast<size_t>(selected)] {
+                library.Remove(index);
+                Reload(L"");
+                // Back to the console's games, or to the consoles when it was the last one.
+                if (ConsoleGames(console).empty()) page = Page::Home;
+                else OpenConsole();
+            });
         }
     }
 
@@ -1316,7 +1374,7 @@ struct Client {
                     Game* current = Current();
                     if (current == nullptr) return;
                     const std::wstring error = InstallAddon(*current, folder);
-                    if (!error.empty()) MessageBoxW(window, error.c_str(), kAppName, MB_OK | MB_ICONWARNING);
+                    if (!error.empty()) Notify(error);
                     addons = LoadAddons(*current);
                 };
             }
@@ -1350,14 +1408,12 @@ struct Client {
             ImGui::BeginDisabled(running);
             if (ImGui::Button("Remover", ImVec2(90 * scale, 0))) {
                 const std::wstring question = L"Remover a DLC " + addon.title + L"?\n\nA pasta dela não é apagada.";
-                if (MessageBoxW(window, question.c_str(), kAppName, MB_YESNO | MB_ICONQUESTION) == IDYES) {
-                    pending = [this, label = addon.label] {
-                        Game* current = Current();
-                        if (current == nullptr) return;
-                        RemoveAddon(*current, label);
-                        addons = LoadAddons(*current);
-                    };
-                }
+                Confirm(question, [this, label = addon.label] {
+                    Game* current = Current();
+                    if (current == nullptr) return;
+                    RemoveAddon(*current, label);
+                    addons = LoadAddons(*current);
+                });
             }
             ImGui::EndDisabled();
             ImGui::PopID();
@@ -1404,6 +1460,12 @@ struct Client {
         ImGui::PopFont();
         ImGui::TextDisabled("Jogos de PS5 rodam no Ranga e o Bloodborne, como experimento, no port nativo; outros jogos de PS4 não rodam. Cada outro console roda no emulador que você escolher aqui. O Ranga não baixa nenhum: baixe do site oficial, extraia onde quiser e aponte o .exe. BIOS, firmware e chaves vêm do seu próprio console.");
         ImGui::Dummy(ImVec2(0, 6 * scale));
+        // The page opens with the focus on Voltar, so the gamepad has a place to move from.
+        if (focusEngines) {
+            ImGui::SetKeyboardFocusHere();
+            focusEngines = false;
+            ShowRing();
+        }
         if (ImGui::Button("Voltar")) enginesPage = false;
         ImGui::SameLine();
         if (ImGui::Button("Verificar de novo")) RefreshEngines();
@@ -1467,7 +1529,7 @@ struct Client {
                             pending = [this, id = system.id, name = system.name] {
                                 const std::wstring report = TuneEngine(library.Root(), id);
                                 const std::wstring text = L"Ajustes de " + Wide(name) + L" (com o emulador fechado):\n\n" + report;
-                                MessageBoxW(window, text.c_str(), kAppName, MB_OK | MB_ICONINFORMATION);
+                                Notify(text);
                                 RefreshEngines();
                             };
                         }
@@ -1637,8 +1699,7 @@ struct Client {
         }
         if (ImGui::Button(playLabel, ImVec2(170 * scale, 44 * scale))) Play(*game);
         // With a gamepad the focus shows from the start; A with nothing focused (the mouse clicked elsewhere) still plays.
-        static const bool testInput = _wgetenv(L"RANGA_CLIENT_TEST_INPUT") != nullptr;
-        if (focusNow && (gamepads.Connected() || testInput)) ImGui::SetNavCursorVisible(true);
+        if (focusNow) ShowRing();
         if (nav.padAccept && !busy && !ImGui::IsAnyItemFocused()) Play(*game);
         ImGui::EndDisabled();
         ImGui::PopFont();
@@ -1731,10 +1792,12 @@ struct Client {
         static Page lastPage = page;
         static bool lastEngines = enginesPage;
         if (page != lastPage || enginesPage != lastEngines) barFocus = -1;
+        if (enginesPage && !lastEngines) focusEngines = true;
         lastPage = page;
         lastEngines = enginesPage;
         // ImGui's own focus also runs an open list, such as Adicionar jogo's.
         const bool fieldNav = enginesPage || page == Page::Game || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId);
+        if (ringFrames > 0 && ringFrames--) ImGui::SetNavCursorVisible(true);
         if (fieldNav) io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
         else io.ConfigFlags &= ~(ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad);
         // There the gamepad moves the same focus as the arrows: the d-pad or left stick goes between fields, A (Cross)
@@ -1770,9 +1833,13 @@ struct Client {
             Detail(scale, nav);
         }
         AskSystem(scale);
+        NoticeWindow(scale);
         ImGui::End();
     }
 };
+
+Client* g_client = nullptr;
+bool g_closeConfirmed = false;
 
 LRESULT WINAPI WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
     if (ImGui_ImplWin32_WndProcHandler(hwnd, message, wParam, lParam)) return true;
@@ -1791,9 +1858,15 @@ LRESULT WINAPI WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
             if ((wParam & 0xfff0) == SC_KEYMENU) return 0;
             break;
         case WM_CLOSE:
-            if (g_runner != nullptr && g_runner->Current() == Runner::State::Preparing &&
-                MessageBoxW(hwnd, L"O jogo ainda está sendo preparado. Fechar agora interrompe o preparo, que recomeça na próxima vez. Fechar mesmo assim?", kAppName, MB_YESNO | MB_ICONQUESTION) != IDYES)
+            // Closing while a game is being prepared asks first, inside Ranga's window; Sim closes for real.
+            if (g_runner != nullptr && g_runner->Current() == Runner::State::Preparing && !g_closeConfirmed && g_client != nullptr) {
+                g_client->Confirm(L"O jogo ainda está sendo preparado. Fechar agora interrompe o preparo, que recomeça na próxima vez. Fechar mesmo assim?",
+                                  [hwnd] {
+                                      g_closeConfirmed = true;
+                                      PostMessageW(hwnd, WM_CLOSE, 0, 0);
+                                  });
                 return 0;
+            }
             break;
         case WM_DESTROY:
             PostQuitMessage(0);
@@ -1869,6 +1942,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     client.window = hwnd;
     client.semibold = semibold != nullptr ? semibold : regular;
     g_runner = &client.runner;
+    g_client = &client;
     client.Reload(client.library.Selected());
     if (const Game* game = client.Current()) client.console = game->system;
 
@@ -1914,6 +1988,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         g_occluded = g_swapChain->Present(1, 0) == DXGI_STATUS_OCCLUDED;
     }
     g_runner = nullptr;
+    g_client = nullptr;
     for (auto* cache : {&client.icons, &client.banners}) {
         for (auto& entry : *cache) if (entry.second.view != nullptr) entry.second.view->Release();
     }

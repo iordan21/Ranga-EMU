@@ -19,6 +19,8 @@ struct Host {
     HANDLE process = nullptr;
     std::wstring loading;
     ULONGLONG closeAsked = 0;
+    // The emulator did not close when asked, and the title now offers to force it.
+    bool forceOffered = false;
 };
 
 struct Search {
@@ -109,9 +111,15 @@ LRESULT CALLBACK HostProc(HWND window, UINT message, WPARAM wParam, LPARAM lPara
         }
         case WM_CLOSE:
             if (host == nullptr) break;
+            // An emulator that did not close in 10 s is offered to be forced in Ranga's own title bar (the game covers
+            // the window), and the next close forces it.
+            if (host->forceOffered) {
+                TerminateProcess(host->process, 1);
+                return 0;
+            }
             if (host->closeAsked != 0 && GetTickCount64() - host->closeAsked > 10000) {
-                if (MessageBoxW(window, L"O emulador não fechou. Forçar o fechamento? O que não foi salvo no jogo se perde.", L"Ranga Emu", MB_YESNO | MB_ICONWARNING) == IDYES)
-                    TerminateProcess(host->process, 1);
+                host->forceOffered = true;
+                SetWindowTextW(window, L"Ranga Emu - o emulador não fechou: feche de novo para forçar (o que não foi salvo se perde)");
                 return 0;
             }
             if (host->closeAsked == 0) host->closeAsked = GetTickCount64();
