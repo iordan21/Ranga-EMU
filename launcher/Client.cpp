@@ -9,6 +9,9 @@
 
 #include <d3d11.h>
 #include <shellapi.h>
+#include <shlobj.h>
+#include <shlwapi.h>
+#include <optional>
 #include <algorithm>
 #include <cmath>
 #include <functional>
@@ -576,20 +579,19 @@ struct Client {
     }
 
     void AddGame() {
-        const std::wstring folder = PickFolder(window, library.Root(), L"Escolha a pasta do jogo (PS5, Bloodborne, PS3, Xbox 360 ou Wii U)");
-        if (folder.empty()) return;
-        std::wstring error;
-        const int index = library.Add(folder, error);
-        if (index < 0) {
-            Notify(error);
-            return;
-        }
-        OpenGame(index);
+        Browse(L"Escolha a pasta do jogo (PS5, Bloodborne, PS3, Xbox 360 ou Wii U)", library.Root(), true, {}, [this](const std::wstring& folder) {
+            std::wstring error;
+            const int index = library.Add(folder, error);
+            if (index < 0) Notify(error);
+            else OpenGame(index);
+        });
     }
 
     void AddGameFile() {
-        const std::wstring path = PickFile(window, L"", L"Escolha o arquivo do jogo (ISO, ROM, NSP...)", GameFileFilters());
-        if (path.empty()) return;
+        Browse(L"Escolha o arquivo do jogo (ISO, ROM, NSP...)", L"", false, GameFileFilters(), [this](const std::wstring& path) { AddPickedFile(path); });
+    }
+
+    void AddPickedFile(const std::wstring& path) {
         const Detected found = DetectFile(path);
         if (found.systems.empty()) {
             const std::wstring text = L"O Ranga não sabe qual console abre arquivos " + (Extension(path).empty() ? std::wstring(L"sem extensão") : Extension(path)) + L":\n\n" + path;
@@ -605,8 +607,10 @@ struct Client {
     }
 
     void AddRomFolder() {
-        const std::wstring folder = PickFolder(window, L"", L"Escolha a pasta com os jogos (ROMs, ISOs, CHDs...)");
-        if (folder.empty()) return;
+        Browse(L"Escolha a pasta com os jogos (ROMs, ISOs, CHDs...)", L"", true, {}, [this](const std::wstring& folder) { AddPickedRomFolder(folder); });
+    }
+
+    void AddPickedRomFolder(const std::wstring& folder) {
         SetCursor(LoadCursorW(nullptr, IDC_WAIT));
         int added = 0, ambiguous = 0, unknown = 0;
         library.AddRomFolder(folder, added, ambiguous, unknown);
@@ -701,6 +705,202 @@ struct Client {
                 if (answer == 1) pending = notice.yes;
                 notices.erase(notices.begin());
                 ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+        ImGui::PopStyleVar();
+    }
+
+    // Ranga's own way to choose a folder or a file, instead of the Windows dialog, in its colors and on the gamepad:
+    // the d-pad goes along the list, A opens a folder or picks a file, B goes up a folder and, from the drives,
+    // cancels. done gets the path chosen.
+    struct Browser {
+        std::wstring title;
+        // Empty: the drives and the usual places.
+        std::wstring folder;
+        bool pickFolder = false;
+        // Lower-case, with their dot; empty takes every file.
+        std::vector<std::wstring> extensions;
+        std::function<void(const std::wstring&)> done;
+        struct Entry {
+            std::wstring name, path;
+            bool folder = true;
+        };
+        std::vector<Entry> entries;
+        bool listed = false, focusFirst = false;
+        // The folder just left going up, which gets the focus in its parent.
+        std::wstring cameFrom;
+    };
+    std::optional<Browser> browser;
+
+    void Browse(const std::wstring& title, const std::wstring& start, bool pickFolder,
+                const std::vector<std::pair<std::wstring, std::wstring>>& filters, std::function<void(const std::wstring&)> done) {
+        Browser b;
+        b.title = title;
+        b.pickFolder = pickFolder;
+        b.done = std::move(done);
+        // The first filter is every kind of file the caller takes ("*.iso;*.chd;..."); "*.*" takes every file.
+        if (!filters.empty()) {
+            std::wstring patterns = filters.front().second;
+            for (size_t at = 0; at <= patterns.size();) {
+                size_t end = patterns.find(L';', at);
+                if (end == std::wstring::npos) end = patterns.size();
+                const std::wstring pattern = Lower(patterns.substr(at, end - at));
+                if (pattern.rfind(L"*.", 0) == 0 && pattern != L"*.*") b.extensions.push_back(pattern.substr(1));
+                at = end + 1;
+            }
+        }
+        std::wstring folder = start;
+        if (!folder.empty() && !IsDirectory(folder)) folder = ParentFolder(folder);
+        b.folder = IsDirectory(folder) ? folder : L"";
+        browser = std::move(b);
+    }
+
+    static std::wstring JoinPath(const std::wstring& folder, const std::wstring& name) {
+        return !folder.empty() && folder.back() == L'\\' ? folder + name : folder + L"\\" + name;
+    }
+
+    // The folder above; empty above a drive's root, where the drives are.
+    static std::wstring ParentOf(const std::wstring& folder) {
+        if (folder.size() <= 3) return L"";
+        std::wstring parent = folder.substr(0, folder.find_last_of(L'\\', folder.size() - 2));
+        if (parent.size() == 2 && parent[1] == L':') parent += L'\\';
+        return parent;
+    }
+
+    void ListBrowser() {
+        Browser& b = *browser;
+        b.entries.clear();
+        b.listed = true;
+        b.focusFirst = true;
+        if (b.folder.empty()) {
+            const std::pair<const KNOWNFOLDERID*, const wchar_t*> places[] = {
+                {&FOLDERID_Downloads, L"Downloads"}, {&FOLDERID_Desktop, L"Área de trabalho"}, {&FOLDERID_Documents, L"Documentos"}};
+            for (const auto& [id, name] : places) {
+                PWSTR path = nullptr;
+                if (SUCCEEDED(SHGetKnownFolderPath(*id, 0, nullptr, &path)) && IsDirectory(path)) b.entries.push_back({name, path, true});
+                CoTaskMemFree(path);
+            }
+            b.entries.push_back({L"Pasta do Ranga", library.Root(), true});
+            wchar_t drives[256] = {};
+            GetLogicalDriveStringsW(255, drives);
+            for (const wchar_t* drive = drives; *drive != 0; drive += wcslen(drive) + 1) {
+                std::wstring name = L"Disco " + std::wstring(drive, 2);
+                // A disc drive with nothing in it would make the volume name wait.
+                wchar_t label[MAX_PATH] = {};
+                if (GetDriveTypeW(drive) != DRIVE_CDROM && GetVolumeInformationW(drive, label, MAX_PATH, nullptr, nullptr, nullptr, nullptr, 0) && label[0] != 0)
+                    name = std::wstring(label) + L" (" + std::wstring(drive, 2) + L")";
+                b.entries.push_back({name, drive, true});
+            }
+            return;
+        }
+        std::vector<Browser::Entry> folders, files;
+        WIN32_FIND_DATAW data;
+        const HANDLE find = FindFirstFileExW(JoinPath(b.folder, L"*").c_str(), FindExInfoBasic, &data, FindExSearchNameMatch, nullptr, FIND_FIRST_EX_LARGE_FETCH);
+        if (find != INVALID_HANDLE_VALUE) {
+            do {
+                const std::wstring name = data.cFileName;
+                if (name == L"." || name == L".." || (data.dwFileAttributes & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM)) != 0) continue;
+                if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+                    folders.push_back({name, JoinPath(b.folder, name), true});
+                } else if (!b.pickFolder) {
+                    const std::wstring ext = Extension(name);
+                    if (b.extensions.empty() || std::find(b.extensions.begin(), b.extensions.end(), ext) != b.extensions.end())
+                        files.push_back({name, JoinPath(b.folder, name), false});
+                }
+            } while (FindNextFileW(find, &data));
+            FindClose(find);
+        }
+        const auto byName = [](const Browser::Entry& a, const Browser::Entry& c) { return StrCmpLogicalW(a.name.c_str(), c.name.c_str()) < 0; };
+        std::sort(folders.begin(), folders.end(), byName);
+        std::sort(files.begin(), files.end(), byName);
+        b.entries = std::move(folders);
+        b.entries.insert(b.entries.end(), files.begin(), files.end());
+    }
+
+    void BrowserWindow(float scale) {
+        if (!browser) return;
+        if (!browser->listed) ListBrowser();
+        if (!ImGui::IsPopupOpen("##browse")) ImGui::OpenPopup("##browse");
+        const ImGuiViewport* viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowSize(ImVec2(viewport->WorkSize.x * 0.84f, viewport->WorkSize.y * 0.86f), ImGuiCond_Always);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(26 * scale, 22 * scale));
+        if (ImGui::BeginPopupModal("##browse", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings)) {
+            Browser& b = *browser;
+            std::optional<std::wstring> go, chosen;
+            bool cancel = false;
+            ImGui::PushFont(semibold, 24);
+            ImGui::TextUnformatted(Utf8(b.title).c_str());
+            ImGui::PopFont();
+            ImGui::TextDisabled("%s", b.folder.empty() ? "Este PC" : Utf8(b.folder).c_str());
+            ImGui::Dummy(ImVec2(0, 4 * scale));
+            if (b.pickFolder && !b.folder.empty()) {
+                ImGui::PushStyleColor(ImGuiCol_Button, Color(kAccent));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Color(kAccentHover));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, Color(kAccent));
+                if (ImGui::Button("Escolher esta pasta", ImVec2(200 * scale, 36 * scale))) chosen = b.folder;
+                ImGui::PopStyleColor(3);
+                ImGui::SameLine(0, 10 * scale);
+            }
+            if (!b.folder.empty()) {
+                if (ImGui::Button("Voltar uma pasta", ImVec2(170 * scale, 36 * scale))) go = ParentOf(b.folder);
+                ImGui::SameLine(0, 10 * scale);
+            }
+            if (ImGui::Button("Cancelar", ImVec2(130 * scale, 36 * scale))) cancel = true;
+            ImGui::SameLine(0, 20 * scale);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextDisabled(b.pickFolder ? "A: abrir a pasta    B: voltar uma pasta" : "A: abrir a pasta ou escolher o arquivo    B: voltar uma pasta");
+            ImGui::Dummy(ImVec2(0, 6 * scale));
+            ImGui::BeginChild("##entries", ImVec2(0, 0), ImGuiChildFlags_NavFlattened);
+            if (b.entries.empty()) ImGui::TextDisabled(b.pickFolder ? "Nenhuma pasta aqui." : "Nenhuma pasta nem arquivo que sirva aqui.");
+            int focus = 0;
+            for (size_t i = 0; i < b.entries.size(); ++i) {
+                if (!b.cameFrom.empty() && b.entries[i].path == b.cameFrom) focus = static_cast<int>(i);
+            }
+            ImDrawList* draw = ImGui::GetWindowDrawList();
+            const float row = 40 * scale;
+            for (size_t i = 0; i < b.entries.size(); ++i) {
+                const auto& entry = b.entries[i];
+                ImGui::PushID(static_cast<int>(i));
+                if (b.focusFirst && static_cast<int>(i) == focus) {
+                    ImGui::SetKeyboardFocusHere();
+                    ShowRing();
+                }
+                if (ImGui::Selectable("##entry", false, ImGuiSelectableFlags_None, ImVec2(0, row))) {
+                    if (entry.folder) go = entry.path;
+                    else chosen = entry.path;
+                }
+                const ImVec2 min = ImGui::GetItemRectMin();
+                // A folder is a tab over a box in the accent color; a file, a dim page.
+                const float x = min.x + 10 * scale, y = min.y + row / 2;
+                if (entry.folder) {
+                    draw->AddRectFilled(ImVec2(x, y - 9 * scale), ImVec2(x + 10 * scale, y - 5 * scale), Packed(kAccent), 2 * scale);
+                    draw->AddRectFilled(ImVec2(x, y - 6 * scale), ImVec2(x + 22 * scale, y + 9 * scale), Packed(kAccent), 3 * scale);
+                } else {
+                    draw->AddRect(ImVec2(x + 3 * scale, y - 10 * scale), ImVec2(x + 19 * scale, y + 10 * scale), Packed(kDim), 2 * scale, 0, 1.5f * scale);
+                }
+                draw->AddText(ImVec2(x + 36 * scale, y - ImGui::GetFontSize() / 2), Packed(kText), Utf8(entry.name).c_str());
+                ImGui::PopID();
+            }
+            b.focusFirst = false;
+            ImGui::EndChild();
+            if (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false) ||
+                ImGui::IsKeyPressed(ImGuiKey_Backspace, false)) {
+                if (b.folder.empty()) cancel = true;
+                else go = ParentOf(b.folder);
+            }
+            if (chosen || cancel) {
+                const auto done = b.done;
+                const std::wstring path = chosen ? *chosen : L"";
+                browser.reset();
+                ImGui::CloseCurrentPopup();
+                if (chosen) pending = [done, path] { done(path); };
+            } else if (go) {
+                // Going up, the folder left keeps the focus.
+                b.cameFrom = go->size() < b.folder.size() ? b.folder : L"";
+                b.folder = *go;
+                b.listed = false;
             }
             ImGui::EndPopup();
         }
@@ -1259,36 +1459,32 @@ struct Client {
         ImGui::SameLine();
         if (ImGui::Button(isFile ? "Trocar arquivo..." : "Trocar pasta...")) {
             const std::wstring start = isFile ? ParentFolder(game.folder) : game.folder;
-            const std::wstring path = isFile ? PickFile(window, start, L"Escolha o novo arquivo do jogo", GameFileFilters()) : PickFolder(window, start, L"Escolha a nova pasta do jogo");
-            if (!path.empty()) {
-                pending = [this, path, titleId = game.titleId, system = game.system] {
-                    // PS5 and PS4 games are found again by their title id; other consoles keep their entry and workspace.
-                    if (system == L"PS5" || system == L"PS4") {
-                        std::wstring error;
-                        const int index = library.Add(path, error);
-                        if (index < 0) Notify(error);
-                        else OpenGame(index);
-                        return;
-                    }
-                    library.Relocate(titleId, path);
-                    Reload(titleId);
-                };
-            }
+            Browse(isFile ? L"Escolha o novo arquivo do jogo" : L"Escolha a nova pasta do jogo", start, !isFile,
+                   isFile ? GameFileFilters() : std::vector<std::pair<std::wstring, std::wstring>>{},
+                   [this, titleId = game.titleId, system = game.system](const std::wstring& path) {
+                       // PS5 and PS4 games are found again by their title id; other consoles keep their entry and workspace.
+                       if (system == L"PS5" || system == L"PS4") {
+                           std::wstring error;
+                           const int index = library.Add(path, error);
+                           if (index < 0) Notify(error);
+                           else OpenGame(index);
+                           return;
+                       }
+                       library.Relocate(titleId, path);
+                       Reload(titleId);
+                   });
         }
         ImGui::SameLine();
         if (ImGui::Button("Capa...")) {
-            const std::wstring image = PickFile(window, L"", L"Escolha uma imagem PNG para a capa", {{L"Imagem PNG", L"*.png"}});
-            if (!image.empty()) {
-                pending = [this, image] {
-                    Game* current = Current();
-                    if (current == nullptr) return;
-                    CreateDirectoryW((library.Root() + L"\\games").c_str(), nullptr);
-                    CreateDirectoryW(current->workspace.c_str(), nullptr);
-                    CreateDirectoryW((current->workspace + L"\\art").c_str(), nullptr);
-                    CopyFileW(image.c_str(), (current->workspace + L"\\art\\cover.png").c_str(), FALSE);
-                    ForgetArt(*current);
-                };
-            }
+            Browse(L"Escolha uma imagem PNG para a capa", L"", false, {{L"Imagem PNG", L"*.png"}}, [this](const std::wstring& image) {
+                Game* current = Current();
+                if (current == nullptr) return;
+                CreateDirectoryW((library.Root() + L"\\games").c_str(), nullptr);
+                CreateDirectoryW(current->workspace.c_str(), nullptr);
+                CreateDirectoryW((current->workspace + L"\\art").c_str(), nullptr);
+                CopyFileW(image.c_str(), (current->workspace + L"\\art\\cover.png").c_str(), FALSE);
+                ForgetArt(*current);
+            });
         }
         ImGui::SameLine();
         if (ImGui::Button("Remover da lista")) {
@@ -1368,16 +1564,13 @@ struct Client {
         const bool running = runner.Busy() && runner.TitleId() == game.titleId;
         ImGui::BeginDisabled(running);
         if (ImGui::Button("+  Instalar DLC...")) {
-            const std::wstring folder = PickFolder(window, game.folder, L"Escolha a pasta da DLC (a que tem sce_sys\\param.json)");
-            if (!folder.empty()) {
-                pending = [this, folder] {
-                    Game* current = Current();
-                    if (current == nullptr) return;
-                    const std::wstring error = InstallAddon(*current, folder);
-                    if (!error.empty()) Notify(error);
-                    addons = LoadAddons(*current);
-                };
-            }
+            Browse(L"Escolha a pasta da DLC (a que tem sce_sys\\param.json)", game.folder, true, {}, [this](const std::wstring& folder) {
+                Game* current = Current();
+                if (current == nullptr) return;
+                const std::wstring error = InstallAddon(*current, folder);
+                if (!error.empty()) Notify(error);
+                addons = LoadAddons(*current);
+            });
         }
         ImGui::EndDisabled();
         ImGui::SameLine();
@@ -1513,8 +1706,11 @@ struct Client {
                 }
                 if (ImGui::Button(engine.exe.empty() ? "Escolher emulador..." : "Trocar...")) {
                     const std::wstring start = engine.exe.empty() ? L"" : ParentFolder(engine.exe);
-                    const std::wstring exe = PickFile(window, start, (L"Escolha o .exe do emulador de " + Wide(system.name)).c_str(), {{L"Programa", L"*.exe"}});
-                    if (!exe.empty()) pending = [this, id = system.id, exe] { ChooseEngine(library.Root(), id, exe); RefreshEngines(); };
+                    Browse(L"Escolha o .exe do emulador de " + Wide(system.name), start, false, {{L"Programa", L"*.exe"}},
+                           [this, id = system.id](const std::wstring& exe) {
+                               ChooseEngine(library.Root(), id, exe);
+                               RefreshEngines();
+                           });
                 }
                 if (!engine.exe.empty()) {
                     ImGui::SameLine();
@@ -1833,6 +2029,7 @@ struct Client {
             Detail(scale, nav);
         }
         AskSystem(scale);
+        BrowserWindow(scale);
         NoticeWindow(scale);
         ImGui::End();
     }

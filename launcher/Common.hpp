@@ -49,10 +49,6 @@ bool IsElf(const std::wstring& path);
 bool ConvertOrCopy(const std::wstring& from, const std::wstring& to);
 void PrepareModules(const std::wstring& game, const std::wstring& prep, std::wstring& failed);
 
-std::wstring PickFolder(HWND owner, const std::wstring& start, const wchar_t* title);
-// filters are pairs of a name and its patterns ("*.iso;*.chd"); empty when nothing was chosen.
-std::wstring PickFile(HWND owner, const std::wstring& start, const wchar_t* title, const std::vector<std::pair<std::wstring, std::wstring>>& filters);
-
 // The profile API writes Unicode only into a file that already starts with a UTF-16 byte order mark.
 void EnsureUnicodeIni(const std::wstring& path);
 std::wstring ReadIni(const std::wstring& path, const wchar_t* section, const wchar_t* key, const wchar_t* fallback);

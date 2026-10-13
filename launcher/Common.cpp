@@ -316,62 +316,6 @@ void PrepareModules(const std::wstring& game, const std::wstring& prep, std::wst
     }
 }
 
-std::wstring PickFolder(HWND owner, const std::wstring& start, const wchar_t* title) {
-    std::wstring result;
-    IFileOpenDialog* dialog = nullptr;
-    if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)))) return result;
-    DWORD options = 0;
-    dialog->GetOptions(&options);
-    dialog->SetOptions(options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST);
-    dialog->SetTitle(title);
-    IShellItem* folder = nullptr;
-    if (!start.empty() && SUCCEEDED(SHCreateItemFromParsingName(start.c_str(), nullptr, IID_PPV_ARGS(&folder)))) {
-        dialog->SetFolder(folder);
-        folder->Release();
-    }
-    IShellItem* item = nullptr;
-    if (SUCCEEDED(dialog->Show(owner)) && SUCCEEDED(dialog->GetResult(&item))) {
-        PWSTR path = nullptr;
-        if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path))) {
-            result = path;
-            CoTaskMemFree(path);
-        }
-        item->Release();
-    }
-    dialog->Release();
-    while (result.size() > 3 && (result.back() == L'\\' || result.back() == L'/')) result.pop_back();
-    return result;
-}
-
-std::wstring PickFile(HWND owner, const std::wstring& start, const wchar_t* title, const std::vector<std::pair<std::wstring, std::wstring>>& filters) {
-    std::wstring result;
-    IFileOpenDialog* dialog = nullptr;
-    if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)))) return result;
-    DWORD options = 0;
-    dialog->GetOptions(&options);
-    dialog->SetOptions(options | FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST);
-    dialog->SetTitle(title);
-    std::vector<COMDLG_FILTERSPEC> specs;
-    for (const auto& [name, patterns] : filters) specs.push_back({name.c_str(), patterns.c_str()});
-    if (!specs.empty()) dialog->SetFileTypes(static_cast<UINT>(specs.size()), specs.data());
-    IShellItem* folder = nullptr;
-    if (!start.empty() && SUCCEEDED(SHCreateItemFromParsingName(start.c_str(), nullptr, IID_PPV_ARGS(&folder)))) {
-        dialog->SetFolder(folder);
-        folder->Release();
-    }
-    IShellItem* item = nullptr;
-    if (SUCCEEDED(dialog->Show(owner)) && SUCCEEDED(dialog->GetResult(&item))) {
-        PWSTR path = nullptr;
-        if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path))) {
-            result = path;
-            CoTaskMemFree(path);
-        }
-        item->Release();
-    }
-    dialog->Release();
-    return result;
-}
-
 std::string SfoString(const std::string& sfo, const char* key) {
     const auto u16 = [&](size_t at) { return at + 2 <= sfo.size() ? static_cast<unsigned>(static_cast<unsigned char>(sfo[at]) | static_cast<unsigned char>(sfo[at + 1]) << 8) : 0u; };
     const auto u32 = [&](size_t at) { return at + 4 <= sfo.size() ? static_cast<size_t>(u16(at) | u16(at + 2) << 16) : size_t{0}; };
