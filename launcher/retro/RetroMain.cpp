@@ -1184,7 +1184,7 @@ int ShowMenu(int slot) {
 // Ranga's own defaults for a core, applied before the game's options file, which can still change any of them: the
 // OpenGL renderer at about 1080p, and for SwanStation the PS1 BIOS inside the PS3 firmware Sony publishes (ps1_rom.bin,
 // taken from RPCS3's dev_flash), which serves every region.
-void ApplyCoreDefaults(const std::wstring& corePath) {
+void ApplyCoreDefaults(const std::wstring& corePath, const std::wstring& systemDir) {
     std::wstring name = corePath.substr(corePath.find_last_of(L"\\/") + 1);
     for (auto& character : name) character = static_cast<wchar_t>(towlower(character));
     struct Default { const wchar_t* core; const char* key; const char* value; };
@@ -1202,12 +1202,16 @@ void ApplyCoreDefaults(const std::wstring& corePath) {
         {L"cemu", "cemu_internal_resolution", "1.5x"},
         {L"xemu", "xemu_surface_scale", "2"},
         {L"xemu", "xemu_skip_boot_anim", "enabled"},
-        {L"swanstation", "swanstation_BIOS_PathNTSCU", "ps1_rom.bin"},
-        {L"swanstation", "swanstation_BIOS_PathNTSCJ", "ps1_rom.bin"},
-        {L"swanstation", "swanstation_BIOS_PathPAL", "ps1_rom.bin"},
     };
     for (const auto& entry : defaults) {
         if (name.rfind(entry.core, 0) == 0) g.overrides[entry.key] = entry.value;
+    }
+    // Without Sony's, Ranga's own PS1 BIOS (ranga-bios-ps1.bin: OpenBIOS, MIT, built with Ranga's colors in
+    // C:\projetos\sos-ps5\ranga-bios-ps1), which boots most games but not all (Azure Dreams, Wipeout NTSC-U).
+    if (name.rfind(L"swanstation", 0) == 0) {
+        const bool sony = GetFileAttributesW((systemDir + L"\\ps1_rom.bin").c_str()) != INVALID_FILE_ATTRIBUTES;
+        const char* bios = sony ? "ps1_rom.bin" : "ranga-bios-ps1.bin";
+        for (const char* key : {"swanstation_BIOS_PathNTSCU", "swanstation_BIOS_PathNTSCJ", "swanstation_BIOS_PathPAL"}) g.overrides[key] = bios;
     }
     // With Vulkan, SwanStation draws with it and the N64 goes to paraLLEl-RDP, the accurate renderer that only runs on
     // Vulkan; with OpenGL, GLideN64.
@@ -1265,7 +1269,7 @@ int RetroMain(int argc, wchar_t** argv) {
     CreateDirectoryW(saveDir.c_str(), nullptr);
     g.systemDir = Utf8(systemDir);
     g.saveDir = Utf8(saveDir);
-    ApplyCoreDefaults(corePath);
+    ApplyCoreDefaults(corePath, systemDir);
     if (!optionsPath.empty()) ReadOptionsFile(optionsPath);
     g.optionsPath = optionsPath;
 
@@ -1315,15 +1319,19 @@ int RetroMain(int argc, wchar_t** argv) {
     }
     // The window exists before the game loads, so a GPU context can be made on it right after.
     g_window = CreateGameWindow(title);
+    // A core that never ran a game is not unloaded either: some crash in retro_deinit (Mupen64Plus) and some hang while
+    // the DLL unloads at exit (Azahar), which left a process that could not be killed. The process ends right here.
+    const auto endNow = [] {
+        std::fflush(nullptr);
+        TerminateProcess(GetCurrentProcess(), 4);
+    };
     if (noGame && !g.supportsNoGame) {
-        // Some cores (Mupen64Plus) crash in retro_deinit when no game was ever loaded; the process just ends.
         Log("[retro] este core não inicia sem jogo\n");
-        return 4;
+        endNow();
     }
     if (!g.core.loadGame(noGame ? nullptr : &game)) {
         Log("[retro] o core recusou o jogo %s\n", romUtf8.c_str());
-        g.core.deinit();
-        return 4;
+        endNow();
     }
     g.core.setControllerPort(0, RETRO_DEVICE_JOYPAD);
     g.core.setControllerPort(1, RETRO_DEVICE_JOYPAD);
