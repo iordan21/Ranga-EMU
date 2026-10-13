@@ -373,6 +373,7 @@ bool RETRO_CALLCONV Environment(unsigned command, void* data) {
             return true;
         case RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO:
             g.av = *static_cast<const retro_system_av_info*>(data);
+            Log("[retro] o core mudou para %ux%u, %.3f fps, som %.0f Hz\n", g.av.geometry.base_width, g.av.geometry.base_height, g.av.timing.fps, g.av.timing.sample_rate);
             return true;
         case RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK:
             g.frameTime = *static_cast<const retro_frame_time_callback*>(data);
@@ -1442,21 +1443,33 @@ int RetroMain(int argc, wchar_t** argv) {
             frames = static_cast<int>(accumulator * fps);
             accumulator -= frames / fps;
         }
-        if (g_hwVulkan && frames > 0) RetroVulkan::BeginFrame();
+        const auto runFrom = std::chrono::steady_clock::now();
+        // Every present takes the next frame's fence, semaphore and command buffer, a repeated frame too (a 50 Hz game
+        // on a 60 Hz screen repeats one in six): presenting again on the one still in flight stalled the core's next
+        // frame, and PAL games and the PS2's PAL menu ran at about 30 FPS.
+        if (g_hwVulkan && (frames > 0 || !g_coreDraws)) RetroVulkan::BeginFrame();
         for (int i = 0; i < frames; ++i) {
             if (g.frameTime.callback != nullptr) g.frameTime.callback(static_cast<retro_usec_t>(1000000.0 / fps));
             g.core.run();
             ++fpsFrames;
         }
-        // RANGA_RETRO_STATS=1 puts the sound's loudest sample and the device queue in the log every five seconds.
+        // RANGA_RETRO_STATS=1 puts the sound's loudest sample, the device queue and where a loop's time goes (the
+        // core's frames, presenting them) in the log every five seconds.
         static const bool stats = std::getenv("RANGA_RETRO_STATS") != nullptr;
-        static int peak = 0;
+        static int peak = 0, loops = 0, runs = 0;
+        static double runSeconds = 0, presentSeconds = 0;
         static ULONGLONG statsAt = GetTickCount64();
+        const auto presentFrom = std::chrono::steady_clock::now();
         if (stats) {
+            runSeconds += std::chrono::duration<double>(presentFrom - runFrom).count();
+            runs += frames;
+            ++loops;
             for (const int16_t sample : g.audio) peak = std::max(peak, std::abs(static_cast<int>(sample)));
             if (GetTickCount64() - statsAt > 5000) {
-                Log("[retro] som: pico %d, fila %u bytes\n", peak, audio.Queued());
-                peak = 0;
+                Log("[retro] som: pico %d, fila %u bytes; %d voltas, %d quadros do core: %.1f ms no core e %.1f ms na tela por volta\n",
+                    peak, audio.Queued(), loops, runs, loops > 0 ? runSeconds * 1000 / loops : 0.0, loops > 0 ? presentSeconds * 1000 / loops : 0.0);
+                peak = loops = runs = 0;
+                runSeconds = presentSeconds = 0;
                 statsAt = GetTickCount64();
             }
         }
@@ -1484,6 +1497,7 @@ int RetroMain(int argc, wchar_t** argv) {
             }
             video.Draw(aspect, true);
         }
+        if (stats) presentSeconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - presentFrom).count();
 
         const ULONGLONG tick = GetTickCount64();
         if (tick - lastSave > 10000) {
