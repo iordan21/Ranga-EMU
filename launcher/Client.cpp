@@ -460,6 +460,9 @@ struct Client {
     int homeRow = 0, homeColumn = 0, homeGamesShown = 0;
     // The game page has just opened: the focus goes to Jogar.
     bool focusPlay = false;
+    // The gamepad on the row of buttons at the top (TopBar): which one, -1 when it is elsewhere; the one A pressed
+    // this frame, -1 when none. And which of the three buttons of an empty console page it is on.
+    int barFocus = -1, barPress = -1, emptyFocus = 0;
     std::wstring homeConsole;
 
     explicit Client(const std::wstring& root) : library(root), covers(root) {}
@@ -740,16 +743,37 @@ struct Client {
         return "Sem emulador: escolha um em Emuladores";
     }
 
-    void TopButtons(float scale, float right) {
+    // The row of buttons at the top of the home and console pages: up from a page's first row reaches it, left and
+    // right go along it, A presses, down or B leave it. True while the gamepad is there, so the page ignores it.
+    bool TopBar(const Nav& nav, int count) {
+        barPress = -1;
+        if (barFocus < 0) return false;
+        barFocus = std::min(barFocus, count - 1);
+        if (nav.left && barFocus > 0) --barFocus;
+        if (nav.right && barFocus + 1 < count) ++barFocus;
+        if (nav.accept) barPress = barFocus;
+        else if (nav.down || nav.back) barFocus = -1;
+        return true;
+    }
+
+    // The ring on the item just drawn when the gamepad is on it.
+    void FocusLast(bool on, float scale) {
+        if (on) Focus(ImGui::GetWindowDrawList(), ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), scale, 6 * scale);
+    }
+
+    // Adicionar jogo and Emuladores; first is Adicionar jogo's place on the top row (TopBar).
+    void TopButtons(float scale, float right, int first) {
         const float wide = 170 * scale, narrow = 130 * scale, height = 36 * scale;
         ImGui::SetCursorPos(ImVec2(right - wide - narrow - 10 * scale, 22 * scale));
-        if (ImGui::Button("+  Adicionar jogo", ImVec2(wide, height))) ImGui::OpenPopup("##add");
+        if (ImGui::Button("+  Adicionar jogo", ImVec2(wide, height)) || barPress == first) ImGui::OpenPopup("##add");
+        FocusLast(barFocus == first, scale);
         AddMenu(scale);
         ImGui::SameLine(0, 10 * scale);
-        if (ImGui::Button("Emuladores", ImVec2(narrow, height))) {
+        if (ImGui::Button("Emuladores", ImVec2(narrow, height)) || barPress == first + 1) {
             enginesPage = true;
             RefreshEngines();
         }
+        FocusLast(barFocus == first + 1, scale);
     }
 
     // The art of a game in a box: its own square art fills it; box art of another shape sits whole on the console's
@@ -799,7 +823,11 @@ struct Client {
         draw->AddRect(ImVec2(min.x - grow, min.y - grow), ImVec2(max.x + grow, max.y + grow), Packed(0xffffff), rounding + grow, 0, 3 * scale);
     }
 
-    void Home(float scale, const Nav& nav) {
+    void Home(float scale, const Nav& input) {
+        // On the top row (Adicionar jogo, Emuladores) the gamepad moves nothing else; up from the consoles reaches it.
+        const bool inBar = TopBar(input, 2);
+        const Nav nav = inBar ? Nav{} : input;
+        if (!inBar && homeRow == 0 && input.up) barFocus = 0;
         const auto shelves = Shelves();
         int focus = 0;
         for (size_t i = 0; i < shelves.size(); ++i) if (shelves[i].id == console) focus = static_cast<int>(i);
@@ -853,7 +881,7 @@ struct Client {
         ImGui::PushFont(semibold, 24);
         ImGui::TextUnformatted("Ranga Emu");
         ImGui::PopFont();
-        TopButtons(scale, size.x - left);
+        TopButtons(scale, size.x - left, 0);
 
         // The row of consoles slides so the chosen one stays in view.
         const float tile = 124 * scale, big = 160 * scale, gap = 20 * scale, rowY = origin.y + 92 * scale;
@@ -870,7 +898,7 @@ struct Client {
             if (x > origin.x + size.x || x + side < origin.x) continue;
             const ImVec2 min(x, rowY), max(x + side, rowY + side);
             ConsoleCard(draw, semibold, LookFor(shelves[i].id), min, max, scale, chosen || shelves[i].count > 0 ? 1.0f : 0.45f);
-            if (chosen && homeRow == 0) Focus(draw, min, max, scale, 14 * scale);
+            if (chosen && homeRow == 0 && barFocus < 0) Focus(draw, min, max, scale, 14 * scale);
             ImGui::SetCursorScreenPos(min);
             ImGui::PushID(static_cast<int>(i));
             if (ImGui::InvisibleButton("##console", ImVec2(side, side))) {
@@ -949,12 +977,15 @@ struct Client {
         draw->AddText(nullptr, ImGui::GetFontSize() * 0.9f, ImVec2(origin.x + left, origin.y + size.y - 30 * scale), Packed(kDim), hint);
     }
 
-    void ConsolePage(float scale, const Nav& nav) {
+    void ConsolePage(float scale, const Nav& input) {
         const auto games = ConsoleGames(console);
         ImDrawList* draw = ImGui::GetWindowDrawList();
         const ImVec2 origin = ImGui::GetWindowPos(), size = ImGui::GetWindowSize();
         const Look& look = LookFor(console);
         GradientRect(draw, origin, ImVec2(origin.x + size.x, origin.y + size.y * 0.6f), Mix(look.top, kBackground, 0.7f), kBackground, 0);
+        // The top row here is Consoles, Adicionar jogo and Emuladores.
+        const bool inBar = TopBar(input, 3);
+        const Nav nav = inBar ? Nav{} : input;
         if (nav.back) {
             page = Page::Home;
             return;
@@ -962,7 +993,8 @@ struct Client {
 
         const float left = 32 * scale;
         ImGui::SetCursorPos(ImVec2(left, 22 * scale));
-        if (ImGui::Button("<  Consoles", ImVec2(0, 36 * scale))) pending = [this] { page = Page::Home; };
+        if (ImGui::Button("<  Consoles", ImVec2(0, 36 * scale)) || barPress == 0) pending = [this] { page = Page::Home; };
+        FocusLast(barFocus == 0, scale);
         ImGui::SameLine(0, 18 * scale);
         ImGui::PushFont(semibold, 28);
         ImGui::TextUnformatted(SystemName(console).c_str());
@@ -970,9 +1002,15 @@ struct Client {
         ImGui::SameLine(0, 12 * scale);
         ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10 * scale);
         ImGui::TextDisabled("%s", games.size() == 1 ? "1 jogo" : (std::to_string(games.size()) + " jogos").c_str());
-        TopButtons(scale, size.x - left);
+        TopButtons(scale, size.x - left, 1);
 
         if (games.empty()) {
+            // Left and right go along the three ways to add a game; up reaches the top row.
+            if (nav.left && emptyFocus > 0) --emptyFocus;
+            if (nav.right && emptyFocus < 2) ++emptyFocus;
+            if (nav.up) barFocus = 0;
+            const bool here = barFocus < 0 && !inBar;
+            const int pressed = here && nav.accept ? emptyFocus : -1;
             ImGui::SetCursorPos(ImVec2(left, 110 * scale));
             ImGui::BeginGroup();
             ImGui::PushFont(semibold, 22);
@@ -980,11 +1018,14 @@ struct Client {
             ImGui::PopFont();
             ImGui::TextDisabled("%s", HowItRuns(console).c_str());
             ImGui::Dummy(ImVec2(0, 6 * scale));
-            if (ImGui::Button("Pasta do jogo...", ImVec2(190 * scale, 38 * scale))) pending = [this] { AddGame(); };
+            if (ImGui::Button("Pasta do jogo...", ImVec2(190 * scale, 38 * scale)) || pressed == 0) pending = [this] { AddGame(); };
+            FocusLast(here && emptyFocus == 0, scale);
             ImGui::SameLine();
-            if (ImGui::Button("Arquivo do jogo...", ImVec2(190 * scale, 38 * scale))) pending = [this] { AddGameFile(); };
+            if (ImGui::Button("Arquivo do jogo...", ImVec2(190 * scale, 38 * scale)) || pressed == 1) pending = [this] { AddGameFile(); };
+            FocusLast(here && emptyFocus == 1, scale);
             ImGui::SameLine();
-            if (ImGui::Button("Pasta de ROMs...", ImVec2(190 * scale, 38 * scale))) pending = [this] { AddRomFolder(); };
+            if (ImGui::Button("Pasta de ROMs...", ImVec2(190 * scale, 38 * scale)) || pressed == 2) pending = [this] { AddRomFolder(); };
+            FocusLast(here && emptyFocus == 2, scale);
             ImGui::EndGroup();
             return;
         }
@@ -999,6 +1040,7 @@ struct Client {
         if (nav.left && gridFocus > 0) --gridFocus;
         if (nav.right && gridFocus + 1 < total) ++gridFocus;
         if (nav.up && gridFocus - columns >= 0) gridFocus -= columns;
+        else if (nav.up) barFocus = 0;
         if (nav.down) gridFocus = std::min(total - 1, gridFocus + columns);
         if (gridFocus != before) gridMoved = true;
         if (nav.accept) pending = [this, index = games[static_cast<size_t>(gridFocus)]] { OpenGame(index); };
@@ -1019,7 +1061,7 @@ struct Client {
             const ImVec2 min = ImGui::GetItemRectMin(), max(min.x + tile, min.y + tile);
             if (!ImGui::IsRectVisible(min, ImVec2(max.x, max.y + label))) continue;
             GameArt(grid, game, min, max, scale);
-            if (k == gridFocus) Focus(grid, min, max, scale, 10 * scale);
+            if (k == gridFocus && barFocus < 0) Focus(grid, min, max, scale, 10 * scale);
             else if (hovered) grid->AddRect(min, max, Packed(0xffffff, 0.5f), 10 * scale, 0, 2 * scale);
             // A game that cannot start says why on its art.
             std::string problem;
@@ -1045,6 +1087,14 @@ struct Client {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8 * scale, 8 * scale));
         if (ImGui::BeginPopup("##add")) {
             if (ImGui::Selectable("Pasta do jogo...")) pending = [this] { AddGame(); };
+            // Opened from the gamepad, the list starts on its first entry, with its ring showing: ImGui puts the
+            // focus there a frame after the list appears, so the ring is asked for over the first frames.
+            static int showRing = 0;
+            if (ImGui::IsWindowAppearing()) {
+                ImGui::SetItemDefaultFocus();
+                showRing = gamepads.Connected() || _wgetenv(L"RANGA_CLIENT_TEST_INPUT") != nullptr ? 3 : 0;
+            }
+            if (showRing > 0 && showRing--) ImGui::SetNavCursorVisible(true);
             ImGui::TextDisabled("   PS5, Bloodborne, PS3, Xbox 360, Wii U");
             ImGui::Separator();
             if (ImGui::Selectable("Arquivo do jogo...")) pending = [this] { AddGameFile(); };
@@ -1677,7 +1727,14 @@ struct Client {
         // Arrows move the keyboard focus only where there are fields and tabs; on the console row and the grid they
         // move the selection.
         ImGuiIO& io = ImGui::GetIO();
-        const bool fieldNav = enginesPage || page == Page::Game;
+        // A page left behind takes the gamepad's place on its top row with it.
+        static Page lastPage = page;
+        static bool lastEngines = enginesPage;
+        if (page != lastPage || enginesPage != lastEngines) barFocus = -1;
+        lastPage = page;
+        lastEngines = enginesPage;
+        // ImGui's own focus also runs an open list, such as Adicionar jogo's.
+        const bool fieldNav = enginesPage || page == Page::Game || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId);
         if (fieldNav) io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
         else io.ConfigFlags &= ~(ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad);
         // There the gamepad moves the same focus as the arrows: the d-pad or left stick goes between fields, A (Cross)
