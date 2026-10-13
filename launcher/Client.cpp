@@ -447,6 +447,10 @@ struct Client {
     int gridFocus = 0;
     bool gridMoved = false;
     float homeScroll = 0, homeTarget = 0;
+    // Where the gamepad is on the home screen: 0 the row of consoles, 1 the buttons under it, 2 the console's games;
+    // the column within the row, and how many games the last frame had room for.
+    int homeRow = 0, homeColumn = 0, homeGamesShown = 0;
+    std::wstring homeConsole;
 
     explicit Client(const std::wstring& root) : library(root), covers(root) {}
 
@@ -788,13 +792,44 @@ struct Client {
         const auto shelves = Shelves();
         int focus = 0;
         for (size_t i = 0; i < shelves.size(); ++i) if (shelves[i].id == console) focus = static_cast<int>(i);
-        if (nav.left && focus > 0) --focus;
-        if (nav.right && focus + 1 < static_cast<int>(shelves.size())) ++focus;
+        if (homeRow == 0 && nav.left && focus > 0) --focus;
+        if (homeRow == 0 && nav.right && focus + 1 < static_cast<int>(shelves.size())) ++focus;
         console = shelves[static_cast<size_t>(focus)].id;
         const Shelf& shelf = shelves[static_cast<size_t>(focus)];
-        if (nav.accept) {
-            pending = [this] { OpenConsole(); };
+        if (console != homeConsole) {
+            homeConsole = console;
+            homeRow = homeColumn = homeGamesShown = 0;
         }
+        const Engine& engine = EngineFor(console);
+        const std::wstring missing = console == L"PS5" || console == L"PS4" ? L"" : MissingFor(console, L"");
+        const char* systemLabel = SystemButton(console);
+        const bool systemButton = systemLabel != nullptr && engine.native && engine.ready && missing.empty();
+        // Down goes from the consoles to the buttons under them and on to the games; up and back return.
+        bool openLibrary = false, openSystem = false;
+        int openGame = -1;
+        if (homeRow == 0) {
+            if (nav.down) homeRow = 1, homeColumn = 0;
+            else if (nav.accept) openLibrary = true;
+        } else if (homeRow == 1) {
+            const int buttons = systemButton ? 2 : 1;
+            if (nav.left && homeColumn > 0) --homeColumn;
+            if (nav.right && homeColumn + 1 < buttons) ++homeColumn;
+            homeColumn = std::min(homeColumn, buttons - 1);
+            if (nav.up || nav.back) homeRow = 0;
+            else if (nav.down && homeGamesShown > 0) homeRow = 2, homeColumn = 0;
+            else if (nav.accept) (homeColumn == 0 ? openLibrary : openSystem) = true;
+        } else if (homeGamesShown == 0) {
+            homeRow = 1, homeColumn = 0;
+        } else {
+            if (nav.left && homeColumn > 0) --homeColumn;
+            if (nav.right && homeColumn + 1 < homeGamesShown) ++homeColumn;
+            homeColumn = std::min(homeColumn, homeGamesShown - 1);
+            if (nav.up) homeRow = 1, homeColumn = 0;
+            else if (nav.back) homeRow = 0;
+            else if (nav.accept) openGame = homeColumn;
+        }
+        if (openLibrary) pending = [this] { OpenConsole(); };
+        if (openSystem && !runner.Busy()) pending = [this] { runner.StartSystem(library.Root(), console); };
 
         ImDrawList* draw = ImGui::GetWindowDrawList();
         const ImVec2 origin = ImGui::GetWindowPos(), size = ImGui::GetWindowSize();
@@ -824,7 +859,7 @@ struct Client {
             if (x > origin.x + size.x || x + side < origin.x) continue;
             const ImVec2 min(x, rowY), max(x + side, rowY + side);
             ConsoleCard(draw, semibold, LookFor(shelves[i].id), min, max, scale, chosen || shelves[i].count > 0 ? 1.0f : 0.45f);
-            if (chosen) Focus(draw, min, max, scale, 14 * scale);
+            if (chosen && homeRow == 0) Focus(draw, min, max, scale, 14 * scale);
             ImGui::SetCursorScreenPos(min);
             ImGui::PushID(static_cast<int>(i));
             if (ImGui::InvisibleButton("##console", ImVec2(side, side))) {
@@ -849,16 +884,16 @@ struct Client {
         ImGui::PushStyleColor(ImGuiCol_Text, Color(0xffffff));
         ImGui::PushFont(semibold, 18);
         if (ImGui::Button(shelf.count > 0 ? "Abrir biblioteca" : "Ver console", ImVec2(190 * scale, 44 * scale))) pending = [this] { OpenConsole(); };
+        if (homeRow == 1 && homeColumn == 0) Focus(draw, ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), scale, 6 * scale);
         ImGui::PopFont();
         ImGui::PopStyleColor(4);
-        const Engine& engine = EngineFor(console);
-        const std::wstring missing = console == L"PS5" || console == L"PS4" ? L"" : MissingFor(console, L"");
-        if (const char* label = SystemButton(console); label != nullptr && engine.native && engine.ready && missing.empty()) {
+        if (systemButton) {
             ImGui::SameLine(0, 12 * scale);
             ImGui::PushFont(semibold, 18);
             ImGui::BeginDisabled(runner.Busy());
-            if (ImGui::Button(label, ImVec2(0, 44 * scale))) pending = [this] { runner.StartSystem(library.Root(), console); };
+            if (ImGui::Button(systemLabel, ImVec2(0, 44 * scale))) pending = [this] { runner.StartSystem(library.Root(), console); };
             ImGui::EndDisabled();
+            if (homeRow == 1 && homeColumn == 1) Focus(draw, ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), scale, 6 * scale);
             ImGui::PopFont();
         }
         if (!missing.empty()) {
@@ -875,16 +910,24 @@ struct Client {
         const auto games = ConsoleGames(console);
         y = ImGui::GetItemRectMax().y + 28 * scale;
         const float cover = 112 * scale, coverGap = 14 * scale;
+        homeGamesShown = 0;
         if (!games.empty() && y + cover < origin.y + size.y - 30 * scale) {
             for (size_t k = 0; k < games.size(); ++k) {
                 const float x = origin.x + left + k * (cover + coverGap);
                 if (x + cover > origin.x + size.x - left) break;
+                ++homeGamesShown;
                 const ImVec2 min(x, y), max(x + cover, y + cover);
                 GameArt(draw, library.Games()[static_cast<size_t>(games[k])], min, max, scale);
                 ImGui::SetCursorScreenPos(min);
                 ImGui::PushID(games[k]);
-                if (ImGui::InvisibleButton("##recent", ImVec2(cover, cover))) pending = [this, index = games[k]] { OpenGame(index); };
-                if (ImGui::IsItemHovered()) {
+                if (ImGui::InvisibleButton("##recent", ImVec2(cover, cover)) || openGame == static_cast<int>(k)) pending = [this, index = games[k]] { OpenGame(index); };
+                if (homeRow == 2 && homeColumn == static_cast<int>(k)) {
+                    // The gamepad has no pointer for a tooltip to follow: the name goes under the row.
+                    Focus(draw, min, max, scale * 0.6f, 10 * scale);
+                    const std::string title = Utf8(library.Games()[static_cast<size_t>(games[k])].title);
+                    const ImVec4 clip(origin.x + left, max.y, origin.x + size.x - left, max.y + 40 * scale);
+                    draw->AddText(nullptr, ImGui::GetFontSize(), ImVec2(origin.x + left, max.y + 12 * scale), Packed(kText), title.c_str(), nullptr, 0, &clip);
+                } else if (ImGui::IsItemHovered()) {
                     Focus(draw, min, max, scale * 0.6f, 10 * scale);
                     ImGui::SetTooltip("%s", Utf8(library.Games()[static_cast<size_t>(games[k])].title).c_str());
                 }
