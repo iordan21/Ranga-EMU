@@ -48,7 +48,7 @@ void Runner::StartSystem(const std::wstring& root, const std::wstring& system) {
     game.system = system;
     game.titleId = system + L"-SISTEMA";
     game.title = L"Sistema do " + Wide(SystemName(system));
-    game.workspace = root + L"\\games\\" + game.titleId;
+    game.workspace = WorkspaceFor(root, system, L"Sistema");
     // No folder: RunExternal starts the core with --no-game.
     Start(root, game, Options{});
 }
@@ -76,8 +76,7 @@ void Runner::Run(std::wstring root, Game game, Options options) {
         Report(State::Failed, L"Faltam as pastas libs e tools ao lado do RangaEmu.exe. Extraia o download inteiro de novo.");
         return;
     }
-    CreateDirectoryW((root + L"\\games").c_str(), nullptr);
-    CreateDirectoryW(workspace.c_str(), nullptr);
+    MakeFolders(workspace);
     CreateDirectoryW(prep.c_str(), nullptr);
     CreateDirectoryW(logs.c_str(), nullptr);
     // The runtime finds the system libraries in libs beside itself; every workspace shares the ones beside this program.
@@ -273,8 +272,7 @@ void Runner::RunBloodborne(const std::wstring& root, const Game& game, const Opt
         Report(State::Failed, L"Falta o port do Bloodborne em " + engine + L" (run.bat e out\\bbport.exe).");
         return;
     }
-    CreateDirectoryW((root + L"\\games").c_str(), nullptr);
-    CreateDirectoryW(workspace.c_str(), nullptr);
+    MakeFolders(workspace);
     CreateDirectoryW(logs.c_str(), nullptr);
     const std::wstring python = FindPython(logs);
     if (python.empty()) {
@@ -356,8 +354,7 @@ void Runner::RunExternal(const std::wstring& root, const Game& game, const Optio
         Report(State::Failed, missing);
         return;
     }
-    CreateDirectoryW((root + L"\\games").c_str(), nullptr);
-    CreateDirectoryW(workspace.c_str(), nullptr);
+    MakeFolders(workspace);
     CreateDirectoryW(logs.c_str(), nullptr);
     // As with the Bloodborne port, ReShade and the add-ons sit beside the emulator only while this game has DLSS 5 on.
     // The layer reaches only Vulkan emulators; one drawing with Direct3D or OpenGL just starts without it.

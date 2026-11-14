@@ -496,6 +496,36 @@ std::string SystemName(const std::wstring& id) {
 
 std::wstring NativeCorePath(const std::wstring& root, const System& system) { return root + L"\\cores\\" + system.nativeCore + L"_libretro.dll"; }
 
+std::wstring ControlsFile(const std::wstring& root, const std::wstring& system) { return root + L"\\controles\\" + system + L".ini"; }
+
+void RepairLinks(const std::wstring& root) {
+    // The Switch, PS3 and Xbox 360 cores keep their system files in bios\retroarch, which point at the full emulators'
+    // folders so both see the same keys, firmware and saves. A copy, a zip or a move of the Ranga folder loses these
+    // links (a zip keeps no junctions; one copied whole would still point at the old place): they are made again here.
+    static const wchar_t* const rpcs3[] = {L"dev_bdvd", L"dev_flash", L"dev_flash2", L"dev_flash3", L"dev_hdd0", L"dev_hdd1",
+                                           L"dev_usb000", L"fonts", L"games", L"Icons", L"patches", L"sounds"};
+    std::vector<std::pair<std::wstring, std::wstring>> links = {
+        {L"bios\\retroarch\\eden", L"emuladores\\eden\\user"},
+        {L"bios\\retroarch\\xenia\\content", L"emuladores\\xenia\\content"},
+    };
+    for (const wchar_t* name : rpcs3) links.push_back({std::wstring(L"bios\\retroarch\\rpcs3\\") + name, std::wstring(L"emuladores\\rpcs3\\") + name});
+    const std::wstring log = root + L"\\bios\\retroarch\\links.log";
+    for (const auto& [link, target] : links) {
+        // Only where the emulator's folder is there; a real folder already in the link's place is left as it is.
+        if (IsDirectory(root + L"\\" + target)) LinkFolder(root + L"\\" + link, root + L"\\" + target, log);
+    }
+}
+
+std::wstring Quality(const std::wstring& root) {
+    const std::wstring level = ReadIni(EnginesIni(root), L"Ranga", L"qualidade", L"bom");
+    return level == L"ruim" || level == L"fraco" || level == L"otimo" ? level : L"bom";
+}
+
+void SetQuality(const std::wstring& root, const std::wstring& level) {
+    EnsureUnicodeIni(EnginesIni(root));
+    WritePrivateProfileStringW(L"Ranga", L"qualidade", level.c_str(), EnginesIni(root).c_str());
+}
+
 Engine LoadEngine(const std::wstring& root, const std::wstring& id) {
     Engine engine;
     const System* system = FindSystem(id);
@@ -511,7 +541,8 @@ Engine LoadEngine(const std::wstring& root, const std::wstring& id) {
         engine.exe = root + L"\\ranga_retro.exe";
         engine.presetName = L"Ranga (nativo, " + system->nativeCore + L")";
         engine.args = L"--core \"" + NativeCorePath(root, *system) + L"\" --rom \"{rom}\" --title \"{title}\" --system \"" + root +
-                      L"\\bios\\retroarch\" --saves \"{workspace}\\saves\" --options \"{workspace}\\core-options.ini\" {fullscreen}";
+                      L"\\bios\\retroarch\" --saves \"{workspace}\\saves\" --options \"{workspace}\\core-options.ini\" --controls \"" + ControlsFile(root, id) +
+                      L"\" --quality " + Quality(root) + L" {fullscreen}";
         engine.fullscreen = L"--fullscreen";
         for (const auto& preset : system->presets) {
             if (!preset.bios.empty()) engine.bios = root + L"\\bios\\retroarch";

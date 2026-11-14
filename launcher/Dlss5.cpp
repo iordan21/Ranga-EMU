@@ -79,7 +79,7 @@ constexpr const char* kReadMe =
     "- O modelo neural so roda em placa RTX 50.\r\n"
     "- Pesa: nos testes publicos o FPS caiu perto da metade, e a VRAM sobe.\r\n"
     "- Desligue o Smooth Motion da NVIDIA para Vulkan, ou metade dos quadros sai sem DLSS 5.\r\n"
-    "- Se algo der errado, olhe ReShade.log e dlss5-feed.log na pasta do jogo em games\\<ID>,\r\n"
+    "- Se algo der errado, olhe ReShade.log e dlss5-feed.log na pasta do jogo em saves\\<console>\\<jogo>,\r\n"
     "  e logs\\dlss5.log para ver o que o Ranga colocou.\r\n";
 
 }

@@ -5,8 +5,32 @@
 #include <cstdio>
 #include <cstring>
 #include <cwchar>
+#include <filesystem>
+#include <map>
 
 namespace Ranga {
+
+std::wstring WorkspaceFor(const std::wstring& root, const std::wstring& system, const std::wstring& title) {
+    // What a Windows folder name cannot have goes; a name ending in a dot or space is trimmed, and a long one cut.
+    const auto clean = [](std::wstring name) {
+        std::wstring out;
+        for (const wchar_t c : name) {
+            if (c < 32 || wcschr(L"\\/:*?\"<>|", c) != nullptr) out += c == L':' ? L" -" : L"";
+            else out += c;
+        }
+        while (!out.empty() && (out.back() == L' ' || out.back() == L'.')) out.pop_back();
+        while (!out.empty() && out.front() == L' ') out.erase(0, 1);
+        if (out.size() > 80) out.resize(80);
+        while (!out.empty() && (out.back() == L' ' || out.back() == L'.')) out.pop_back();
+        return out.empty() ? std::wstring(L"jogo") : out;
+    };
+    return root + L"\\saves\\" + clean(Wide(SystemName(system))) + L"\\" + clean(title);
+}
+
+void MakeFolders(const std::wstring& path) {
+    std::error_code error;
+    std::filesystem::create_directories(std::filesystem::path(path), error);
+}
 
 namespace {
 
@@ -139,8 +163,15 @@ void Library::Load() {
             game.folder = folder;
             game.system = system;
         }
-        game.workspace = root + L"\\games\\" + titleId;
         games.push_back(game);
+    }
+    // Each game's folder by console and title; titles two games of a console share get the game's key as well, on
+    // both, so which one is which never depends on the order the list is read in.
+    std::map<std::wstring, int> taken;
+    for (const auto& game : games) ++taken[Lower(WorkspaceFor(root, game.system, game.title))];
+    for (auto& game : games) {
+        game.workspace = WorkspaceFor(root, game.system, game.title);
+        if (taken[Lower(game.workspace)] > 1) game.workspace += L" [" + game.titleId + L"]";
     }
     std::sort(games.begin(), games.end(), [](const Game& a, const Game& b) { return _wcsicmp(a.title.c_str(), b.title.c_str()) < 0; });
 }
@@ -174,7 +205,7 @@ int Library::Add(const std::wstring& folder, std::wstring& error) {
 int Library::AddFile(const std::wstring& path, const std::wstring& system, const std::wstring& serial, const std::wstring& title, std::wstring& error) {
     const std::wstring key = FileKey(system, path);
     const int index = Store(key, path, system, serial, title, error);
-    if (index >= 0) ExtractArt(system, path, root + L"\\games\\" + key + L"\\art");
+    if (index >= 0) ExtractArt(system, path, games[static_cast<size_t>(index)].workspace + L"\\art");
     return index;
 }
 
@@ -194,8 +225,18 @@ int Library::Store(const std::wstring& key, const std::wstring& path, const std:
     return -1;
 }
 
+// The art inside a disc image goes in the game's folder, which is known once the library is read again.
+void Library::ExtractArts(const std::vector<PendingArt>& arts) {
+    for (const auto& art : arts) {
+        for (const auto& game : games) {
+            if (game.titleId == art.key) ExtractArt(art.system, art.file, game.workspace + L"\\art");
+        }
+    }
+}
+
 void Library::AddRomFolder(const std::wstring& folder, int& added, int& ambiguous, int& unknown) {
     added = ambiguous = unknown = 0;
+    std::vector<PendingArt> arts;
     std::vector<std::wstring> files;
     const auto list = [&](const std::wstring& directory, bool descend) {
         WIN32_FIND_DATAW found;
@@ -240,10 +281,11 @@ void Library::AddRomFolder(const std::wstring& folder, int& added, int& ambiguou
         WritePrivateProfileStringW(key.c_str(), L"title", found.title.c_str(), IniPath().c_str());
         WritePrivateProfileStringW(key.c_str(), L"system", found.systems[0].c_str(), IniPath().c_str());
         if (!found.serial.empty()) WritePrivateProfileStringW(key.c_str(), L"serial", found.serial.c_str(), IniPath().c_str());
-        ExtractArt(found.systems[0], file, root + L"\\games\\" + key + L"\\art");
+        arts.push_back({found.systems[0], file, key});
         ++added;
     }
     Load();
+    ExtractArts(arts);
 }
 
 void Library::Relocate(const std::wstring& titleId, const std::wstring& path) {
@@ -275,6 +317,7 @@ int Library::ScanGamesFolders(const std::wstring& only) {
         } while (FindNextFileW(search, &found));
         FindClose(search);
     };
+    std::vector<PendingArt> arts;
     const auto known = [this](const std::wstring& key) { return !ReadIni(IniPath(), key.c_str(), L"folder", L"").empty(); };
     const auto store = [this](const std::wstring& key, const std::wstring& path, const std::wstring& system, const std::wstring& serial, const std::wstring& title) {
         WritePrivateProfileStringW(key.c_str(), L"folder", path.c_str(), IniPath().c_str());
@@ -358,11 +401,12 @@ int Library::ScanGamesFolders(const std::wstring& only) {
                 if (title.empty()) title = found.title;
             }
             store(key, file, id, found.serial, title);
-            ExtractArt(id, file, root + L"\\games\\" + key + L"\\art");
+            arts.push_back({id, file, key});
             ++added;
         }
     }
     Load();
+    ExtractArts(arts);
     for (const auto& game : games) {
         if (game.system != L"SWITCH" || extras.empty()) continue;
         const SwitchContent base = DetectSwitchContent(game.folder);
@@ -458,8 +502,7 @@ void WriteCoreOption(const Game& game, const std::string& key, const std::string
         }
     }
     if (!replaced) out += key + " = \"" + value + "\"\r\n";
-    CreateDirectoryW((game.workspace.substr(0, game.workspace.find_last_of(L'\\'))).c_str(), nullptr);
-    CreateDirectoryW(game.workspace.c_str(), nullptr);
+    MakeFolders(game.workspace);
     FILE* file = nullptr;
     if (_wfopen_s(&file, (game.workspace + L"\\core-options.ini").c_str(), L"wb") != 0 || file == nullptr) return;
     std::fwrite(out.data(), 1, out.size(), file);
@@ -529,8 +572,7 @@ std::wstring InstallAddon(const Game& game, const std::wstring& folder) {
     }
     if (title.empty()) title = JsonString(text, "titleName");
     const bool data = HasDataBesideSceSys(folder);
-    CreateDirectoryW((game.workspace.substr(0, game.workspace.find_last_of(L'\\'))).c_str(), nullptr);
-    CreateDirectoryW(game.workspace.c_str(), nullptr);
+    MakeFolders(game.workspace);
     EnsureUnicodeIni(AddonIni(game));
     const std::wstring ini = AddonIni(game);
     if (!WritePrivateProfileStringW(label.c_str(), L"folder", folder.c_str(), ini.c_str()) ||
@@ -558,8 +600,7 @@ void RemoveAddon(const Game& game, const std::wstring& label) {
 }
 
 void SaveOptions(const Game& game, const Options& options) {
-    CreateDirectoryW((game.workspace.substr(0, game.workspace.find_last_of(L'\\'))).c_str(), nullptr);
-    CreateDirectoryW(game.workspace.c_str(), nullptr);
+    MakeFolders(game.workspace);
     const std::wstring path = game.workspace + L"\\options.ini";
     WritePrivateProfileStringW(L"Display", L"mode", options.borderless ? L"Borderless" : L"Windowed", path.c_str());
     WritePrivateProfileStringW(L"Display", L"resolution", std::to_wstring(options.resolution).c_str(), path.c_str());

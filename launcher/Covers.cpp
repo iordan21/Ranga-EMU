@@ -331,8 +331,7 @@ void CoverFetcher::Fetch(const Job& job) {
     }
 
     const std::wstring art = job.workspace + L"\\art";
-    CreateDirectoryW((root + L"\\games").c_str(), nullptr);
-    CreateDirectoryW(job.workspace.c_str(), nullptr);
+    MakeFolders(job.workspace);
     CreateDirectoryW(art.c_str(), nullptr);
     if (match.empty()) {
         WriteAll(art + L"\\boxart.miss", Utf8(folder) + "\n");

@@ -407,6 +407,23 @@ public:
     bool Pressed(Button button) const { return pressed[button]; }
     bool Held(Button button) const { return held[button] != 0; }
 
+    // Every button and trigger down now on any controller, by SDL's names ("a", "lefttrigger"...). The Guide button is
+    // left out: it opens Ranga's menu in the game.
+    std::vector<std::string> ButtonsDown() const {
+        std::vector<std::string> down;
+        for (auto* pad : pads) {
+            for (int b = 0; b < SDL_CONTROLLER_BUTTON_MAX; ++b) {
+                const auto button = static_cast<SDL_GameControllerButton>(b);
+                if (button == SDL_CONTROLLER_BUTTON_GUIDE || !SDL_GameControllerGetButton(pad, button)) continue;
+                if (const char* name = SDL_GameControllerGetStringForButton(button)) down.push_back(name);
+            }
+            for (const auto axis : {SDL_CONTROLLER_AXIS_TRIGGERLEFT, SDL_CONTROLLER_AXIS_TRIGGERRIGHT}) {
+                if (SDL_GameControllerGetAxis(pad, axis) > 16000) down.push_back(SDL_GameControllerGetStringForAxis(axis));
+            }
+        }
+        return down;
+    }
+
 private:
     void Open() {
         for (int i = 0; i < SDL_NumJoysticks(); ++i) {
@@ -454,6 +471,15 @@ struct Client {
     // 2 host. The core reads them when the game starts.
     int roomMode = 0;
     std::array<char, 128> roomAddress{}, roomPort{}, roomNickname{}, roomPassword{};
+    // The Controle tab: the console's button map as read from its file, and the RetroPad button waiting for a press
+    // (-1 when none), with the buttons already down when the wait began and when it gives up.
+    std::wstring controlsSystem;
+    std::array<std::string, 16> controls;
+    int captureFor = -1;
+    // The wait takes a press only once every button was let go (captureArmed); after it, the page waits for that
+    // button to be let go too (captureCooling) before reacting to the gamepad again.
+    bool captureArmed = false, captureCooling = false;
+    double captureUntil = 0;
     // The Switch game's update and add-on files (the eden_conteudo core option), and what each one is.
     std::vector<std::wstring> contentFiles;
     std::vector<SwitchContent> contentKinds;
@@ -1017,7 +1043,9 @@ struct Client {
         // RANGA_CLIENT_TEST_INPUT=1: keys posted to a window in the back count too (the interface tests).
         static const bool testInput = _wgetenv(L"RANGA_CLIENT_TEST_INPUT") != nullptr;
         const bool front = testInput || GetForegroundWindow() == window;
-        const bool free = front && !ImGui::GetIO().WantTextInput && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId) && !ImGui::IsAnyItemActive();
+        // While the Controle tab waits for a button, the press is the new button, not a move.
+        const bool free = front && captureFor < 0 && !captureCooling && !ImGui::GetIO().WantTextInput && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId) &&
+                          !ImGui::IsAnyItemActive();
         gamepads.Update(free);
         if (!free) return nav;
         nav.left = ImGui::IsKeyPressed(ImGuiKey_LeftArrow) || gamepads.Pressed(Gamepads::Left);
@@ -1491,6 +1519,29 @@ struct Client {
         int mode = options.borderless ? 1 : 0;
         label("Tela");
         if (ImGui::Combo("##mode", &mode, modes, 2)) { options.borderless = mode == 1; Save(); }
+        if (External(game) && EngineFor(game.system).native) {
+            // One choice for this PC, for every console Ranga runs itself.
+            const char* levels[] = {"Ruim (PC bem fraco)", "Fraco", "Bom (padrão)", "Ótimo (PC forte)"};
+            const wchar_t* values[] = {L"ruim", L"fraco", L"bom", L"otimo"};
+            const std::wstring current = Quality(library.Root());
+            int level = 2;
+            for (int i = 0; i < 4; ++i) if (current == values[i]) level = i;
+            label("Qualidade");
+            if (ImGui::Combo("##quality", &level, levels, 4)) {
+                SetQuality(library.Root(), values[level]);
+                RefreshEngines();
+            }
+            ImGui::SetCursorPosX(labelWidth);
+            ImGui::TextDisabled("Vale para todos os consoles que rodam no Ranga, a partir da próxima vez que o jogo abrir.");
+            static const char* const notes[] = {
+                "Resolução do console ou menor, sem esperar shaders: o mais leve possível; a imagem fica serrilhada.",
+                "Resolução perto da original, sem esperar shaders: para placa de vídeo integrada ou antiga.",
+                "Por volta de 1080p: o que o Ranga sempre usou.",
+                "Por volta de 1440p a 4K: para placa de vídeo forte; pesa bem mais.",
+            };
+            ImGui::SetCursorPosX(labelWidth);
+            ImGui::TextDisabled("%s", notes[level]);
+        }
         if (profile.sonsOfSparta) {
             const char* resolutions[] = {"Manter a do jogo", "3840 x 2160 (4K)", "2560 x 1440", "1920 x 1080"};
             const int indexes[] = {-1, 0, 6, 8};
@@ -1639,8 +1690,7 @@ struct Client {
             Browse(L"Escolha uma imagem PNG para a capa", L"", false, {{L"Imagem PNG", L"*.png"}}, [this](const std::wstring& image) {
                 Game* current = Current();
                 if (current == nullptr) return;
-                CreateDirectoryW((library.Root() + L"\\games").c_str(), nullptr);
-                CreateDirectoryW(current->workspace.c_str(), nullptr);
+                MakeFolders(current->workspace);
                 CreateDirectoryW((current->workspace + L"\\art").c_str(), nullptr);
                 CopyFileW(image.c_str(), (current->workspace + L"\\art\\cover.png").c_str(), FALSE);
                 ForgetArt(*current);
@@ -1716,6 +1766,170 @@ struct Client {
         ImGui::Dummy(ImVec2(0, 4 * scale));
         ImGui::TextDisabled("F7  +1000 Blood Orbs");
         ImGui::TextDisabled("F8  +10 materiais de melhoria");
+    }
+
+    // The buttons of a console Ranga runs itself, in the order of the console's file (Ranga Retro's RetroPad names), the
+    // default pad button for each, and how the tab names them.
+    static constexpr const char* kRetroButtons[16] = {"B", "Y", "SELECT", "START", "UP", "DOWN", "LEFT", "RIGHT", "A", "X", "L", "R", "L2", "R2", "L3", "R3"};
+    static constexpr const char* kPadDefaults[16] = {"a", "x", "back", "start", "dpup", "dpdown", "dpleft", "dpright", "b", "y",
+                                                     "leftshoulder", "rightshoulder", "lefttrigger", "righttrigger", "leftstick", "rightstick"};
+    // The order on screen: face buttons, then shoulders and triggers, sticks, Start/Select, d-pad.
+    static constexpr int kControlOrder[16] = {8, 0, 9, 1, 10, 11, 12, 13, 14, 15, 3, 2, 4, 5, 6, 7};
+
+    static const char* ConsoleButtonName(const std::wstring& system, int retro) {
+        // The console's own names where they differ from the RetroPad's; by position, as the cores read them.
+        const bool nintendo = system == L"SWITCH" || system == L"WIIU" || system == L"SNES" || system == L"3DS" || system == L"DS" || system == L"GC" || system == L"WII";
+        const bool sony = system == L"PS1" || system == L"PS2" || system == L"PS3" || system == L"PSP";
+        static const char* const generic[16] = {"B (baixo)", "Y (esquerda)", "Select", "Start", "Direcional ↑", "Direcional ↓", "Direcional ←", "Direcional →",
+                                                "A (direita)", "X (cima)", "L", "R", "L2", "R2", "L3 (aperta o analógico esq.)", "R3 (aperta o analógico dir.)"};
+        static const char* const switchNames[16] = {"B (baixo)", "Y (esquerda)", "− (menos)", "+ (mais)", "Direcional ↑", "Direcional ↓", "Direcional ←", "Direcional →",
+                                                    "A (direita)", "X (cima)", "L", "R", "ZL", "ZR", "L3 (aperta o analógico esq.)", "R3 (aperta o analógico dir.)"};
+        static const char* const sonyNames[16] = {"Cruz (baixo)", "Quadrado (esquerda)", "Select", "Start", "Direcional ↑", "Direcional ↓", "Direcional ←", "Direcional →",
+                                                  "Bola (direita)", "Triângulo (cima)", "L1", "R1", "L2", "R2", "L3 (aperta o analógico esq.)", "R3 (aperta o analógico dir.)"};
+        (void)nintendo;
+        return (system == L"SWITCH" ? switchNames : sony ? sonyNames : generic)[retro];
+    }
+
+    static std::string PadButtonName(const std::string& sdl) {
+        static const std::pair<const char*, const char*> names[] = {
+            {"a", "A / Cruz (baixo)"}, {"b", "B / Bola (direita)"}, {"x", "X / Quadrado (esquerda)"}, {"y", "Y / Triângulo (cima)"},
+            {"back", "Select / Share"}, {"start", "Start / Options"}, {"leftshoulder", "LB / L1"}, {"rightshoulder", "RB / R1"},
+            {"lefttrigger", "LT / L2"}, {"righttrigger", "RT / R2"}, {"leftstick", "L3"}, {"rightstick", "R3"},
+            {"dpup", "Direcional ↑"}, {"dpdown", "Direcional ↓"}, {"dpleft", "Direcional ←"}, {"dpright", "Direcional →"},
+            {"touchpad", "Touchpad"}, {"misc1", "Botão extra (Mic / Share)"}, {"paddle1", "Pá traseira 1"}, {"paddle2", "Pá traseira 2"},
+            {"paddle3", "Pá traseira 3"}, {"paddle4", "Pá traseira 4"},
+        };
+        if (sdl.empty()) return "nenhum";
+        for (const auto& [id, label] : names) {
+            if (sdl == id) return label;
+        }
+        return sdl;
+    }
+
+    void LoadControls(const std::wstring& system) {
+        controlsSystem = system;
+        for (int b = 0; b < 16; ++b) controls[static_cast<size_t>(b)] = kPadDefaults[b];
+        const std::string text = ReadBytes(ControlsFile(library.Root(), system));
+        for (size_t start = 0; start < text.size();) {
+            size_t end = text.find('\n', start);
+            if (end == std::string::npos) end = text.size();
+            std::string line = text.substr(start, end - start);
+            start = end + 1;
+            while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+            const size_t equals = line.find('=');
+            if (line.empty() || line[0] == '#' || equals == std::string::npos) continue;
+            std::string key = line.substr(0, equals), value = line.substr(equals + 1);
+            while (!key.empty() && key.back() == ' ') key.pop_back();
+            while (!value.empty() && value.front() == ' ') value.erase(0, 1);
+            for (int b = 0; b < 16; ++b) {
+                if (key == kRetroButtons[b]) controls[static_cast<size_t>(b)] = value;
+            }
+        }
+    }
+
+    // Writes only what differs from the default; no difference, no file.
+    void SaveControls() {
+        std::string out = "# Botões do controle no Ranga (aba Controle). Botão do console = botão do controle, nomes do SDL.\r\n";
+        bool any = false;
+        for (int b = 0; b < 16; ++b) {
+            if (controls[static_cast<size_t>(b)] == kPadDefaults[b]) continue;
+            out += std::string(kRetroButtons[b]) + " = " + controls[static_cast<size_t>(b)] + "\r\n";
+            any = true;
+        }
+        const std::wstring path = ControlsFile(library.Root(), controlsSystem);
+        if (!any) {
+            DeleteFileW(path.c_str());
+            return;
+        }
+        CreateDirectoryW((library.Root() + L"\\controles").c_str(), nullptr);
+        FILE* file = nullptr;
+        if (_wfopen_s(&file, path.c_str(), L"wb") != 0 || file == nullptr) return;
+        std::fwrite(out.data(), 1, out.size(), file);
+        std::fclose(file);
+    }
+
+    // The console's buttons, each with the controller button that plays it and Mudar, which waits for the next press.
+    // It holds for every game of the console that runs inside Ranga.
+    void ControlsTab(const Game& game, float scale) {
+        if (controlsSystem != game.system) LoadControls(game.system);
+        ImGui::Dummy(ImVec2(0, 4 * scale));
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("Vale para todos os jogos de %s que rodam dentro do Ranga, a partir da próxima vez que o jogo abrir. O teclado do PC continua com as teclas de sempre.",
+                            SystemName(game.system).c_str());
+        ImGui::PopTextWrapPos();
+        if (!gamepads.Connected()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
+            ImGui::TextUnformatted("Nenhum controle ligado: ligue um para poder trocar os botões.");
+            ImGui::PopStyleColor();
+        }
+        ImGui::Dummy(ImVec2(0, 4 * scale));
+
+        // Waiting for a press. Every button is let go first (the one that clicked Mudar among them), then the next press
+        // is the new button. After it, nothing on the page reacts until it is let go too: the same press would click
+        // Mudar again and start another wait, which is what the gamepad's Cross / A did.
+        const auto down = gamepads.ButtonsDown();
+        if (captureFor >= 0) {
+            if (!captureArmed) {
+                captureArmed = down.empty();
+            } else if (!down.empty()) {
+                controls[static_cast<size_t>(captureFor)] = down.front();
+                SaveControls();
+                captureFor = -1;
+                captureCooling = true;
+            }
+            if (captureFor >= 0 && (ImGui::GetTime() > captureUntil || ImGui::IsKeyPressed(ImGuiKey_Escape, false))) {
+                captureFor = -1;
+                captureCooling = !down.empty();
+            }
+        } else if (captureCooling && down.empty()) {
+            captureCooling = false;
+        }
+        const bool busy = captureFor >= 0 || captureCooling;
+
+        const float labelWidth = 260 * scale, valueWidth = 230 * scale;
+        for (const int b : kControlOrder) {
+            ImGui::PushID(b);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted(ConsoleButtonName(game.system, b));
+            ImGui::SameLine(labelWidth);
+            const bool waiting = captureFor == b;
+            const bool changed = controls[static_cast<size_t>(b)] != kPadDefaults[b];
+            if (waiting) {
+                ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
+                if (!captureArmed) ImGui::TextUnformatted("solte os botões...");
+                else ImGui::Text("aperte o botão novo... (%d s)", std::max(0, static_cast<int>(captureUntil - ImGui::GetTime()) + 1));
+                ImGui::PopStyleColor();
+            } else {
+                if (changed) ImGui::PushStyleColor(ImGuiCol_Text, Color(kGreen));
+                ImGui::TextUnformatted(PadButtonName(controls[static_cast<size_t>(b)]).c_str());
+                if (changed) ImGui::PopStyleColor();
+            }
+            ImGui::SameLine(labelWidth + valueWidth);
+            ImGui::BeginDisabled(busy || !gamepads.Connected());
+            if (ImGui::Button("Mudar")) {
+                captureFor = b;
+                captureArmed = false;
+                captureUntil = ImGui::GetTime() + 8;
+            }
+            ImGui::EndDisabled();
+            ImGui::SameLine();
+            ImGui::BeginDisabled(busy || controls[static_cast<size_t>(b)].empty());
+            if (ImGui::Button("Nenhum")) {
+                controls[static_cast<size_t>(b)].clear();
+                SaveControls();
+            }
+            ImGui::EndDisabled();
+            ImGui::PopID();
+        }
+        ImGui::Dummy(ImVec2(0, 6 * scale));
+        ImGui::BeginDisabled(busy);
+        if (ImGui::Button("Voltar ao padrão")) {
+            for (int b = 0; b < 16; ++b) controls[static_cast<size_t>(b)] = kPadDefaults[b];
+            SaveControls();
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        ImGui::TextDisabled("Esc cancela a espera. O botão Guide / PS fica com o menu do Ranga.");
     }
 
     // A Switch game's updates and add-ons. Eden reads the files where they are when the game starts (nothing is
@@ -2156,6 +2370,15 @@ struct Client {
                 ImGui::EndChild();
                 ImGui::EndTabItem();
             }
+            if (External(*game) && EngineFor(game->system).native && ImGui::BeginTabItem("Controle")) {
+                ImGui::BeginChild("##controls", ImVec2(0, 0), ImGuiChildFlags_NavFlattened);
+                ControlsTab(*game, scale);
+                ImGui::EndChild();
+                ImGui::EndTabItem();
+            } else if (captureFor >= 0 && controlsSystem == game->system) {
+                // The tab was left while it waited.
+                captureFor = -1;
+            }
             if (game->system == L"SWITCH" && EngineFor(game->system).native && ImGui::BeginTabItem("Atualizações e DLC")) {
                 ImGui::BeginChild("##content", ImVec2(0, 0), ImGuiChildFlags_NavFlattened);
                 ContentTab(*game, scale);
@@ -2231,7 +2454,8 @@ struct Client {
         for (const auto& [button, key] : padKeys) {
             const bool held = gamepads.Held(button);
             if (!held) padStale[button] = false;
-            else if (!fieldNav) padStale[button] = true;
+            // Nor is the press the Controle tab takes as a new button.
+            else if (!fieldNav || captureFor >= 0 || captureCooling) padStale[button] = true;
             const bool down = fieldNav && padFront && held && !padStale[button];
             if (down != padSent[button]) io.AddKeyEvent(key, padSent[button] = down);
         }
@@ -2364,6 +2588,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     g_client = &client;
     // Every console's folder of games exists from the first start, and what is in them is in the library.
     client.library.ScanGamesFolders();
+    RepairLinks(client.library.Root());
     client.Reload(client.library.Selected());
     if (const Game* game = client.Current()) client.console = game->system;
 

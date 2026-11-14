@@ -160,6 +160,8 @@ extern retro_hw_render_callback g_hw;
 extern bool g_hwActive;
 // Vulkan is offered first (--gpu opengl offers OpenGL instead); a core that draws with Vulkan gets RetroVulkan.
 bool g_preferVulkan = true, g_hwVulkan = false;
+// The Qualidade chosen for this PC (--quality): 0 ruim, 1 fraco, 2 bom, 3 ótimo.
+int g_quality = 2;
 const retro_hw_render_context_negotiation_interface_vulkan* g_negotiation = nullptr;
 unsigned g_hwFrameWidth = 0, g_hwFrameHeight = 0;
 // A core that draws in the game window itself (RANGA_ENVIRONMENT_GET_WINDOW), and the frame rate it reports.
@@ -239,36 +241,53 @@ bool ScriptedButton(unsigned id) {
     return false;
 }
 
-// The RetroPad follows the Super Nintendo: B below, A right, Y left, X above, which is where SDL's south, east, west and
-// north buttons are on every pad it knows.
+// Which button of the pad plays each RetroPad button, by SDL's own names ("a", "lefttrigger", "dpup"...); empty is
+// none. The RetroPad follows the Super Nintendo (B below, A right, Y left, X above), which is where SDL's south, east,
+// west and north buttons are on every pad it knows. The console's controls file (--controls, written by Ranga's
+// Controle tab) changes any of them.
+const char* const kRetroNames[] = {"B", "Y", "SELECT", "START", "UP", "DOWN", "LEFT", "RIGHT", "A", "X", "L", "R", "L2", "R2", "L3", "R3"};
+std::string g_padMap[16] = {"a", "x", "back", "start", "dpup", "dpdown", "dpleft", "dpright", "b", "y",
+                            "leftshoulder", "rightshoulder", "lefttrigger", "righttrigger", "leftstick", "rightstick"};
+
+void ReadControls(const std::wstring& path) {
+    const auto data = ReadFile(path);
+    std::string text(data.begin(), data.end());
+    for (size_t start = 0; start < text.size();) {
+        size_t end = text.find('\n', start);
+        if (end == std::string::npos) end = text.size();
+        std::string line = text.substr(start, end - start);
+        start = end + 1;
+        while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+        const size_t equals = line.find('=');
+        if (line.empty() || line[0] == '#' || equals == std::string::npos) continue;
+        std::string key = line.substr(0, equals), value = line.substr(equals + 1);
+        while (!key.empty() && key.back() == ' ') key.pop_back();
+        while (!value.empty() && value.front() == ' ') value.erase(0, 1);
+        for (int b = 0; b < 16; ++b) {
+            if (key == kRetroNames[b]) g_padMap[b] = value;
+        }
+    }
+    std::string summary;
+    for (int b = 0; b < 16; ++b) summary += std::string(b ? " " : "") + kRetroNames[b] + "=" + (g_padMap[b].empty() ? "-" : g_padMap[b]);
+    Log("[retro] botões do controle: %s\n", summary.c_str());
+}
+
+// How far the pad's source for a RetroPad button is pressed, 0 to 0x7fff: a trigger by its travel, a button all or
+// nothing.
+int PadSource(SDL_GameController* pad, unsigned id) {
+    if (pad == nullptr || id >= 16 || g_padMap[id].empty()) return 0;
+    const SDL_GameControllerAxis axis = SDL_GameControllerGetAxisFromString(g_padMap[id].c_str());
+    if (axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT || axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT) return std::max<int>(0, SDL_GameControllerGetAxis(pad, axis));
+    const SDL_GameControllerButton button = SDL_GameControllerGetButtonFromString(g_padMap[id].c_str());
+    return button != SDL_CONTROLLER_BUTTON_INVALID && SDL_GameControllerGetButton(pad, button) ? 0x7fff : 0;
+}
+
 int16_t PadButton(int port, unsigned id) {
     if (port == 0 && ScriptedButton(id)) return 1;
     if (g_scripted) return 0;
     // The game reads input only while its window is the one in front.
     if (GetForegroundWindow() != g_window) return 0;
-    bool down = false;
-    if (SDL_GameController* pad = g_pads[port]) {
-        const auto button = [&](SDL_GameControllerButton b) { return SDL_GameControllerGetButton(pad, b) != 0; };
-        const auto trigger = [&](SDL_GameControllerAxis a) { return SDL_GameControllerGetAxis(pad, a) > 12000; };
-        switch (id) {
-            case RETRO_DEVICE_ID_JOYPAD_B: down = button(SDL_CONTROLLER_BUTTON_A); break;
-            case RETRO_DEVICE_ID_JOYPAD_A: down = button(SDL_CONTROLLER_BUTTON_B); break;
-            case RETRO_DEVICE_ID_JOYPAD_Y: down = button(SDL_CONTROLLER_BUTTON_X); break;
-            case RETRO_DEVICE_ID_JOYPAD_X: down = button(SDL_CONTROLLER_BUTTON_Y); break;
-            case RETRO_DEVICE_ID_JOYPAD_SELECT: down = button(SDL_CONTROLLER_BUTTON_BACK); break;
-            case RETRO_DEVICE_ID_JOYPAD_START: down = button(SDL_CONTROLLER_BUTTON_START); break;
-            case RETRO_DEVICE_ID_JOYPAD_UP: down = button(SDL_CONTROLLER_BUTTON_DPAD_UP); break;
-            case RETRO_DEVICE_ID_JOYPAD_DOWN: down = button(SDL_CONTROLLER_BUTTON_DPAD_DOWN); break;
-            case RETRO_DEVICE_ID_JOYPAD_LEFT: down = button(SDL_CONTROLLER_BUTTON_DPAD_LEFT); break;
-            case RETRO_DEVICE_ID_JOYPAD_RIGHT: down = button(SDL_CONTROLLER_BUTTON_DPAD_RIGHT); break;
-            case RETRO_DEVICE_ID_JOYPAD_L: down = button(SDL_CONTROLLER_BUTTON_LEFTSHOULDER); break;
-            case RETRO_DEVICE_ID_JOYPAD_R: down = button(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER); break;
-            case RETRO_DEVICE_ID_JOYPAD_L2: down = trigger(SDL_CONTROLLER_AXIS_TRIGGERLEFT); break;
-            case RETRO_DEVICE_ID_JOYPAD_R2: down = trigger(SDL_CONTROLLER_AXIS_TRIGGERRIGHT); break;
-            case RETRO_DEVICE_ID_JOYPAD_L3: down = button(SDL_CONTROLLER_BUTTON_LEFTSTICK); break;
-            case RETRO_DEVICE_ID_JOYPAD_R3: down = button(SDL_CONTROLLER_BUTTON_RIGHTSTICK); break;
-        }
-    }
+    bool down = PadSource(g_pads[port], id) > 12000;
     // Player 1 also plays on the keyboard: arrows, Z X A S for B A Y X, Q W for L R, Enter Start, Backspace Select.
     if (!down && port == 0) {
         switch (id) {
@@ -293,8 +312,8 @@ int16_t PadAnalog(int port, unsigned index, unsigned id) {
     SDL_GameController* pad = g_pads[port];
     if (pad == nullptr || GetForegroundWindow() != g_window || g_scripted) return 0;
     if (index == RETRO_DEVICE_INDEX_ANALOG_BUTTON) {
-        if (id == RETRO_DEVICE_ID_JOYPAD_L2) return SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_TRIGGERLEFT);
-        if (id == RETRO_DEVICE_ID_JOYPAD_R2) return SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_TRIGGERRIGHT);
+        // A trigger keeps its travel wherever it was placed; a button is all or nothing.
+        if (id == RETRO_DEVICE_ID_JOYPAD_L2 || id == RETRO_DEVICE_ID_JOYPAD_R2) return static_cast<int16_t>(PadSource(pad, id));
         return PadButton(port, id) ? 0x7fff : 0;
     }
     const bool left = index == RETRO_DEVICE_INDEX_ANALOG_LEFT;
@@ -367,6 +386,9 @@ void SetOption(const char* key, const char* defaultValue) {
     const auto found = g.overrides.find(key);
     g.options[key] = found != g.overrides.end() ? found->second : defaultValue != nullptr ? defaultValue : "";
 }
+
+// The box a core's keyboard request opens (RANGA_ENVIRONMENT_GET_TEXT); defined with the menu, below.
+bool AskText(ranga_text_request& request);
 
 void ShowMessage(const std::wstring& text, unsigned frames) {
     g.message = text;
@@ -561,6 +583,8 @@ bool RETRO_CALLCONV Environment(unsigned command, void* data) {
         case RANGA_ENVIRONMENT_SET_FPS:
             g_coreFps = *static_cast<const float*>(data);
             return true;
+        case RANGA_ENVIRONMENT_GET_TEXT:
+            return data != nullptr && AskText(*static_cast<ranga_text_request*>(data));
     }
     // RANGA_RETRO_DEBUG=1 also names each request Ranga does not answer, once, and keeps the core's debug messages.
     static const bool debug = std::getenv("RANGA_RETRO_DEBUG") != nullptr;
@@ -1524,6 +1548,381 @@ int ShowMenu(int& slot, bool& fullscreen) {
     return s.result;
 }
 
+// The box for a game's keyboard (a name, a message), in the menu's colors: the text on top and an on-screen keyboard
+// the gamepad walks (d-pad, A types the key, B erases, Y switches case, X is a space, Start confirms, Guide cancels).
+// The mouse clicks keys and the PC's keyboard types straight in (Enter confirms, Esc cancels). The game waits while
+// it is open, as with the menu.
+namespace textbox {
+
+using menu::kPanel;
+using menu::kRow;
+using menu::kText;
+using menu::kDim;
+using menu::kAccent;
+using menu::kLine;
+
+// The key rows; letters follow the case switch. The last row is the wide keys.
+const wchar_t* const kKeys[] = {L"1234567890", L"qwertyuiop", L"asdfghjkl-", L"zxcvbnm._@"};
+constexpr int kColumns = 10, kLetterRows = 4;
+enum WideKey { kShift, kSpace, kErase, kOk };
+// Where each wide key starts and how many columns it takes.
+const int kWideStart[] = {0, 2, 6, 8}, kWideSpan[] = {2, 4, 2, 2};
+const wchar_t* const kWideLabel[] = {L"Maiúsc", L"Espaço", L"Apagar", L"OK"};
+
+struct Box {
+    HWND window = nullptr, dim = nullptr;
+    std::wstring title, guide, text;
+    unsigned max = 0;
+    bool password = false, upper = false;
+    int row = 1, column = 0;
+    // 0 open, 1 confirmed, 2 cancelled.
+    int done = 0;
+    float scale = 1;
+};
+Box s;
+
+int Px(float value) { return static_cast<int>(value * s.scale); }
+
+// The key's rectangle in the panel: rows of 10 keys under the text, the wide keys last.
+RECT KeyRect(int row, int column, int span = 1) {
+    const int left = Px(24), top = Px(176), width = Px(56), height = Px(46), gap = Px(6);
+    return RECT{left + column * (width + gap), top + row * (height + gap), left + (column + span) * (width + gap) - gap, top + row * (height + gap) + height};
+}
+
+// The wide key under a column of the last row.
+int WideAt(int column) {
+    for (int k = 3; k >= 0; --k) {
+        if (column >= kWideStart[k]) return k;
+    }
+    return 0;
+}
+
+wchar_t KeyChar(int row, int column) {
+    const wchar_t c = kKeys[row][column];
+    return s.upper ? static_cast<wchar_t>(towupper(c)) : c;
+}
+
+void Type(wchar_t c) {
+    if (s.max > 0 && s.text.size() >= s.max) return;
+    s.text += c;
+    InvalidateRect(s.window, nullptr, FALSE);
+}
+
+void Erase() {
+    if (!s.text.empty()) s.text.pop_back();
+    InvalidateRect(s.window, nullptr, FALSE);
+}
+
+void Press() {
+    if (s.row < kLetterRows) {
+        Type(KeyChar(s.row, s.column));
+        return;
+    }
+    switch (WideAt(s.column)) {
+        case kShift: s.upper = !s.upper; break;
+        case kSpace: Type(L' '); return;
+        case kErase: Erase(); return;
+        case kOk: s.done = 1; return;
+    }
+    InvalidateRect(s.window, nullptr, FALSE);
+}
+
+void Move(int rows, int columns) {
+    if (s.row == kLetterRows && columns != 0) {
+        // Along the wide keys, a step is a whole key.
+        const int key = std::clamp(WideAt(s.column) + columns, 0, 3);
+        s.column = kWideStart[key];
+    } else {
+        s.column = (s.column + columns + kColumns) % kColumns;
+    }
+    s.row = (s.row + rows + kLetterRows + 1) % (kLetterRows + 1);
+    if (s.row == kLetterRows) s.column = kWideStart[WideAt(s.column)];
+    InvalidateRect(s.window, nullptr, FALSE);
+}
+
+void Paint(HWND window) {
+    PAINTSTRUCT paint;
+    HDC target = BeginPaint(window, &paint);
+    RECT client{};
+    GetClientRect(window, &client);
+    HDC dc = CreateCompatibleDC(target);
+    HBITMAP bitmap = CreateCompatibleBitmap(target, client.right, client.bottom);
+    HGDIOBJ oldBitmap = SelectObject(dc, bitmap);
+    const auto fill = [&](RECT rect, COLORREF color) {
+        HBRUSH brush = CreateSolidBrush(color);
+        FillRect(dc, &rect, brush);
+        DeleteObject(brush);
+    };
+    fill(client, kPanel);
+    SetBkMode(dc, TRANSPARENT);
+    HFONT title = CreateFontW(-Px(22), 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
+    HFONT big = CreateFontW(-Px(22), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
+    HFONT text = CreateFontW(-Px(17), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
+    HFONT small = CreateFontW(-Px(14), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
+    HGDIOBJ oldFont = SelectObject(dc, title);
+    SetTextColor(dc, kText);
+    RECT head{Px(28), Px(22), client.right - Px(28), Px(56)};
+    DrawTextW(dc, s.title.empty() ? L"Digite o texto" : s.title.c_str(), -1, &head, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    SelectObject(dc, small);
+    SetTextColor(dc, kDim);
+    DrawTextW(dc, L"Ranga Emu", -1, &head, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+    fill(RECT{Px(28), Px(64), client.right - Px(28), Px(65)}, kLine);
+
+    // The text, with a bar where the next letter goes, and how much room is left.
+    RECT box{Px(24), Px(80), client.right - Px(24), Px(132)};
+    fill(box, kRow);
+    fill(RECT{box.left, box.bottom - Px(3), box.right, box.bottom}, kAccent);
+    SelectObject(dc, big);
+    SetTextColor(dc, kText);
+    const std::wstring shown = (s.password ? std::wstring(s.text.size(), L'•') : s.text) + L"|";
+    RECT inside{box.left + Px(14), box.top, box.right - Px(14), box.bottom};
+    DrawTextW(dc, shown.c_str(), -1, &inside, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_PATH_ELLIPSIS);
+    SelectObject(dc, small);
+    SetTextColor(dc, kDim);
+    RECT under{Px(28), Px(138), client.right - Px(28), Px(164)};
+    if (!s.guide.empty()) DrawTextW(dc, s.guide.c_str(), -1, &under, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    if (s.max > 0) {
+        const std::wstring count = std::to_wstring(s.text.size()) + L" / " + std::to_wstring(s.max);
+        DrawTextW(dc, count.c_str(), -1, &under, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+    }
+
+    SelectObject(dc, text);
+    const auto key = [&](RECT rect, const std::wstring& label, bool focused, bool lit) {
+        fill(rect, focused ? kAccent : lit ? RGB(0x3a, 0x3b, 0x42) : kRow);
+        SetTextColor(dc, focused ? RGB(0xff, 0xff, 0xff) : kText);
+        DrawTextW(dc, label.c_str(), -1, &rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    };
+    for (int r = 0; r < kLetterRows; ++r) {
+        for (int c = 0; c < kColumns; ++c) key(KeyRect(r, c), std::wstring(1, KeyChar(r, c)), s.row == r && s.column == c, false);
+    }
+    for (int k = 0; k < 4; ++k) {
+        key(KeyRect(kLetterRows, kWideStart[k], kWideSpan[k]), kWideLabel[k], s.row == kLetterRows && WideAt(s.column) == k, k == kShift && s.upper);
+    }
+
+    SelectObject(dc, small);
+    SetTextColor(dc, kDim);
+    RECT foot{Px(28), client.bottom - Px(40), client.right - Px(28), client.bottom - Px(12)};
+    DrawTextW(dc, L"A tecla   B apaga   X espaço   Y maiúsc   Start OK   Guide/Esc cancela   ou digite no teclado do PC", -1,
+              &foot, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    BitBlt(target, 0, 0, client.right, client.bottom, dc, 0, 0, SRCCOPY);
+    SelectObject(dc, oldFont);
+    SelectObject(dc, oldBitmap);
+    DeleteObject(title);
+    DeleteObject(big);
+    DeleteObject(text);
+    DeleteObject(small);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+    EndPaint(window, &paint);
+}
+
+// The key under a point of the panel; false when there is none.
+bool KeyAt(int x, int y, int& row, int& column) {
+    for (int r = 0; r < kLetterRows; ++r) {
+        for (int c = 0; c < kColumns; ++c) {
+            const RECT rect = KeyRect(r, c);
+            if (x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom) {
+                row = r;
+                column = c;
+                return true;
+            }
+        }
+    }
+    for (int k = 0; k < 4; ++k) {
+        const RECT rect = KeyRect(kLetterRows, kWideStart[k], kWideSpan[k]);
+        if (x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom) {
+            row = kLetterRows;
+            column = kWideStart[k];
+            return true;
+        }
+    }
+    return false;
+}
+
+LRESULT CALLBACK Proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+    switch (message) {
+        case WM_PAINT:
+            Paint(window);
+            return 0;
+        case WM_ERASEBKGND:
+            return 1;
+        case WM_KEYDOWN:
+            if (wParam == VK_RETURN) s.done = 1;
+            else if (wParam == VK_ESCAPE) s.done = 2;
+            else if (wParam == VK_BACK) Erase();
+            else if (wParam == VK_UP) Move(-1, 0);
+            else if (wParam == VK_DOWN) Move(1, 0);
+            else if (wParam == VK_LEFT) Move(0, -1);
+            else if (wParam == VK_RIGHT) Move(0, 1);
+            return 0;
+        case WM_CHAR:
+            // What the PC's keyboard types, accents included; control characters were handled above.
+            if (wParam >= 0x20 && wParam != 0x7f) Type(static_cast<wchar_t>(wParam));
+            return 0;
+        case WM_MOUSEMOVE:
+        case WM_LBUTTONUP: {
+            int row = 0, column = 0;
+            if (KeyAt(static_cast<short>(LOWORD(lParam)), static_cast<short>(HIWORD(lParam)), row, column)) {
+                if (row != s.row || column != s.column) {
+                    s.row = row;
+                    s.column = column;
+                    InvalidateRect(window, nullptr, FALSE);
+                }
+                if (message == WM_LBUTTONUP) Press();
+            }
+            return 0;
+        }
+    }
+    return DefWindowProcW(window, message, wParam, lParam);
+}
+
+// The gamepads, as the menu reads them: the d-pad and left stick repeat while held; a button already down when the
+// box opened waits to be let go.
+void PollPads() {
+    enum { Up, Down, Left, Right, A, B, X, Y, Start, Guide, Count };
+    static bool held[Count];
+    static ULONGLONG next[Count];
+    static bool first = true;
+    if (s.done == 0 && first) {
+        for (auto& h : held) h = false;
+    }
+    SDL_GameControllerUpdate();
+    bool now[Count]{};
+    for (auto* pad : g_pads) {
+        if (pad == nullptr) continue;
+        const auto button = [&](SDL_GameControllerButton b) { return SDL_GameControllerGetButton(pad, b) != 0; };
+        const int x = SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_LEFTX), y = SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_LEFTY);
+        now[Up] |= button(SDL_CONTROLLER_BUTTON_DPAD_UP) || y < -20000;
+        now[Down] |= button(SDL_CONTROLLER_BUTTON_DPAD_DOWN) || y > 20000;
+        now[Left] |= button(SDL_CONTROLLER_BUTTON_DPAD_LEFT) || x < -20000;
+        now[Right] |= button(SDL_CONTROLLER_BUTTON_DPAD_RIGHT) || x > 20000;
+        now[A] |= button(SDL_CONTROLLER_BUTTON_A);
+        now[B] |= button(SDL_CONTROLLER_BUTTON_B);
+        now[X] |= button(SDL_CONTROLLER_BUTTON_X);
+        now[Y] |= button(SDL_CONTROLLER_BUTTON_Y);
+        now[Start] |= button(SDL_CONTROLLER_BUTTON_START);
+        now[Guide] |= button(SDL_CONTROLLER_BUTTON_GUIDE);
+    }
+    // RANGA_RETRO_PAD_SCRIPT, in RetroPad names: B (the bottom button) types, A erases.
+    now[Up] |= ScriptedButton(RETRO_DEVICE_ID_JOYPAD_UP);
+    now[Down] |= ScriptedButton(RETRO_DEVICE_ID_JOYPAD_DOWN);
+    now[Left] |= ScriptedButton(RETRO_DEVICE_ID_JOYPAD_LEFT);
+    now[Right] |= ScriptedButton(RETRO_DEVICE_ID_JOYPAD_RIGHT);
+    now[A] |= ScriptedButton(RETRO_DEVICE_ID_JOYPAD_B);
+    now[B] |= ScriptedButton(RETRO_DEVICE_ID_JOYPAD_A);
+    now[Start] |= ScriptedButton(RETRO_DEVICE_ID_JOYPAD_START);
+    const ULONGLONG tick = GetTickCount64();
+    for (int b = 0; b < Count; ++b) {
+        if (first || !now[b]) {
+            held[b] = now[b];
+            next[b] = tick + 350;
+            continue;
+        }
+        const bool repeats = b <= Right || b == B;
+        const bool press = !held[b] || (repeats && tick >= next[b]);
+        if (!held[b]) next[b] = tick + 350;
+        else if (press) next[b] = tick + 90;
+        held[b] = true;
+        if (!press) continue;
+        switch (b) {
+            case Up: Move(-1, 0); break;
+            case Down: Move(1, 0); break;
+            case Left: Move(0, -1); break;
+            case Right: Move(0, 1); break;
+            case A: Press(); break;
+            case B: Erase(); break;
+            case X: Type(L' '); break;
+            case Y: s.upper = !s.upper; InvalidateRect(s.window, nullptr, FALSE); break;
+            case Start: s.done = 1; break;
+            case Guide: s.done = 2; break;
+        }
+    }
+    first = false;
+}
+
+} // namespace textbox
+
+bool AskText(ranga_text_request& request) {
+    using namespace textbox;
+    s = Box{};
+    s.title = Wide(request.title != nullptr ? request.title : "");
+    s.guide = Wide(request.guide != nullptr ? request.guide : "");
+    s.text = Wide(request.initial != nullptr ? request.initial : "");
+    s.max = request.max_length;
+    s.password = request.password != 0;
+    if (s.max > 0 && s.text.size() > s.max) s.text.resize(s.max);
+    HDC screen = GetDC(nullptr);
+    s.scale = std::max(1.0f, GetDeviceCaps(screen, LOGPIXELSY) / 96.0f);
+    ReleaseDC(nullptr, screen);
+    static bool registered = false;
+    if (!registered) {
+        WNDCLASSEXW panel{sizeof(panel)};
+        panel.lpfnWndProc = textbox::Proc;
+        panel.hInstance = GetModuleHandleW(nullptr);
+        panel.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        panel.lpszClassName = L"RangaRetroText";
+        RegisterClassExW(&panel);
+        WNDCLASSEXW shade{sizeof(shade)};
+        shade.lpfnWndProc = DefWindowProcW;
+        shade.hInstance = GetModuleHandleW(nullptr);
+        shade.hbrBackground = static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
+        shade.lpszClassName = L"RangaRetroTextShade";
+        RegisterClassExW(&shade);
+        registered = true;
+    }
+    s.dim = CreateWindowExW(WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST, L"RangaRetroTextShade", L"", WS_POPUP, 0, 0, 1, 1,
+                            g_window, nullptr, GetModuleHandleW(nullptr), nullptr);
+    if (s.dim != nullptr) SetLayeredWindowAttributes(s.dim, 0, 150, LWA_ALPHA);
+    s.window = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST, L"RangaRetroText", L"Ranga Emu - texto", WS_POPUP, 0, 0, 1, 1, g_window, nullptr,
+                               GetModuleHandleW(nullptr), nullptr);
+    if (s.window == nullptr) {
+        Log("[retro] a caixa de texto não abriu (erro %lu)\n", GetLastError());
+        if (s.dim != nullptr) DestroyWindow(s.dim);
+        return false;
+    }
+    // Centered on the game's window: ten keys of 56 and their gaps, the text above, the help line below.
+    const int width = Px(24 * 2 + 10 * 56 + 9 * 6), height = Px(176 + 5 * 52 + 50);
+    RECT game{};
+    GetWindowRect(g_window, &game);
+    SetWindowPos(s.window, HWND_TOPMOST, (game.left + game.right - width) / 2, (game.top + game.bottom - height) / 2, width, height, SWP_NOACTIVATE);
+    SetWindowRgn(s.window, CreateRoundRectRgn(0, 0, width + 1, height + 1, Px(16), Px(16)), TRUE);
+    if (s.dim != nullptr) {
+        SetWindowPos(s.dim, s.window, game.left, game.top, game.right - game.left, game.bottom - game.top, SWP_NOACTIVATE);
+        ShowWindow(s.dim, SW_SHOWNOACTIVATE);
+    }
+    ShowWindow(s.window, SW_SHOW);
+    SetForegroundWindow(s.window);
+    SetFocus(s.window);
+    Log("[retro] caixa de texto aberta: %s\n", request.title != nullptr ? request.title : "");
+    while (s.done == 0) {
+        MsgWaitForMultipleObjects(0, nullptr, FALSE, 16, QS_ALLINPUT);
+        MSG message;
+        while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+            if (message.message == WM_QUIT) {
+                PostQuitMessage(static_cast<int>(message.wParam));
+                s.done = 2;
+                break;
+            }
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+        textbox::PollPads();
+        if (!g_running || !IsWindow(g_window)) s.done = 2;
+    }
+    DestroyWindow(s.window);
+    if (s.dim != nullptr) DestroyWindow(s.dim);
+    SetForegroundWindow(g_window);
+    const std::string typed = Utf8(s.text);
+    if (request.result != nullptr && request.result_size > 0) {
+        const size_t length = std::min<size_t>(typed.size(), request.result_size - 1);
+        std::memcpy(request.result, typed.data(), length);
+        request.result[length] = '\0';
+    }
+    request.accepted = s.done == 1 ? 1 : 0;
+    Log("[retro] caixa de texto: %s\n", s.done == 1 ? "confirmada" : "cancelada");
+    return true;
+}
+
 // Ranga's own defaults for a core, applied before the game's options file, which can still change any of them: the
 // OpenGL renderer at about 1080p, and for SwanStation the PS1 BIOS inside the PS3 firmware Sony publishes (ps1_rom.bin,
 // taken from RPCS3's dev_flash), which serves every region.
@@ -1532,23 +1931,34 @@ void ApplyCoreDefaults(const std::wstring& corePath, const std::wstring& systemD
     for (auto& character : name) character = static_cast<wchar_t>(towlower(character));
     struct Default { const wchar_t* core; const char* key; const char* value; };
     static const Default defaults[] = {
-
-        {L"swanstation", "swanstation_GPU_ResolutionScale", "5"},
         {L"melondsds", "melonds_render_mode", "opengl"},
-        {L"melondsds", "melonds_opengl_resolution", "4"},
-        {L"mupen64plus_next", "mupen64plus-43screensize", "1440x1080"},
-        {L"mupen64plus_next", "mupen64plus-parallel-rdp-upscaling", "4x"},
-        {L"ppsspp", "ppsspp_internal_resolution", "1920x1088"},
-        {L"flycast", "reicast_internal_resolution", "1920x1440"},
-        {L"pcsx2", "pcsx2_upscale_multiplier", "2x"},
-        {L"azahar", "citra_resolution_factor", "3"},
-        {L"cemu", "cemu_internal_resolution", "1.5x"},
-        {L"xemu", "xemu_surface_scale", "2"},
         {L"xemu", "xemu_skip_boot_anim", "enabled"},
     };
     for (const auto& entry : defaults) {
         if (name.rfind(entry.core, 0) == 0) g.overrides[entry.key] = entry.value;
     }
+    // The picture's size by the Qualidade chosen for this PC (--quality): ruim, fraco, bom, ótimo. bom is what Ranga
+    // always used (about 1080p); the values are the ones each core lists (RANGA_RETRO_LIST_OPTIONS, 14/11/2026).
+    struct Quality { const wchar_t* core; const char* key; const char* values[4]; };
+    static const Quality qualities[] = {
+        {L"swanstation", "swanstation_GPU_ResolutionScale", {"1", "2", "5", "8"}},
+        {L"melondsds", "melonds_opengl_resolution", {"1", "2", "4", "6"}},
+        {L"mupen64plus_next", "mupen64plus-43screensize", {"640x480", "960x720", "1440x1080", "1920x1440"}},
+        {L"mupen64plus_next", "mupen64plus-parallel-rdp-upscaling", {"1x", "2x", "4x", "8x"}},
+        {L"ppsspp", "ppsspp_internal_resolution", {"480x272", "960x544", "1920x1088", "2880x1632"}},
+        {L"flycast", "reicast_internal_resolution", {"640x480", "960x720", "1920x1440", "2880x2160"}},
+        {L"pcsx2", "pcsx2_upscale_multiplier", {"1x (Native)", "1x (Native)", "2x", "4x"}},
+        {L"azahar", "citra_resolution_factor", {"1", "2", "3", "4"}},
+        {L"cemu", "cemu_internal_resolution", {"0.75x", "native", "1.5x", "2x"}},
+        {L"xemu", "xemu_surface_scale", {"1", "1", "2", "3"}},
+        {L"dolphin", "dolphin_efb_scale", {"1", "2", "3", "4"}},
+        {L"eden", "eden_qualidade", {"ruim", "fraco", "bom", "otimo"}},
+    };
+    for (const auto& entry : qualities) {
+        if (name.rfind(entry.core, 0) == 0) g.overrides[entry.key] = entry.values[g_quality];
+    }
+    static const char* const levels[] = {"ruim", "fraco", "bom", "ótimo"};
+    Log("[retro] qualidade: %s\n", levels[g_quality]);
     // Without Sony's, Ranga's own PS1 BIOS (ranga-bios-ps1.bin: OpenBIOS, MIT, built with Ranga's colors in
     // C:\projetos\sos-ps5\ranga-bios-ps1), which boots most games but not all (Azure Dreams, Wipeout NTSC-U).
     if (name.rfind(L"swanstation", 0) == 0) {
@@ -1598,6 +2008,11 @@ int RetroMain(int argc, wchar_t** argv) {
         else if (arg == L"--system" && hasValue) systemDir = argv[++i];
         else if (arg == L"--saves" && hasValue) saveDir = argv[++i];
         else if (arg == L"--options" && hasValue) optionsPath = argv[++i];
+        else if (arg == L"--controls" && hasValue) ReadControls(argv[++i]);
+        else if (arg == L"--quality" && hasValue) {
+            const std::wstring level = argv[++i];
+            g_quality = level == L"ruim" ? 0 : level == L"fraco" ? 1 : level == L"otimo" ? 3 : 2;
+        }
         else if (arg == L"--fullscreen") fullscreen = true;
         else if (arg == L"--no-game") romPath = L"<sem jogo>";
         else if (arg == L"--gpu" && hasValue) g_preferVulkan = std::wstring(argv[++i]) != L"opengl";
@@ -1714,6 +2129,14 @@ int RetroMain(int argc, wchar_t** argv) {
     ShowWindow(g_window, SW_SHOWNORMAL);
     SetForegroundWindow(g_window);
     if (fullscreen) ToggleFullscreen();
+    // RANGA_RETRO_TEXT_TEST=1 opens the keyboard box once, before the game, and logs what was typed: the box tested
+    // without a game that asks for text.
+    if (std::getenv("RANGA_RETRO_TEXT_TEST") != nullptr) {
+        char typed[256] = {};
+        ranga_text_request request{"Apelido do Mii", "Teste da caixa de texto", "Eden", 10, 0, typed, sizeof(typed), 0};
+        AskText(request);
+        Log("[retro] teste do texto: aceito=%d texto=%s\n", request.accepted, typed);
+    }
     Audio audio;
     audio.Open();
 

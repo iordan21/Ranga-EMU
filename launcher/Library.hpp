@@ -84,6 +84,10 @@ public:
 private:
     std::wstring IniPath() const { return root + L"\\library.ini"; }
     int Store(const std::wstring& key, const std::wstring& path, const std::wstring& system, const std::wstring& serial, const std::wstring& title, std::wstring& error);
+    struct PendingArt {
+        std::wstring system, file, key;
+    };
+    void ExtractArts(const std::vector<PendingArt>& arts);
     std::wstring root;
     std::vector<Game> games;
 };
@@ -103,6 +107,13 @@ struct Options {
     // DLSS 5 through ReShade, with the files the user put in addons\dlss5 (see Dlss5.hpp).
     bool dlss5 = false;
 };
+
+// Where a game keeps its saves, options, logs and art: saves\<console>\<title> beside this program, with what
+// Windows does not take in a name left out. The library gives two games of a console with the same title their key
+// too (Library::Load).
+std::wstring WorkspaceFor(const std::wstring& root, const std::wstring& system, const std::wstring& title);
+// Makes the folder and every folder above it that is missing.
+void MakeFolders(const std::wstring& path);
 
 Options LoadOptions(const Game& game);
 void SaveOptions(const Game& game, const Options& options);

@@ -98,6 +98,16 @@ std::wstring MissingFiles(const std::wstring& root, const std::wstring& system, 
 void SetNative(const std::wstring& root, const std::wstring& system, bool native);
 // The core file Ranga Retro loads for the console, in cores beside this program.
 std::wstring NativeCorePath(const std::wstring& root, const System& system);
+// The console's button map for Ranga Retro (controles\<console>.ini beside this program): lines of RetroPad button =
+// SDL button name, written by the Controle tab; a missing file or line keeps Ranga Retro's default.
+std::wstring ControlsFile(const std::wstring& root, const std::wstring& system);
+// The Qualidade chosen for this PC, for every console Ranga runs itself: ruim, fraco, bom (the default) or otimo, kept
+// in engines.ini [Ranga] and handed to Ranga Retro (--quality), which sets each core's resolution from it.
+// Makes again the folder links the Switch, PS3 and Xbox 360 cores need (bios\retroarch -> emuladores) where a copy, a
+// zip or a move of the Ranga folder lost them or left them pointing at the old place.
+void RepairLinks(const std::wstring& root);
+std::wstring Quality(const std::wstring& root);
+void SetQuality(const std::wstring& root, const std::wstring& level);
 // Writes the preset's tweaks into the emulator's configuration, which has to be closed, and makes its BIOS folder.
 // Returns what was changed, one line each, or why nothing could be.
 std::wstring TuneEngine(const std::wstring& root, const std::wstring& system);
