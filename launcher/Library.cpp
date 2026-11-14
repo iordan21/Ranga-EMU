@@ -291,6 +291,60 @@ Options LoadOptions(const Game& game) {
 
 namespace {
 
+// Each line of core-options.ini as its key (empty for a line that is not "key = value") and the line itself.
+std::vector<std::pair<std::string, std::string>> CoreOptionLines(const Game& game) {
+    std::vector<std::pair<std::string, std::string>> lines;
+    const std::string text = ReadBytes(game.workspace + L"\\core-options.ini");
+    for (size_t start = 0; start < text.size();) {
+        size_t end = text.find('\n', start);
+        if (end == std::string::npos) end = text.size();
+        std::string line = text.substr(start, end - start);
+        start = end + 1;
+        while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+        const size_t equals = line.find('=');
+        std::string key = equals == std::string::npos || line[0] == '#' || line[0] == ';' ? "" : line.substr(0, equals);
+        while (!key.empty() && key.back() == ' ') key.pop_back();
+        lines.push_back({key, line});
+    }
+    return lines;
+}
+
+}
+
+std::string ReadCoreOption(const Game& game, const std::string& key) {
+    for (const auto& [name, line] : CoreOptionLines(game)) {
+        if (name != key) continue;
+        std::string value = line.substr(line.find('=') + 1);
+        while (!value.empty() && value.front() == ' ') value.erase(0, 1);
+        if (value.size() >= 2 && value.front() == '"' && value.back() == '"') value = value.substr(1, value.size() - 2);
+        return value;
+    }
+    return "";
+}
+
+void WriteCoreOption(const Game& game, const std::string& key, const std::string& value) {
+    std::string out;
+    bool replaced = false;
+    for (const auto& [name, line] : CoreOptionLines(game)) {
+        if (name == key) {
+            if (replaced) continue;
+            replaced = true;
+            out += key + " = \"" + value + "\"\r\n";
+        } else {
+            out += line + "\r\n";
+        }
+    }
+    if (!replaced) out += key + " = \"" + value + "\"\r\n";
+    CreateDirectoryW((game.workspace.substr(0, game.workspace.find_last_of(L'\\'))).c_str(), nullptr);
+    CreateDirectoryW(game.workspace.c_str(), nullptr);
+    FILE* file = nullptr;
+    if (_wfopen_s(&file, (game.workspace + L"\\core-options.ini").c_str(), L"wb") != 0 || file == nullptr) return;
+    std::fwrite(out.data(), 1, out.size(), file);
+    std::fclose(file);
+}
+
+namespace {
+
 std::wstring AddonIni(const Game& game) { return game.workspace + L"\\dlc.ini"; }
 
 // The runtime reads one entitlement label per line; the file is rewritten from dlc.ini so the two always agree.

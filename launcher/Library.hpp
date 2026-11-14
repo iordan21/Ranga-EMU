@@ -99,6 +99,11 @@ struct Options {
 Options LoadOptions(const Game& game);
 void SaveOptions(const Game& game, const Options& options);
 
+// One value of the game's core-options.ini, the file Ranga Retro hands its core (lines of key = "value", UTF-8);
+// empty when the key is not there. Writing keeps every other line as it was.
+std::string ReadCoreOption(const Game& game, const std::string& key);
+void WriteCoreOption(const Game& game, const std::string& key, const std::string& value);
+
 // An add-on (DLC) dumped from the console. Its files stay in folder; installing it lists its entitlement label in the
 // workspace's anyps5-entitlements.ini, which the runtime reads as owned add-ons, and, when it has data beyond sce_sys,
 // links addcont\<label> in the workspace to folder, where the runtime mounts it for the game.

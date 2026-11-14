@@ -13,6 +13,7 @@
 #include <shlwapi.h>
 #include <optional>
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <functional>
 #include <array>
@@ -449,6 +450,10 @@ struct Client {
     std::wstring missingKey, missingText;
     ULONGLONG missingAt = 0;
     std::map<std::wstring, std::array<char, 1024>> argsEdit, fullscreenEdit;
+    // The Switch game's online room (Eden's multiplayer rooms), as the game's core options keep it: 0 off, 1 join,
+    // 2 host. The core reads them when the game starts.
+    int roomMode = 0;
+    std::array<char, 128> roomAddress{}, roomPort{}, roomNickname{}, roomPassword{};
     // A game file whose extension fits several consoles waits here until the user says which.
     std::wstring askFile;
     Detected askDetected;
@@ -520,6 +525,18 @@ struct Client {
             options = LoadOptions(*game);
             addons = LoadAddons(*game);
             dlss5Kit = InspectDlss5(library.Root());
+            if (game->system == L"SWITCH") {
+                const std::string mode = ReadCoreOption(*game, "eden_sala");
+                roomMode = mode == "entrar" ? 1 : mode == "criar" ? 2 : 0;
+                const auto fill = [&](std::array<char, 128>& field, const char* key) {
+                    field.fill(0);
+                    ReadCoreOption(*game, key).copy(field.data(), field.size() - 1);
+                };
+                fill(roomAddress, "eden_sala_endereco");
+                fill(roomPort, "eden_sala_porta");
+                fill(roomNickname, "eden_sala_apelido");
+                fill(roomPassword, "eden_sala_senha");
+            }
             library.Select(game->titleId);
             // The Bloodborne port and the emulators write everything to game.log; PS5 games put their errors in game.err.
             logFile = game->system != L"PS5" ? 1 : 0;
@@ -1441,6 +1458,47 @@ struct Client {
             ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
             ImGui::TextWrapped("Jogo experimental: o Ranga Emu só foi testado com God of War Sons of Sparta. Este jogo pode travar ou nem abrir. Se der erro, a aba Log mostra o que aconteceu.");
             ImGui::PopStyleColor();
+        }
+        if (game.system == L"SWITCH" && EngineFor(game.system).native) {
+            // Eden's multiplayer rooms: the game's local wireless / LAN mode goes through a room over UDP. The core
+            // joins or hosts the room when the game starts, so nothing here changes a game that is already open.
+            ImGui::Dummy(ImVec2(0, 6 * scale));
+            ImGui::Separator();
+            ImGui::Dummy(ImVec2(0, 2 * scale));
+            const bool running = runner.Busy() && runner.TitleId() == game.titleId;
+            ImGui::BeginDisabled(running);
+            const char* modes[] = {"Desligada", "Entrar em uma sala", "Criar uma sala"};
+            const char* modeValues[] = {"desligada", "entrar", "criar"};
+            label("Sala online");
+            if (ImGui::Combo("##room", &roomMode, modes, 3)) WriteCoreOption(game, "eden_sala", modeValues[roomMode]);
+            if (roomMode != 0) {
+                const auto field = [&](const char* name, const char* id, std::array<char, 128>& text, const char* key, ImGuiInputTextFlags flags = 0) {
+                    label(name);
+                    ImGui::InputText(id, text.data(), text.size(), flags);
+                    if (ImGui::IsItemDeactivatedAfterEdit()) WriteCoreOption(game, key, text.data());
+                };
+                if (roomMode == 1) field("Endereço", "##roomAddress", roomAddress, "eden_sala_endereco");
+                field("Porta", "##roomPort", roomPort, "eden_sala_porta", ImGuiInputTextFlags_CharsDecimal);
+                field("Apelido", "##roomNickname", roomNickname, "eden_sala_apelido");
+                field("Senha", "##roomPassword", roomPassword, "eden_sala_senha");
+                const std::string nickname = roomNickname.data();
+                const bool nicknameFits = nickname.size() >= 4 && nickname.size() <= 20 &&
+                    std::all_of(nickname.begin(), nickname.end(), [](unsigned char c) { return std::isalnum(c) || c == '.' || c == '_' || c == '-' || c == ' '; });
+                const char* problem = !nicknameFits ? "O apelido precisa de 4 a 20 letras ou números, sem acento." :
+                                      roomMode == 1 && roomAddress[0] == 0 ? "Falta o endereço que o dono da sala passou." : nullptr;
+                if (problem != nullptr) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
+                    ImGui::TextWrapped("%s", problem);
+                    ImGui::PopStyleColor();
+                }
+                ImGui::PushTextWrapPos(0);
+                if (roomMode == 1) ImGui::TextDisabled("Cole o endereço como o dono da sala passou; \"endereço:porta\" junto também serve, e aí a porta pode ficar vazia. Senha só se a sala tiver.");
+                else ImGui::TextDisabled("A sala abre junto com o jogo, na porta escolhida (vazia = 24872), em UDP. Para amigos de fora entrarem, aponte um túnel UDP (playit, por exemplo) para 127.0.0.1 nessa porta e passe a eles o endereço do túnel.");
+                ImGui::TextDisabled("No jogo, todos escolhem o modo sem fio local / LAN, não o online da Nintendo. Todos precisam da mesma versão do emulador e do jogo.");
+                ImGui::PopTextWrapPos();
+            }
+            ImGui::EndDisabled();
+            if (running) ImGui::TextDisabled("Feche o jogo para mudar a sala.");
         }
         ImGui::Dummy(ImVec2(0, 6 * scale));
         ImGui::Separator();
