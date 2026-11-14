@@ -120,6 +120,16 @@ std::wstring GameRom(const std::wstring& system, const std::wstring& path);
 std::vector<std::pair<std::wstring, std::wstring>> GameFileFilters();
 // Takes the icon and background out of a PSP disc image into folder, as ICON0.PNG and PIC1.PNG.
 void ExtractArt(const std::wstring& system, const std::wstring& path, const std::wstring& folder);
+// What a Switch file holds, told by the title id in its ticket's name (NSP) or between brackets in the file's own name:
+// the game itself (an id ending in 000), its update (800) or an add-on (anything else). With no id to read, a name
+// saying "update" or "dlc" still tells the kind. baseId is the id of the game it belongs to; ids are 16 upper-case hex
+// digits, empty when unknown.
+enum class SwitchKind { Unknown, Game, Update, Addon };
+struct SwitchContent {
+    SwitchKind kind = SwitchKind::Unknown;
+    std::wstring titleId, baseId;
+};
+SwitchContent DetectSwitchContent(const std::wstring& path);
 // The library key of a game file: console and a hash of its path, so the same file is added once.
 std::wstring FileKey(const std::wstring& system, const std::wstring& path);
 

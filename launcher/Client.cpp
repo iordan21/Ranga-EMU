@@ -454,6 +454,9 @@ struct Client {
     // 2 host. The core reads them when the game starts.
     int roomMode = 0;
     std::array<char, 128> roomAddress{}, roomPort{}, roomNickname{}, roomPassword{};
+    // The Switch game's update and add-on files (the eden_conteudo core option), and what each one is.
+    std::vector<std::wstring> contentFiles;
+    std::vector<SwitchContent> contentKinds;
     // A game file whose extension fits several consoles waits here until the user says which.
     std::wstring askFile;
     Detected askDetected;
@@ -536,11 +539,58 @@ struct Client {
                 fill(roomPort, "eden_sala_porta");
                 fill(roomNickname, "eden_sala_apelido");
                 fill(roomPassword, "eden_sala_senha");
+                LoadContent(*game);
             }
             library.Select(game->titleId);
             // The Bloodborne port and the emulators write everything to game.log; PS5 games put their errors in game.err.
             logFile = game->system != L"PS5" ? 1 : 0;
         }
+    }
+
+    void LoadContent(const Game& game) {
+        contentFiles.clear();
+        contentKinds.clear();
+        const std::wstring list = Wide(ReadCoreOption(game, "eden_conteudo"));
+        for (size_t start = 0; start <= list.size();) {
+            size_t end = list.find(L'|', start);
+            if (end == std::wstring::npos) end = list.size();
+            if (end > start) contentFiles.push_back(list.substr(start, end - start));
+            start = end + 1;
+        }
+        for (const auto& file : contentFiles) contentKinds.push_back(DetectSwitchContent(file));
+    }
+
+    void SaveContent(const Game& game) {
+        std::wstring list;
+        for (const auto& file : contentFiles) list += (list.empty() ? L"" : L"|") + file;
+        WriteCoreOption(game, "eden_conteudo", Utf8(list));
+        LoadContent(game);
+    }
+
+    // Adds an update or add-on file to the Switch game on screen; says why when the file is not one of this game's.
+    void AddContentFile(const std::wstring& file) {
+        Game* game = Current();
+        if (game == nullptr) return;
+        const SwitchContent content = DetectSwitchContent(file), base = DetectSwitchContent(game->folder);
+        if (content.kind == SwitchKind::Game) {
+            Notify(L"Este arquivo é um jogo inteiro, não uma atualização nem DLC:\n\n" + FileName(file));
+            return;
+        }
+        if (!content.baseId.empty() && base.kind == SwitchKind::Game && content.baseId != base.titleId) {
+            Notify(L"Este arquivo é de outro jogo (" + content.baseId + L"), não de " + game->title + L" (" + base.titleId + L").");
+            return;
+        }
+        for (const auto& have : contentFiles) if (_wcsicmp(have.c_str(), file.c_str()) == 0) return;
+        contentFiles.push_back(file);
+        SaveContent(*game);
+    }
+
+    // The console's folder of games (jogos\<console>), opened in Explorer for the user to drop games in.
+    void OpenGamesFolder() {
+        const std::wstring folder = library.GamesFolder(console);
+        CreateDirectoryW((library.Root() + L"\\jogos").c_str(), nullptr);
+        CreateDirectoryW(folder.c_str(), nullptr);
+        ShellExecuteW(window, L"open", folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     }
 
     void Reload(const std::wstring& keep) {
@@ -990,6 +1040,10 @@ struct Client {
     }
 
     void OpenConsole() {
+        // What was dropped in the console's folder since the last look comes in now.
+        const std::wstring keep = Current() != nullptr ? Current()->titleId : L"";
+        library.ScanGamesFolders(console);
+        Reload(keep);
         page = Page::Console;
         gridFocus = 0;
         const auto games = ConsoleGames(console);
@@ -1282,12 +1336,18 @@ struct Client {
         ImGui::SameLine(0, 12 * scale);
         ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10 * scale);
         ImGui::TextDisabled("%s", games.size() == 1 ? "1 jogo" : (std::to_string(games.size()) + " jogos").c_str());
+        if (!games.empty()) {
+            ImGui::SameLine(0, 18 * scale);
+            ImGui::SetCursorPosY(22 * scale);
+            if (ImGui::Button("Pasta de jogos", ImVec2(0, 36 * scale))) pending = [this] { OpenGamesFolder(); };
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Abre a pasta deste console. O que você colocar nela entra na lista sozinho.");
+        }
         TopButtons(scale, size.x - left, 1);
 
         if (games.empty()) {
             // Left and right go along the three ways to add a game; up reaches the top row.
             if (nav.left && emptyFocus > 0) --emptyFocus;
-            if (nav.right && emptyFocus < 2) ++emptyFocus;
+            if (nav.right && emptyFocus < 3) ++emptyFocus;
             if (nav.up) barFocus = 0;
             const bool here = barFocus < 0 && !inBar;
             const int pressed = here && nav.accept ? emptyFocus : -1;
@@ -1306,6 +1366,12 @@ struct Client {
             ImGui::SameLine();
             if (ImGui::Button("Pasta de ROMs...", ImVec2(190 * scale, 38 * scale)) || pressed == 2) pending = [this] { AddRomFolder(); };
             FocusLast(here && emptyFocus == 2, scale);
+            ImGui::SameLine();
+            if (ImGui::Button("Abrir pasta de jogos", ImVec2(190 * scale, 38 * scale)) || pressed == 3) pending = [this] { OpenGamesFolder(); };
+            FocusLast(here && emptyFocus == 3, scale);
+            ImGui::Dummy(ImVec2(0, 4 * scale));
+            ImGui::TextDisabled("Cada console tem a sua pasta de jogos: o que você colocar nela entra na lista sozinho.");
+            ImGui::TextDisabled("%s", Utf8(library.GamesFolder(console)).c_str());
             ImGui::EndGroup();
             return;
         }
@@ -1614,6 +1680,62 @@ struct Client {
         ImGui::Dummy(ImVec2(0, 4 * scale));
         ImGui::TextDisabled("F7  +1000 Blood Orbs");
         ImGui::TextDisabled("F8  +10 materiais de melhoria");
+    }
+
+    // A Switch game's updates and add-ons. Eden reads the files where they are when the game starts (nothing is
+    // installed), so the list only changes while the game is closed.
+    void ContentTab(const Game& game, float scale) {
+        ImGui::Dummy(ImVec2(0, 4 * scale));
+        const bool running = runner.Busy() && runner.TitleId() == game.titleId;
+        ImGui::BeginDisabled(running);
+        if (ImGui::Button("+  Adicionar atualização ou DLC...")) {
+            Browse(L"Escolha o arquivo da atualização ou da DLC", ParentFolder(game.folder), false, {{L"Atualização ou DLC do Switch", L"*.nsp;*.xci"}},
+                   [this](const std::wstring& file) { AddContentFile(file); });
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled("%s", running ? "Feche o jogo para mudar a lista." : "Vale na próxima vez que o jogo abrir.");
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("O Ranga lê cada arquivo de onde ele está, sem copiar nem instalar: não mova nem apague. Atualização e DLC colocadas na pasta de jogos do Switch entram aqui sozinhas.");
+        ImGui::PopTextWrapPos();
+        ImGui::Dummy(ImVec2(0, 4 * scale));
+        if (contentFiles.empty()) {
+            ImGui::TextDisabled("Nenhuma atualização nem DLC.");
+            return;
+        }
+        for (size_t i = 0; i < contentFiles.size(); ++i) {
+            const SwitchContent& content = contentKinds[i];
+            ImGui::PushID(static_cast<int>(i));
+            ImGui::Separator();
+            ImGui::BeginGroup();
+            ImGui::PushFont(semibold, 0.0f);
+            ImGui::TextUnformatted(Utf8(FileName(contentFiles[i])).c_str());
+            ImGui::PopFont();
+            const char* kind = content.kind == SwitchKind::Update ? "Atualização" : content.kind == SwitchKind::Addon ? "DLC" : "Tipo não identificado";
+            if (content.titleId.empty()) ImGui::TextDisabled("%s", kind);
+            else ImGui::TextDisabled("%s   ·   %s", kind, Utf8(content.titleId).c_str());
+            if (!Exists(contentFiles[i])) {
+                ImGui::SameLine();
+                ImGui::PushStyleColor(ImGuiCol_Text, Color(kRed));
+                ImGui::TextUnformatted("arquivo não encontrado");
+                ImGui::PopStyleColor();
+            }
+            ImGui::EndGroup();
+            ImGui::SameLine(ImGui::GetContentRegionMax().x - 90 * scale);
+            ImGui::BeginDisabled(running);
+            // Only the list changes; the file stays where it is.
+            if (ImGui::Button("Remover", ImVec2(90 * scale, 0))) {
+                pending = [this, i] {
+                    Game* current = Current();
+                    if (current == nullptr || i >= contentFiles.size()) return;
+                    contentFiles.erase(contentFiles.begin() + static_cast<ptrdiff_t>(i));
+                    SaveContent(*current);
+                };
+            }
+            ImGui::EndDisabled();
+            ImGui::PopID();
+        }
     }
 
     void DlcTab(const Game& game, float scale) {
@@ -1998,6 +2120,12 @@ struct Client {
                 ImGui::EndChild();
                 ImGui::EndTabItem();
             }
+            if (game->system == L"SWITCH" && EngineFor(game->system).native && ImGui::BeginTabItem("Atualizações e DLC")) {
+                ImGui::BeginChild("##content", ImVec2(0, 0), ImGuiChildFlags_NavFlattened);
+                ContentTab(*game, scale);
+                ImGui::EndChild();
+                ImGui::EndTabItem();
+            }
             if (Current() != nullptr && ImGui::BeginTabItem("Log")) {
                 LogTab(*Current(), scale);
                 ImGui::EndTabItem();
@@ -2198,6 +2326,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     client.semibold = semibold != nullptr ? semibold : regular;
     g_runner = &client.runner;
     g_client = &client;
+    // Every console's folder of games exists from the first start, and what is in them is in the library.
+    client.library.ScanGamesFolders();
     client.Reload(client.library.Selected());
     if (const Game* game = client.Current()) client.console = game->system;
 

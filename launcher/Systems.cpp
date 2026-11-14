@@ -933,4 +933,50 @@ void ExtractArt(const std::wstring& system, const std::wstring& path, const std:
 
 std::wstring FileKey(const std::wstring& system, const std::wstring& path) { return system + L"-" + Fnv(path); }
 
+SwitchContent DetectSwitchContent(const std::wstring& path) {
+    const auto isHex = [](const std::wstring& text, size_t from, size_t count) {
+        if (from + count > text.size()) return false;
+        for (size_t i = from; i < from + count; ++i) if (!iswxdigit(text[i])) return false;
+        return true;
+    };
+    std::wstring id;
+    // An NSP is a PFS0: a count of files, the size of the name table, 24 bytes per file, then the names. The ticket is
+    // named after its rights id, which starts with the title id.
+    Reader reader(path);
+    const std::string header = reader.At(0, 16);
+    if (header.size() == 16 && header.compare(0, 4, "PFS0") == 0) {
+        const unsigned count = Le32(header, 4), names = Le32(header, 8);
+        if (count <= 8192 && names <= (1u << 20)) {
+            const std::string table = reader.At(16 + static_cast<long long>(count) * 24, names);
+            for (size_t start = 0; start < table.size() && id.empty();) {
+                const size_t end = std::min(table.find('\0', start), table.size());
+                const std::wstring name = Wide(table.substr(start, end - start));
+                if (name.size() == 36 && Lower(name).compare(32, 4, L".tik") == 0 && isHex(name, 0, 32)) id = name.substr(0, 16);
+                start = end + 1;
+            }
+        }
+    }
+    const std::wstring name = FileName(path);
+    for (size_t at = name.find(L'['); at != std::wstring::npos && id.empty(); at = name.find(L'[', at + 1)) {
+        if (at + 17 < name.size() && name[at + 17] == L']' && name[at + 1] == L'0' && name[at + 2] == L'1' && isHex(name, at + 1, 16)) id = name.substr(at + 1, 16);
+    }
+    SwitchContent content;
+    if (!id.empty()) {
+        for (auto& character : id) character = static_cast<wchar_t>(towupper(character));
+        const unsigned long long value = _wcstoui64(id.c_str(), nullptr, 16);
+        const unsigned low = static_cast<unsigned>(value & 0xFFF);
+        content.kind = low == 0 ? SwitchKind::Game : low == 0x800 ? SwitchKind::Update : SwitchKind::Addon;
+        const unsigned long long base = content.kind == SwitchKind::Addon ? (value & ~0xFFFULL) - 0x1000 : value & ~0xFFFULL;
+        wchar_t text[17];
+        swprintf(text, 17, L"%016llX", base);
+        content.titleId = id;
+        content.baseId = text;
+        return content;
+    }
+    const std::wstring lower = Lower(name);
+    if (lower.find(L"update") != std::wstring::npos || lower.find(L"[upd]") != std::wstring::npos) content.kind = SwitchKind::Update;
+    else if (lower.find(L"dlc") != std::wstring::npos) content.kind = SwitchKind::Addon;
+    return content;
+}
+
 }

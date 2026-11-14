@@ -70,6 +70,14 @@ public:
     // Points an entry of another console at the place its files moved to, keeping its key and workspace.
     void Relocate(const std::wstring& titleId, const std::wstring& path);
     void Remove(size_t index);
+    // Where a console's games can simply be dropped: jogos\<the console's name> beside this program.
+    std::wstring GamesFolder(const std::wstring& system) const;
+    // Makes the folder of every console (or just of only) and adds the games in them the library does not have yet:
+    // files, files one folder down, and game folders where the console has them. The folder says the console, so a
+    // file several consoles take needs no asking. A Switch update or add-on is no game: it goes on the list of the
+    // game it belongs to (the eden_conteudo core option) when that game is in the library. Returns how many games
+    // went in.
+    int ScanGamesFolders(const std::wstring& only = L"");
     std::wstring Selected() const;
     void Select(const std::wstring& titleId);
 

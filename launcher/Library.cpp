@@ -257,6 +257,129 @@ void Library::Remove(size_t index) {
     Load();
 }
 
+std::wstring Library::GamesFolder(const std::wstring& system) const {
+    std::wstring name = Wide(SystemName(system));
+    for (auto& character : name) if (wcschr(L"\\/:*?\"<>|", character) != nullptr) character = L'-';
+    return root + L"\\jogos\\" + name;
+}
+
+int Library::ScanGamesFolders(const std::wstring& only) {
+    const auto list = [](const std::wstring& directory, std::vector<std::wstring>& files, std::vector<std::wstring>& folders) {
+        WIN32_FIND_DATAW found;
+        HANDLE search = FindFirstFileW((directory + L"\\*").c_str(), &found);
+        if (search == INVALID_HANDLE_VALUE) return;
+        do {
+            const std::wstring name = found.cFileName;
+            if (name == L"." || name == L"..") continue;
+            ((found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0 ? folders : files).push_back(directory + L"\\" + name);
+        } while (FindNextFileW(search, &found));
+        FindClose(search);
+    };
+    const auto known = [this](const std::wstring& key) { return !ReadIni(IniPath(), key.c_str(), L"folder", L"").empty(); };
+    const auto store = [this](const std::wstring& key, const std::wstring& path, const std::wstring& system, const std::wstring& serial, const std::wstring& title) {
+        WritePrivateProfileStringW(key.c_str(), L"folder", path.c_str(), IniPath().c_str());
+        WritePrivateProfileStringW(key.c_str(), L"title", title.c_str(), IniPath().c_str());
+        WritePrivateProfileStringW(key.c_str(), L"system", system.c_str(), IniPath().c_str());
+        if (!serial.empty()) WritePrivateProfileStringW(key.c_str(), L"serial", serial.c_str(), IniPath().c_str());
+    };
+    std::vector<std::wstring> ids;
+    if (only.empty()) {
+        ids.push_back(L"PS5");
+        for (const auto& system : Systems()) ids.push_back(system.id);
+    } else {
+        ids.push_back(only);
+    }
+    CreateDirectoryW((root + L"\\jogos").c_str(), nullptr);
+    EnsureUnicodeIni(IniPath());
+    int added = 0;
+    // Switch updates and add-ons found on the way, for the games they belong to.
+    std::vector<std::pair<std::wstring, SwitchContent>> extras;
+    for (const auto& id : ids) {
+        const std::wstring folder = GamesFolder(id);
+        CreateDirectoryW(folder.c_str(), nullptr);
+        std::vector<std::wstring> files, folders;
+        list(folder, files, folders);
+        const System* system = FindSystem(id);
+        for (const auto& inner : folders) {
+            if (id == L"PS5") {
+                Game game;
+                if (IsGameFolder(inner) && ReadGameInfo(inner, game) && game.system == L"PS5" && !known(game.titleId)) {
+                    store(game.titleId, inner, L"PS5", L"", game.title);
+                    ++added;
+                }
+                continue;
+            }
+            if (system != nullptr && system->folders) {
+                const Detected found = DetectFolder(inner);
+                if (std::find(found.systems.begin(), found.systems.end(), id) != found.systems.end()) {
+                    const std::wstring key = id == L"PS3" && !found.serial.empty() ? found.serial : FileKey(id, inner);
+                    if (!known(key)) {
+                        store(key, inner, id, found.serial, found.title);
+                        ++added;
+                    }
+                    continue;
+                }
+            }
+            // Any other folder is one the user made to keep a game's files together.
+            std::vector<std::wstring> ignored;
+            list(inner, files, ignored);
+        }
+        if (system == nullptr) continue;
+        std::vector<std::wstring> sheets;
+        for (const auto& file : files) {
+            if (Extension(file) == L".cue" || Extension(file) == L".m3u") sheets.push_back(Lower(file.substr(0, file.find_last_of(L'.'))));
+        }
+        for (const auto& file : files) {
+            const std::wstring extension = Extension(file);
+            if ((extension == L".bin" || extension == L".img") &&
+                std::find(sheets.begin(), sheets.end(), Lower(file.substr(0, file.find_last_of(L'.')))) != sheets.end())
+                continue;
+            if (std::find(system->extensions.begin(), system->extensions.end(), extension) == system->extensions.end()) continue;
+            if (id == L"SWITCH") {
+                const SwitchContent content = DetectSwitchContent(file);
+                if (content.kind == SwitchKind::Update || content.kind == SwitchKind::Addon) {
+                    extras.push_back({file, content});
+                    continue;
+                }
+            }
+            const std::wstring key = FileKey(id, file);
+            if (known(key)) continue;
+            // The file's own contents still give the title and the serial where they can be read.
+            const Detected found = DetectFile(file);
+            std::wstring title = found.title;
+            if (id == L"SWITCH") {
+                // Dumps are named "Game [title id][version]": the name alone is the title.
+                for (size_t open = title.find(L'['); open != std::wstring::npos; open = title.find(L'[')) {
+                    const size_t close = title.find(L']', open);
+                    if (close == std::wstring::npos) break;
+                    title.erase(open, close - open + 1);
+                }
+                while (!title.empty() && title.back() == L' ') title.pop_back();
+                if (title.empty()) title = found.title;
+            }
+            store(key, file, id, found.serial, title);
+            ExtractArt(id, file, root + L"\\games\\" + key + L"\\art");
+            ++added;
+        }
+    }
+    Load();
+    for (const auto& game : games) {
+        if (game.system != L"SWITCH" || extras.empty()) continue;
+        const SwitchContent base = DetectSwitchContent(game.folder);
+        if (base.kind != SwitchKind::Game) continue;
+        std::string listed = ReadCoreOption(game, "eden_conteudo");
+        const std::wstring have = L"|" + Lower(Wide(listed)) + L"|";
+        bool changed = false;
+        for (const auto& [file, content] : extras) {
+            if (content.baseId != base.titleId || have.find(L"|" + Lower(file) + L"|") != std::wstring::npos) continue;
+            listed += (listed.empty() ? "" : "|") + Utf8(file);
+            changed = true;
+        }
+        if (changed) WriteCoreOption(game, "eden_conteudo", listed);
+    }
+    return added;
+}
+
 std::wstring Library::Selected() const { return ReadIni(IniPath(), L"Client", L"selected", L""); }
 
 void Library::Select(const std::wstring& titleId) {
