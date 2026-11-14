@@ -531,20 +531,48 @@ struct Client {
             if (game->system == L"SWITCH") {
                 const std::string mode = ReadCoreOption(*game, "eden_sala");
                 roomMode = mode == "entrar" ? 1 : mode == "criar" ? 2 : 0;
-                const auto fill = [&](std::array<char, 128>& field, const char* key) {
+                // The room comes filled in: what this game has, else what was last typed for any Switch game, and
+                // the room's usual port. What comes from elsewhere is written to the game, where the core reads it.
+                const auto fill = [&](std::array<char, 128>& field, const char* key, const wchar_t* remembered, const char* usual) {
+                    const std::string own = ReadCoreOption(*game, key);
+                    std::string value = own.empty() ? Utf8(RememberedSwitch(remembered)) : own;
+                    if (value.empty()) value = usual;
                     field.fill(0);
-                    ReadCoreOption(*game, key).copy(field.data(), field.size() - 1);
+                    value.copy(field.data(), field.size() - 1);
+                    if (value != own) WriteCoreOption(*game, key, value);
                 };
-                fill(roomAddress, "eden_sala_endereco");
-                fill(roomPort, "eden_sala_porta");
-                fill(roomNickname, "eden_sala_apelido");
-                fill(roomPassword, "eden_sala_senha");
+                fill(roomAddress, "eden_sala_endereco", L"sala_endereco", "");
+                fill(roomPort, "eden_sala_porta", L"sala_porta", "24872");
+                fill(roomPassword, "eden_sala_senha", L"sala_senha", "");
+                // The player's name is one for every Switch game: the one last typed wins over what the game kept.
+                std::string name = Utf8(RememberedSwitch(L"jogador"));
+                if (name.empty()) name = ReadCoreOption(*game, "eden_nome");
+                if (name.empty()) name = ReadCoreOption(*game, "eden_sala_apelido");
+                roomNickname.fill(0);
+                name.copy(roomNickname.data(), roomNickname.size() - 1);
+                if (!name.empty()) SavePlayerName(*game, name, false);
                 LoadContent(*game);
             }
             library.Select(game->titleId);
             // The Bloodborne port and the emulators write everything to game.log; PS5 games put their errors in game.err.
             logFile = game->system != L"PS5" ? 1 : 0;
         }
+    }
+
+    // What was last typed for a Switch game (the player's name, the room), kept beside the emulators' choices so the
+    // next game starts with it.
+    std::wstring RememberedSwitch(const wchar_t* key) const { return ReadIni(library.Root() + L"\\engines.ini", L"SWITCH", key, L""); }
+    void RememberSwitch(const wchar_t* key, const std::string& value) {
+        const std::wstring ini = library.Root() + L"\\engines.ini";
+        EnsureUnicodeIni(ini);
+        WritePrivateProfileStringW(L"SWITCH", key, value.empty() ? nullptr : Wide(value).c_str(), ini.c_str());
+    }
+
+    // The name is the console user's name in the game and the nickname in a room.
+    void SavePlayerName(const Game& game, const std::string& name, bool remember) {
+        if (ReadCoreOption(game, "eden_nome") != name) WriteCoreOption(game, "eden_nome", name);
+        if (ReadCoreOption(game, "eden_sala_apelido") != name) WriteCoreOption(game, "eden_sala_apelido", name);
+        if (remember) RememberSwitch(L"jogador", name);
     }
 
     void LoadContent(const Game& game) {
@@ -1535,22 +1563,30 @@ struct Client {
             ImGui::BeginDisabled(running);
             const char* modes[] = {"Desligada", "Entrar em uma sala", "Criar uma sala"};
             const char* modeValues[] = {"desligada", "entrar", "criar"};
+            label("Nome do jogador");
+            ImGui::InputText("##playerName", roomNickname.data(), 32);
+            if (ImGui::IsItemDeactivatedAfterEdit()) SavePlayerName(game, roomNickname.data(), true);
+            ImGui::SetCursorPosX(labelWidth);
+            ImGui::TextDisabled("Aparece nos jogos de Switch no lugar de \"Eden\" e é o seu apelido na sala.");
+            ImGui::Dummy(ImVec2(0, 2 * scale));
             label("Sala online");
             if (ImGui::Combo("##room", &roomMode, modes, 3)) WriteCoreOption(game, "eden_sala", modeValues[roomMode]);
             if (roomMode != 0) {
-                const auto field = [&](const char* name, const char* id, std::array<char, 128>& text, const char* key, ImGuiInputTextFlags flags = 0) {
+                const auto field = [&](const char* name, const char* id, std::array<char, 128>& text, const char* key, const wchar_t* remembered, ImGuiInputTextFlags flags = 0) {
                     label(name);
                     ImGui::InputText(id, text.data(), text.size(), flags);
-                    if (ImGui::IsItemDeactivatedAfterEdit()) WriteCoreOption(game, key, text.data());
+                    if (ImGui::IsItemDeactivatedAfterEdit()) {
+                        WriteCoreOption(game, key, text.data());
+                        RememberSwitch(remembered, text.data());
+                    }
                 };
-                if (roomMode == 1) field("Endereço", "##roomAddress", roomAddress, "eden_sala_endereco");
-                field("Porta", "##roomPort", roomPort, "eden_sala_porta", ImGuiInputTextFlags_CharsDecimal);
-                field("Apelido", "##roomNickname", roomNickname, "eden_sala_apelido");
-                field("Senha", "##roomPassword", roomPassword, "eden_sala_senha");
+                if (roomMode == 1) field("Endereço", "##roomAddress", roomAddress, "eden_sala_endereco", L"sala_endereco");
+                field("Porta", "##roomPort", roomPort, "eden_sala_porta", L"sala_porta", ImGuiInputTextFlags_CharsDecimal);
+                field("Senha", "##roomPassword", roomPassword, "eden_sala_senha", L"sala_senha");
                 const std::string nickname = roomNickname.data();
                 const bool nicknameFits = nickname.size() >= 4 && nickname.size() <= 20 &&
                     std::all_of(nickname.begin(), nickname.end(), [](unsigned char c) { return std::isalnum(c) || c == '.' || c == '_' || c == '-' || c == ' '; });
-                const char* problem = !nicknameFits ? "O apelido precisa de 4 a 20 letras ou números, sem acento." :
+                const char* problem = !nicknameFits ? "Para a sala, o nome do jogador precisa de 4 a 20 letras ou números, sem acento." :
                                       roomMode == 1 && roomAddress[0] == 0 ? "Falta o endereço que o dono da sala passou." : nullptr;
                 if (problem != nullptr) {
                     ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
