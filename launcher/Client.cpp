@@ -158,7 +158,8 @@ ImVec4 Color(unsigned rgb, float alpha = 1.0f) {
 
 ImU32 Packed(unsigned rgb, float alpha = 1.0f) { return ImGui::ColorConvertFloat4ToU32(Color(rgb, alpha)); }
 
-constexpr unsigned kBackground = 0x111214, kSidebar = 0x17181b, kSurface = 0x1f2024, kHover = 0x26272c, kSelected = 0x2d2e34;
+// Flat and nearly black; the accent is kept for what is chosen and for the one button to press.
+constexpr unsigned kBackground = 0x0b0c0e, kSidebar = 0x101114, kSurface = 0x17181c, kHover = 0x202126, kSelected = 0x2a2b31;
 constexpr unsigned kText = 0xe8e8ea, kDim = 0x8b8d93, kAccent = 0xe5484d, kAccentHover = 0xf0595e, kGreen = 0x46a758, kAmber = 0xf5a524, kRed = 0xff6369;
 
 void ApplyTheme(float scale) {
@@ -169,11 +170,11 @@ void ApplyTheme(float scale) {
     style.ChildBorderSize = 0;
     style.FramePadding = ImVec2(10, 7);
     style.ItemSpacing = ImVec2(10, 10);
-    style.FrameRounding = 6;
+    style.FrameRounding = 8;
     style.ChildRounding = 0;
-    style.PopupRounding = 6;
+    style.PopupRounding = 10;
     style.GrabRounding = 6;
-    style.TabRounding = 6;
+    style.TabRounding = 8;
     style.ScrollbarSize = 10;
     style.ScrollbarRounding = 6;
     style.TabBarBorderSize = 0;
@@ -323,12 +324,16 @@ void Glow(ImDrawList* draw, ImVec2 center, float radius, unsigned color, float s
 }
 
 // The console's card: its colors, its outline and its short name.
-void ConsoleCard(ImDrawList* draw, ImFont* font, const Look& look, ImVec2 min, ImVec2 max, float scale, float alpha) {
+void ConsoleCard(ImDrawList* draw, ImFont* font, const Look& look, ImVec2 min, ImVec2 max, float scale, float alpha, bool chosen) {
     const float size = max.x - min.x, rounding = 14 * scale;
-    GradientRect(draw, min, max, look.top, look.bottom, rounding, alpha);
-    DrawGlyph(draw, look.glyph, ImVec2((min.x + max.x) / 2, min.y + size * 0.42f), size * 0.56f, Packed(0xffffff, 0.92f * alpha), Packed(look.bottom, 0.85f * alpha));
-    const float text = std::max(13.0f, size * 0.13f);
-    draw->AddText(font, text, ImVec2(min.x + size * 0.09f, max.y - size * 0.09f - text), Packed(0xffffff, alpha), look.tag);
+    const unsigned tone = chosen ? kSelected : kSurface;
+    draw->AddRectFilled(min, max, Packed(tone), rounding);
+    DrawGlyph(draw, look.glyph, ImVec2((min.x + max.x) / 2, min.y + size * 0.40f), size * 0.46f, Packed(0xffffff, (chosen ? 0.95f : 0.5f) * alpha), Packed(tone));
+    const float text = std::max(13.0f, size * 0.12f);
+    const ImVec2 extent = font->CalcTextSizeA(text, FLT_MAX, 0, look.tag);
+    const ImVec2 at(min.x + (size - extent.x) / 2, max.y - size * 0.13f - text);
+    draw->AddText(font, text, at, Packed(chosen ? 0xffffff : kDim, alpha), look.tag);
+    if (chosen) draw->AddRectFilled(ImVec2(at.x, at.y + text + 5 * scale), ImVec2(at.x + extent.x, at.y + text + 8 * scale), Packed(kAccent), 2 * scale);
 }
 
 // DualSense, Xbox and other controllers for moving around the client, through SDL like Ranga Retro. They are let go
@@ -1199,8 +1204,8 @@ struct Client {
         const float rounding = 10 * scale, width = max.x - min.x, height = max.y - min.y;
         const Texture& icon = Icon(game);
         if (icon.view == nullptr) {
-            GradientRect(draw, min, max, Mix(look.top, kBackground, 0.25f), Mix(look.bottom, kBackground, 0.3f), rounding);
-            DrawGlyph(draw, look.glyph, ImVec2(min.x + width * 0.5f, min.y + height * 0.36f), width * 0.42f, Packed(0xffffff, 0.16f), Packed(look.bottom, 0.0f));
+            draw->AddRectFilled(min, max, Packed(kSurface), rounding);
+            DrawGlyph(draw, look.glyph, ImVec2(min.x + width * 0.5f, min.y + height * 0.36f), width * 0.42f, Packed(0xffffff, 0.14f), Packed(kSurface, 0.0f));
             const std::string title = Utf8(game.title);
             const float size = ImGui::GetFontSize() * 1.05f;
             ImGui::PushClipRect(min, max, true);
@@ -1223,7 +1228,7 @@ struct Client {
             draw->AddImageRounded(icon.Ref(), min, max, uv0, uv1, IM_COL32_WHITE, rounding);
             return;
         }
-        GradientRect(draw, min, max, Mix(look.top, kBackground, 0.45f), Mix(look.bottom, kBackground, 0.5f), rounding);
+        draw->AddRectFilled(min, max, Packed(kSurface), rounding);
         const float inset = 8 * scale;
         float w = width - 2 * inset, h = w / imageAspect;
         if (h > height - 2 * inset) {
@@ -1236,7 +1241,7 @@ struct Client {
 
     void Focus(ImDrawList* draw, ImVec2 min, ImVec2 max, float scale, float rounding) {
         const float grow = 4 * scale;
-        draw->AddRect(ImVec2(min.x - grow, min.y - grow), ImVec2(max.x + grow, max.y + grow), Packed(0xffffff), rounding + grow, 0, 3 * scale);
+        draw->AddRect(ImVec2(min.x - grow, min.y - grow), ImVec2(max.x + grow, max.y + grow), Packed(0xffffff), rounding + grow, 0, 2 * scale);
     }
 
     void Home(float scale, const Nav& input) {
@@ -1288,9 +1293,6 @@ struct Client {
 
         ImDrawList* draw = ImGui::GetWindowDrawList();
         const ImVec2 origin = ImGui::GetWindowPos(), size = ImGui::GetWindowSize();
-        const Look& look = LookFor(console);
-        GradientRect(draw, origin, ImVec2(origin.x + size.x, origin.y + size.y), Mix(look.top, kBackground, 0.5f), kBackground, 0);
-        Glow(draw, ImVec2(origin.x + size.x * 0.78f, origin.y + size.y * 0.62f), size.y * 0.75f, look.top, 0.4f);
 
         const float left = 40 * scale;
         ImGui::SetCursorPos(ImVec2(left, 24 * scale));
@@ -1313,7 +1315,7 @@ struct Client {
             const float side = chosen ? big : tile;
             if (x > origin.x + size.x || x + side < origin.x) continue;
             const ImVec2 min(x, rowY), max(x + side, rowY + side);
-            ConsoleCard(draw, semibold, LookFor(shelves[i].id), min, max, scale, chosen || shelves[i].count > 0 ? 1.0f : 0.45f);
+            ConsoleCard(draw, semibold, LookFor(shelves[i].id), min, max, scale, chosen || shelves[i].count > 0 ? 1.0f : 0.45f, chosen);
             if (chosen && homeRow == 0 && barFocus < 0) Focus(draw, min, max, scale, 14 * scale);
             ImGui::SetCursorScreenPos(min);
             ImGui::PushID(static_cast<int>(i));
@@ -1397,8 +1399,6 @@ struct Client {
         const auto games = ConsoleGames(console);
         ImDrawList* draw = ImGui::GetWindowDrawList();
         const ImVec2 origin = ImGui::GetWindowPos(), size = ImGui::GetWindowSize();
-        const Look& look = LookFor(console);
-        GradientRect(draw, origin, ImVec2(origin.x + size.x, origin.y + size.y * 0.6f), Mix(look.top, kBackground, 0.7f), kBackground, 0);
         // The top row here is Consoles, Adicionar jogo and Emuladores.
         const bool inBar = TopBar(input, 3);
         const Nav nav = inBar ? Nav{} : input;
@@ -2532,10 +2532,8 @@ struct Client {
         const ImVec2 origin = ImGui::GetCursorScreenPos();
         const Texture& banner = Banner(*game);
         if (banner.view == nullptr || banner.width < banner.height * 1.3f) {
-            // No wide art of its own: the console's colors, with the box art standing on the right.
-            const Look& look = LookFor(game->system);
-            GradientRect(draw, origin, ImVec2(origin.x + width, origin.y + bannerHeight), Mix(look.top, kBackground, 0.35f), Mix(look.bottom, kBackground, 0.4f), 0);
-            Glow(draw, ImVec2(origin.x + width * 0.7f, origin.y + bannerHeight * 0.4f), bannerHeight * 1.4f, look.top, 0.25f);
+            // No wide art of its own: a plain band, with the box art standing on the right.
+            draw->AddRectFilled(origin, ImVec2(origin.x + width, origin.y + bannerHeight), Packed(kSidebar));
             if (const Texture& poster = Icon(*game); poster.view != nullptr) {
                 const float h = bannerHeight - 48 * scale, w = h * poster.width / poster.height;
                 const ImVec2 at(origin.x + width - 40 * scale - w, origin.y + 24 * scale);

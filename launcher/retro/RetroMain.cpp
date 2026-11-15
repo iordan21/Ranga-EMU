@@ -1183,8 +1183,9 @@ void PersistOption(const std::string& key, const std::string& value) {
 // Enter picks, B or Esc goes back and closes. The game waits while it is open; the page behind it is dimmed.
 namespace menu {
 
-const COLORREF kPanel = RGB(0x1f, 0x20, 0x24), kRow = RGB(0x2d, 0x2e, 0x34), kText = RGB(0xe8, 0xe8, 0xea),
-               kDim = RGB(0x8b, 0x8d, 0x93), kAccent = RGB(0xe5, 0x48, 0x4d), kLine = RGB(0x33, 0x34, 0x3a);
+// The client's own palette (Client.cpp): flat and nearly black, the accent only on what is chosen.
+const COLORREF kPanel = RGB(0x10, 0x11, 0x14), kRow = RGB(0x20, 0x21, 0x26), kText = RGB(0xe8, 0xe8, 0xea),
+               kDim = RGB(0x8b, 0x8d, 0x93), kAccent = RGB(0xe5, 0x48, 0x4d), kLine = RGB(0x20, 0x21, 0x26);
 constexpr int kShown = 10;
 
 struct Row {
@@ -1365,7 +1366,7 @@ void Paint(HWND window) {
             DrawTextW(dc, value.c_str(), -1, &place, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
             label.right = place.left - px(16);
         }
-        SetTextColor(dc, focused ? kText : RGB(0xc8, 0xc9, 0xcd));
+        SetTextColor(dc, focused ? kText : RGB(0xb4, 0xb6, 0xbc));
         DrawTextW(dc, row.label.c_str(), -1, &label, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     }
     if (rows.size() > static_cast<size_t>(kShown)) {
@@ -1689,7 +1690,7 @@ void Paint(HWND window) {
 
     SelectObject(dc, text);
     const auto key = [&](RECT rect, const std::wstring& label, bool focused, bool lit) {
-        fill(rect, focused ? kAccent : lit ? RGB(0x3a, 0x3b, 0x42) : kRow);
+        fill(rect, focused ? kAccent : lit ? RGB(0x2a, 0x2b, 0x31) : kRow);
         SetTextColor(dc, focused ? RGB(0xff, 0xff, 0xff) : kText);
         DrawTextW(dc, label.c_str(), -1, &rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     };
