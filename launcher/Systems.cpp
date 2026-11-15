@@ -1,7 +1,10 @@
 #include "Systems.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
+#include <filesystem>
+#include <map>
 #include <cstring>
 #include <cwchar>
 #include <initializer_list>
@@ -498,6 +501,154 @@ std::wstring NativeCorePath(const std::wstring& root, const System& system) { re
 
 std::wstring ControlsFile(const std::wstring& root, const std::wstring& system) { return root + L"\\controles\\" + system + L".ini"; }
 
+namespace {
+
+// Every place of old in text, by ASCII letters in any case (Windows paths), becomes replacement; returns how many.
+template <typename String> size_t ReplaceAllNoCase(String& text, const String& old, const String& replacement) {
+    if (old.empty()) return 0;
+    const auto lower = [](auto c) { return c >= 'A' && c <= 'Z' ? static_cast<decltype(c)>(c - 'A' + 'a') : c; };
+    size_t count = 0;
+    for (size_t at = 0; at + old.size() <= text.size();) {
+        bool same = true;
+        for (size_t i = 0; i < old.size() && same; ++i) same = lower(text[at + i]) == lower(old[i]);
+        if (!same) {
+            ++at;
+            continue;
+        }
+        text.replace(at, old.size(), replacement);
+        at += replacement.size();
+        ++count;
+    }
+    return count;
+}
+
+// The old folder as each kind of file writes it, followed by what ends a folder name in a path (so C:\ps5 never
+// matches inside C:\ps55), each paired with the new folder written the same way.
+template <typename String> std::vector<std::pair<String, String>> PathForms(const String& from, const String& to) {
+    const auto with = [](String path, typename String::value_type separator, bool doubled) {
+        String out;
+        for (const auto c : path) {
+            if (c == '\\') {
+                out += separator;
+                if (doubled) out += separator;
+            } else {
+                out += c;
+            }
+        }
+        return out;
+    };
+    std::vector<std::pair<String, String>> forms;
+    for (const auto& [separator, doubled] : {std::pair{static_cast<typename String::value_type>('\\'), false},
+                                             std::pair{static_cast<typename String::value_type>('/'), false},
+                                             std::pair{static_cast<typename String::value_type>('\\'), true}}) {
+        const String a = with(from, separator, doubled), b = with(to, separator, doubled);
+        String end(1, separator);
+        if (doubled) end += separator;
+        forms.push_back({a + end, b + end});
+        for (const char close : {'"', '\'', '\r', '\n'}) forms.push_back({a + static_cast<typename String::value_type>(close), b + static_cast<typename String::value_type>(close)});
+    }
+    return forms;
+}
+
+}
+
+int RelocateRoot(const std::wstring& root) {
+    const std::wstring ini = EnginesIni(root);
+    std::wstring old = ReadIni(ini, L"Ranga", L"raiz", L"");
+    // A folder from before this was kept: where the full emulators were says where it was.
+    if (old.empty()) {
+        const std::string text = ReadBytes(ini);
+        const std::wstring wide = text.size() >= 2 && static_cast<unsigned char>(text[0]) == 0xFF && static_cast<unsigned char>(text[1]) == 0xFE
+                                      ? std::wstring(reinterpret_cast<const wchar_t*>(text.data() + 2), (text.size() - 2) / 2)
+                                      : Wide(text);
+        const size_t at = Lower(wide).find(L"\\emuladores\\");
+        if (at != std::wstring::npos) {
+            const size_t start = wide.rfind(L'=', at);
+            if (start != std::wstring::npos) old = wide.substr(start + 1, at - start - 1);
+        }
+    }
+    const auto clean = [](std::wstring path) {
+        while (!path.empty() && (path.back() == L'\\' || path.back() == L'/')) path.pop_back();
+        return path;
+    };
+    old = clean(old);
+    const std::wstring now = clean(root);
+    int changed = 0;
+    if (!old.empty() && _wcsicmp(old.c_str(), now.c_str()) != 0) {
+        // Every text file that may hold a path: the client's own lists, the games' options, the full emulators' and the
+        // cores' settings. Logs and caches are left alone; links are not followed. Each file changed is kept first
+        // in backups\mudou-de-pasta.
+        SYSTEMTIME clock;
+        GetLocalTime(&clock);
+        wchar_t stamp[32];
+        swprintf(stamp, 32, L"%04u-%02u-%02u-%02u%02u", clock.wYear, clock.wMonth, clock.wDay, clock.wHour, clock.wMinute);
+        const std::wstring keep = root + L"\\backups\\mudou-de-pasta-" + stamp;
+        static const wchar_t* const kinds[] = {L".ini", L".cfg", L".toml", L".yml", L".yaml", L".json", L".xml", L".conf", L".settings", L".opt"};
+        std::vector<std::wstring> files = {ini, root + L"\\library.ini"};
+        std::vector<std::wstring> pending = {root + L"\\emuladores", root + L"\\bios", root + L"\\saves"};
+        while (!pending.empty()) {
+            const std::wstring folder = pending.back();
+            pending.pop_back();
+            WIN32_FIND_DATAW found;
+            const HANDLE search = FindFirstFileW((folder + L"\\*").c_str(), &found);
+            if (search == INVALID_HANDLE_VALUE) continue;
+            do {
+                const std::wstring name = found.cFileName;
+                if (name == L"." || name == L".." || (found.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) continue;
+                const std::wstring path = folder + L"\\" + name;
+                if ((found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+                    const std::wstring lower = Lower(name);
+                    if (lower != L"log" && lower != L"logs" && lower.find(L"cache") == std::wstring::npos && lower != L"_downloads") pending.push_back(path);
+                } else if (found.nFileSizeHigh == 0 && found.nFileSizeLow <= 4u * 1024 * 1024) {
+                    const std::wstring extension = Extension(path);
+                    for (const wchar_t* kind : kinds) {
+                        if (extension == kind) files.push_back(path);
+                    }
+                }
+            } while (FindNextFileW(search, &found));
+            FindClose(search);
+        }
+        std::wstring log;
+        for (const auto& path : files) {
+            const std::string data = ReadBytes(path);
+            if (data.empty()) continue;
+            std::string out;
+            size_t count = 0;
+            if (data.size() >= 2 && static_cast<unsigned char>(data[0]) == 0xFF && static_cast<unsigned char>(data[1]) == 0xFE) {
+                std::wstring text(reinterpret_cast<const wchar_t*>(data.data() + 2), (data.size() - 2) / 2);
+                for (const auto& [from, to] : PathForms(old, now)) count += ReplaceAllNoCase(text, from, to);
+                out = data.substr(0, 2) + std::string(reinterpret_cast<const char*>(text.data()), text.size() * sizeof(wchar_t));
+            } else {
+                out = data;
+                for (const auto& [from, to] : PathForms(Utf8(old), Utf8(now))) count += ReplaceAllNoCase(out, from, to);
+            }
+            if (count == 0) continue;
+            // No copy kept, no change: the old file must be there to go back to.
+            const std::wstring copy = keep + path.substr(root.size());
+            std::error_code error;
+            std::filesystem::create_directories(std::filesystem::path(ParentFolder(copy)), error);
+            if (!CopyFileW(path.c_str(), copy.c_str(), FALSE)) continue;
+            FILE* file = nullptr;
+            if (_wfopen_s(&file, path.c_str(), L"wb") != 0 || file == nullptr) continue;
+            std::fwrite(out.data(), 1, out.size(), file);
+            std::fclose(file);
+            ++changed;
+            log += path.substr(root.size()) + L"  (" + std::to_wstring(count) + L")\r\n";
+        }
+        if (changed > 0) {
+            const std::string text = Utf8(L"De " + old + L" para " + now + L"\r\n" + log);
+            FILE* file = nullptr;
+            if (_wfopen_s(&file, (keep + L"\\o-que-mudou.txt").c_str(), L"wb") == 0 && file != nullptr) {
+                std::fwrite(text.data(), 1, text.size(), file);
+                std::fclose(file);
+            }
+        }
+    }
+    EnsureUnicodeIni(ini);
+    WritePrivateProfileStringW(L"Ranga", L"raiz", now.c_str(), ini.c_str());
+    return changed;
+}
+
 void RepairLinks(const std::wstring& root) {
     // The Switch, PS3 and Xbox 360 cores keep their system files in bios\retroarch, which point at the full emulators'
     // folders so both see the same keys, firmware and saves. A copy, a zip or a move of the Ranga folder loses these
@@ -652,11 +803,76 @@ std::wstring Missing(const std::wstring& what, const std::wstring& folder) {
     return L"Falta " + what + L" em " + folder + L". Tire do seu próprio console, coloque lá e tente de novo.";
 }
 
+// The DLLs a Windows program or DLL imports, read from its import table (lower-case). Read once per file.
+std::vector<std::string> Imports(const std::wstring& path) {
+    static std::map<std::wstring, std::vector<std::string>> cache;
+    if (const auto found = cache.find(path); found != cache.end()) return found->second;
+    std::vector<std::string> names;
+    Reader reader(path);
+    const auto le16 = [](const std::string& data, size_t at) { return at + 2 > data.size() ? 0u : static_cast<unsigned>(static_cast<unsigned char>(data[at]) | static_cast<unsigned char>(data[at + 1]) << 8); };
+    const std::string dos = reader.At(0, 64);
+    if (dos.size() == 64 && dos.compare(0, 2, "MZ") == 0) {
+        const unsigned pe = Le32(dos, 0x3c);
+        const std::string header = reader.At(pe, 24 + 240);
+        if (header.size() >= 24 + 112 && header.compare(0, 4, std::string("PE\0\0", 4)) == 0) {
+            const unsigned sections = le16(header, 6), optionalSize = le16(header, 20);
+            const bool plus = le16(header, 24) == 0x20b;
+            const unsigned importRva = Le32(header, 24 + (plus ? 120 : 104));
+            const std::string table = reader.At(pe + 24 + optionalSize, static_cast<size_t>(sections) * 40);
+            // Where an address of the loaded image is in the file.
+            const auto offset = [&](unsigned rva) -> long long {
+                for (unsigned s = 0; s < sections; ++s) {
+                    const unsigned virtualAddress = Le32(table, s * 40 + 12), rawSize = Le32(table, s * 40 + 16), raw = Le32(table, s * 40 + 20);
+                    const unsigned size = std::max(Le32(table, s * 40 + 8), rawSize);
+                    if (rva >= virtualAddress && rva < virtualAddress + size) return static_cast<long long>(raw) + (rva - virtualAddress);
+                }
+                return -1;
+            };
+            const long long first = importRva != 0 ? offset(importRva) : -1;
+            for (int i = 0; first >= 0 && i < 256; ++i) {
+                const std::string entry = reader.At(first + i * 20, 20);
+                if (entry.size() < 20 || Le32(entry, 12) == 0) break;
+                const long long at = offset(Le32(entry, 12));
+                if (at < 0) continue;
+                std::string name = reader.At(at, 64);
+                name.resize(std::min(name.size(), name.find('\0')));
+                for (auto& c : name) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                names.push_back(name);
+            }
+        }
+    }
+    cache[path] = names;
+    return names;
+}
+
+// The first piece of Microsoft's Visual C++ runtime the program imports and this PC lacks (not in Windows' system
+// folder nor beside the program); empty when nothing is missing.
+std::wstring MissingVcRuntime(const std::wstring& program) {
+    wchar_t system[MAX_PATH] = {};
+    GetSystemDirectoryW(system, MAX_PATH);
+    for (const auto& name : Imports(program)) {
+        if (name.rfind("msvcp140", 0) != 0 && name.rfind("vcruntime140", 0) != 0 && name.rfind("concrt140", 0) != 0) continue;
+        const std::wstring dll = Wide(name);
+        if (!Exists(std::wstring(system) + L"\\" + dll) && !Exists(ParentFolder(program) + L"\\" + dll)) return dll;
+    }
+    return L"";
+}
+
 }
 
 std::wstring MissingFiles(const std::wstring& root, const std::wstring& id, const Engine& engine, const std::wstring& rom) {
     const System* system = FindSystem(id);
     if (system == nullptr || engine.exe.empty()) return L"";
+    // The PS1 and Xbox 360 cores and several full emulators are built with Visual C++ and need its runtime, which
+    // Windows does not always have; without it they would not even load.
+    {
+        const std::wstring program = engine.native ? NativeCorePath(root, *system) : engine.exe;
+        if (const std::wstring dll = MissingVcRuntime(program); !dll.empty()) {
+            return L"Falta o Microsoft Visual C++ 2015-2022 (x64) neste PC (" + dll + L" não está instalado), e o " +
+                   (engine.native ? L"core do " + Wide(system->name) : FileName(engine.exe)) +
+                   L" precisa dele. Instale o \"Visual C++ Redistributable\" do site da Microsoft (aka.ms/vs/17/release/vc_redist.x64.exe) e tente de novo.";
+        }
+    }
     constexpr long long kMiB = 1024 * 1024;
     // The core Ranga Retro or RetroArch loads; a standalone emulator has none and is told apart by its BIOS folder.
     std::wstring core;

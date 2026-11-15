@@ -106,6 +106,10 @@ std::wstring ControlsFile(const std::wstring& root, const std::wstring& system);
 // Makes again the folder links the Switch, PS3 and Xbox 360 cores need (bios\retroarch -> emuladores) where a copy, a
 // zip or a move of the Ranga folder lost them or left them pointing at the old place.
 void RepairLinks(const std::wstring& root);
+// The Ranga folder moved (a copy, a zip extracted elsewhere): the paths of the old folder in engines.ini, library.ini,
+// the games' options and the emulators' settings become the new folder's, each file kept first in
+// backups\mudou-de-pasta-<date>. Remembers the folder in engines.ini [Ranga] raiz. Returns how many files changed.
+int RelocateRoot(const std::wstring& root);
 std::wstring Quality(const std::wstring& root);
 void SetQuality(const std::wstring& root, const std::wstring& level);
 // Writes the preset's tweaks into the emulator's configuration, which has to be closed, and makes its BIOS folder.

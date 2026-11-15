@@ -2586,6 +2586,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     client.semibold = semibold != nullptr ? semibold : regular;
     g_runner = &client.runner;
     g_client = &client;
+    // A Ranga folder copied or extracted somewhere else first gets its saved paths pointed at where it is now.
+    if (const int moved = RelocateRoot(client.library.Root()); moved > 0) {
+        client.Notify(L"O Ranga está numa pasta nova (" + client.library.Root() + L"). " + std::to_wstring(moved) +
+                      L" arquivo(s) de configuração foram ajustados para ela; as versões antigas ficaram em backups\\mudou-de-pasta.");
+    }
     // Every console's folder of games exists from the first start, and what is in them is in the library.
     client.library.ScanGamesFolders();
     RepairLinks(client.library.Root());
