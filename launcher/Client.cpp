@@ -6,6 +6,7 @@
 #include "Library.hpp"
 #include "Runner.hpp"
 #include "Systems.hpp"
+#include "Rooms.hpp"
 
 #include <d3d11.h>
 #include <shellapi.h>
@@ -14,6 +15,7 @@
 #include <optional>
 #include <algorithm>
 #include <cctype>
+#include <cstring>
 #include <cmath>
 #include <functional>
 #include <array>
@@ -483,6 +485,16 @@ struct Client {
     // The Switch game's update and add-on files (the eden_conteudo core option), and what each one is.
     std::vector<std::wstring> contentFiles;
     std::vector<SwitchContent> contentKinds;
+    // The Switch game's graphics options (eden_* core options), read when the game is chosen.
+    std::map<std::string, std::string> graphics;
+    // The rooms this PC keeps open (Rooms.hpp), what is being typed in each, whether each server runs (read again
+    // every two seconds) and the last thing that went wrong.
+    std::vector<Room> rooms;
+    std::map<std::wstring, std::array<char, 64>> roomNames, roomPasswords, roomPorts;
+    std::map<std::wstring, bool> roomsRunning;
+    ULONGLONG roomsCheckedAt = 0;
+    bool roomsLoaded = false;
+    std::wstring roomsProblem;
     // A game file whose extension fits several consoles waits here until the user says which.
     std::wstring askFile;
     Detected askDetected;
@@ -578,6 +590,8 @@ struct Client {
                 name.copy(roomNickname.data(), roomNickname.size() - 1);
                 if (!name.empty()) SavePlayerName(*game, name, false);
                 LoadContent(*game);
+                graphics.clear();
+                for (const auto& option : kSwitchGraphics) graphics[option.key] = ReadCoreOption(*game, option.key);
             }
             library.Select(game->titleId);
             // The Bloodborne port and the emulators write everything to game.log; PS5 games put their errors in game.err.
@@ -1541,6 +1555,7 @@ struct Client {
             };
             ImGui::SetCursorPosX(labelWidth);
             ImGui::TextDisabled("%s", notes[level]);
+            if (game.system == L"SWITCH") SwitchGraphics(game, label, labelWidth, scale);
         }
         if (profile.sonsOfSparta) {
             const char* resolutions[] = {"Manter a do jogo", "3840 x 2160 (4K)", "2560 x 1440", "1920 x 1080"};
@@ -1632,7 +1647,19 @@ struct Client {
                     }
                 };
                 if (roomMode == 1) field("Endereço", "##roomAddress", roomAddress, "eden_sala_endereco", L"sala_endereco");
-                field("Porta", "##roomPort", roomPort, "eden_sala_porta", L"sala_porta", ImGuiInputTextFlags_CharsDecimal);
+                // Joining with "address:port" (as playit shows it), that port is the one used: the field is not shown,
+                // so a leftover 24872 there can no longer look like it matters.
+                const std::string address = roomAddress.data();
+                const size_t colon = address.rfind(':');
+                const bool portInAddress = colon != std::string::npos && colon + 1 < address.size() &&
+                                           std::all_of(address.begin() + static_cast<std::ptrdiff_t>(colon + 1), address.end(), [](unsigned char c) { return std::isdigit(c); });
+                if (roomMode == 1 && portInAddress) {
+                    label("Porta");
+                    ImGui::AlignTextToFramePadding();
+                    ImGui::TextDisabled("%s (a do endereço)", address.substr(colon + 1).c_str());
+                } else {
+                    field("Porta", "##roomPort", roomPort, "eden_sala_porta", L"sala_porta", ImGuiInputTextFlags_CharsDecimal);
+                }
                 field("Senha", "##roomPassword", roomPassword, "eden_sala_senha", L"sala_senha");
                 const std::string nickname = roomNickname.data();
                 const bool nicknameFits = nickname.size() >= 4 && nickname.size() <= 20 &&
@@ -1652,6 +1679,7 @@ struct Client {
             }
             ImGui::EndDisabled();
             if (running) ImGui::TextDisabled("Feche o jogo para mudar a sala.");
+            RoomsSection(game, label, labelWidth, scale);
         }
         ImGui::Dummy(ImVec2(0, 6 * scale));
         ImGui::Separator();
@@ -1766,6 +1794,249 @@ struct Client {
         ImGui::Dummy(ImVec2(0, 4 * scale));
         ImGui::TextDisabled("F7  +1000 Blood Orbs");
         ImGui::TextDisabled("F8  +10 materiais de melhoria");
+    }
+
+    void ReloadRooms() {
+        rooms = LoadRooms(library.Root());
+        roomNames.clear();
+        roomPasswords.clear();
+        roomPorts.clear();
+        for (const Room& room : rooms) {
+            Utf8(room.name).copy(roomNames[room.id].data(), 63);
+            Utf8(room.password).copy(roomPasswords[room.id].data(), 63);
+            std::to_string(room.port).copy(roomPorts[room.id].data(), 63);
+        }
+        roomsCheckedAt = 0;
+        roomsLoaded = true;
+    }
+
+    // The rooms this PC keeps open for everyone (Eden's room server), each with its name, port, password and limit,
+    // switched on and off here. Everyone, this PC's owner too, then joins with "Entrar em uma sala".
+    template <typename Label> void RoomsSection(const Game& game, Label& label, float labelWidth, float scale) {
+        // Only on the PC that hosts (RangaEmu.exe --servidor once): friends just join an address.
+        if (!RoomServerEnabled(library.Root())) return;
+        if (!roomsLoaded) ReloadRooms();
+        if (GetTickCount64() - roomsCheckedAt > 2000) {
+            for (const Room& room : rooms) roomsRunning[room.id] = RoomRunning(library.Root(), room);
+            roomsCheckedAt = GetTickCount64();
+        }
+        ImGui::Dummy(ImVec2(0, 6 * scale));
+        ImGui::SetCursorPosX(labelWidth);
+        ImGui::PushStyleColor(ImGuiCol_Text, Color(kText));
+        ImGui::TextUnformatted("Salas deste PC (servidor, sempre ligadas)");
+        ImGui::PopStyleColor();
+        ImGui::SetCursorPosX(labelWidth);
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("A sala fica aberta sozinha, sem jogo aberto. Todos, inclusive você, usam \"Entrar em uma sala\"; qualquer um cria o grupo no jogo. "
+                            "Cada sala precisa de um túnel UDP do playit para 127.0.0.1 na porta dela.");
+        ImGui::PopTextWrapPos();
+        for (Room& room : rooms) {
+            ImGui::PushID(Utf8(room.id).c_str());
+            const bool running = roomsRunning[room.id];
+            ImGui::Dummy(ImVec2(0, 2 * scale));
+            label("Nome");
+            ImGui::BeginDisabled(running);
+            ImGui::InputText("##name", roomNames[room.id].data(), 63);
+            const bool nameDone = ImGui::IsItemDeactivatedAfterEdit();
+            label("Porta");
+            ImGui::InputText("##port", roomPorts[room.id].data(), 6, ImGuiInputTextFlags_CharsDecimal);
+            const bool portDone = ImGui::IsItemDeactivatedAfterEdit();
+            label("Senha");
+            ImGui::InputText("##password", roomPasswords[room.id].data(), 63);
+            const bool passwordDone = ImGui::IsItemDeactivatedAfterEdit();
+            label("Até");
+            int members = room.members;
+            const bool membersDone = ImGui::SliderInt("##members", &members, 2, 16, "%d pessoas");
+            ImGui::EndDisabled();
+            if (nameDone || portDone || passwordDone || membersDone) {
+                room.name = Wide(roomNames[room.id].data());
+                room.password = Wide(roomPasswords[room.id].data());
+                room.port = std::clamp(std::atoi(roomPorts[room.id].data()), 1, 65535);
+                room.members = members;
+                SaveRoom(library.Root(), room);
+            }
+            ImGui::SetCursorPosX(labelWidth);
+            ImGui::PushStyleColor(ImGuiCol_Text, Color(running ? kGreen : kDim));
+            ImGui::Text(running ? "Ligada na porta %d" : "Desligada", room.port);
+            ImGui::PopStyleColor();
+            ImGui::SameLine();
+            if (ImGui::Button(running ? "Desligar" : "Ligar")) {
+                room.on = !running;
+                SaveRoom(library.Root(), room);
+                if (running) {
+                    StopRoomServer(library.Root(), room);
+                    roomsProblem.clear();
+                } else {
+                    roomsProblem = StartRoomServer(library.Root(), room);
+                    if (!roomsProblem.empty()) {
+                        room.on = false;
+                        SaveRoom(library.Root(), room);
+                    }
+                }
+                roomsCheckedAt = 0;
+            }
+            ImGui::SameLine();
+            // This game joins this room: the owner of the PC enters as everyone else does.
+            if (ImGui::Button("Este jogo entra nela")) {
+                roomMode = 1;
+                const std::string address = "127.0.0.1:" + std::to_string(room.port);
+                roomAddress.fill(0);
+                address.copy(roomAddress.data(), roomAddress.size() - 1);
+                WriteCoreOption(game, "eden_sala", "entrar");
+                WriteCoreOption(game, "eden_sala_endereco", address);
+                if (!room.password.empty()) {
+                    roomPassword.fill(0);
+                    Utf8(room.password).copy(roomPassword.data(), roomPassword.size() - 1);
+                    WriteCoreOption(game, "eden_sala_senha", Utf8(room.password));
+                }
+            }
+            ImGui::SameLine();
+            ImGui::BeginDisabled(running);
+            if (ImGui::Button("Remover")) {
+                Confirm(L"Remover a sala \"" + room.name + L"\"?", [this, id = room.id] {
+                    RemoveRoom(library.Root(), id);
+                    ReloadRooms();
+                });
+            }
+            ImGui::EndDisabled();
+            ImGui::PopID();
+        }
+        ImGui::Dummy(ImVec2(0, 4 * scale));
+        ImGui::SetCursorPosX(labelWidth);
+        if (ImGui::Button("+  Nova sala")) {
+            AddRoom(library.Root());
+            ReloadRooms();
+        }
+        ImGui::SameLine();
+        bool startup = RoomsStartWithWindows();
+        if (ImGui::Checkbox("Ligar as salas quando o Windows abrir", &startup)) SetRoomsStartWithWindows(library.Root(), startup);
+        // Hiding it again: with every room off first, so nothing is left running unseen.
+        bool anyRunning = false;
+        for (const Room& room : rooms) anyRunning = anyRunning || roomsRunning[room.id];
+        ImGui::SameLine();
+        ImGui::BeginDisabled(anyRunning);
+        if (ImGui::Button("Esconder (este PC não é servidor)")) {
+            SetRoomsStartWithWindows(library.Root(), false);
+            SetRoomServerEnabled(library.Root(), false);
+        }
+        ImGui::EndDisabled();
+        if (anyRunning && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("Desligue as salas antes.");
+        if (!roomsProblem.empty()) {
+            ImGui::SetCursorPosX(labelWidth);
+            ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextUnformatted(Utf8(roomsProblem).c_str());
+            ImGui::PopTextWrapPos();
+            ImGui::PopStyleColor();
+        }
+        // A server room and "Criar uma sala" on the same port cannot both open.
+        for (const Room& room : rooms) {
+            if (roomMode == 2 && roomsRunning[room.id] && std::atoi(roomPort.data()) == room.port) {
+                ImGui::SetCursorPosX(labelWidth);
+                ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
+                ImGui::PushTextWrapPos(0);
+                ImGui::Text("A sala \"%s\" já usa a porta %d: em vez de \"Criar uma sala\", use \"Este jogo entra nela\".", Utf8(room.name).c_str(), room.port);
+                ImGui::PopTextWrapPos();
+                ImGui::PopStyleColor();
+            }
+        }
+    }
+
+    // The Switch core's graphics options, each with "Automático" first (what the Qualidade level sets). The core
+    // applies the filter, its sharpness and the anti-aliasing while the game runs; the rest when it opens again.
+    struct GraphicsOption {
+        const char* group;
+        const char* key;
+        const char* label;
+        std::vector<std::pair<const char*, const char*>> values;
+        const char* note;
+    };
+    inline static const std::vector<GraphicsOption> kSwitchGraphics = {
+        {"Imagem", "eden_resolucao", "Resolução",
+         {{"auto", "Automático"}, {"0.5x", "0,5x (360p, PC bem fraco)"}, {"0.75x", "0,75x (540p)"}, {"1x", "1x (720p/1080p, original)"},
+          {"1.5x", "1,5x"}, {"2x", "2x (1440p/2160p)"}, {"3x", "3x"}, {"4x", "4x (pesado)"}},
+         "Quantas vezes a resolução do Switch. Vale quando o jogo abrir de novo."},
+        {"Imagem", "eden_modo", "Modo do console", {{"auto", "Automático (na base)"}, {"base", "Na base (1080p)"}, {"portatil", "Portátil (720p, mais leve)"}},
+         "Na base os jogos desenham em 1080p; no portátil, em 720p e mais leve. Vale ao reabrir."},
+        {"Imagem", "eden_proporcao", "Proporção da tela",
+         {{"auto", "Automático (16:9)"}, {"16:9", "16:9"}, {"4:3", "4:3"}, {"21:9", "21:9 (ultrawide)"}, {"16:10", "16:10"}, {"esticar", "Esticar na janela"}},
+         "Formato da imagem. Muda na hora."},
+        {"Imagem", "eden_fsr_modo", "Modo do FSR",
+         {{"auto", "Automático (pela Qualidade)"}, {"nativo", "Nativo + AA (como o DLAA): 100% + SMAA"}, {"qualidade", "Qualidade: 75%"},
+          {"desempenho", "Desempenho: 50%"}, {"ultra", "Ultra desempenho: 25% (borrado)"}},
+         "O jogo desenha menor e o AMD FSR aumenta até a sua tela, como nos jogos de PC. O Eden só desenha em 25, 50, 75 ou 100%, por isso não há Equilibrado. Escolher um modo liga o filtro FSR; a resolução muda ao reabrir."},
+        {"Imagem", "eden_filtro", "Filtro da imagem",
+         {{"auto", "Automático"}, {"fsr", "AMD FSR (mais nítido ao aumentar)"}, {"bilinear", "Bilinear (padrão)"}, {"area", "Area (bom ao diminuir)"},
+          {"scaleforce", "ScaleForce"}, {"bicubic", "Bicúbico"}, {"gaussian", "Gaussiano (suave)"}, {"lanczos", "Lanczos"}, {"nearest", "Pixelado"}},
+         "Como a imagem é esticada até a sua tela. O FSR da AMD deixa mais nítido quando a resolução está baixa. Muda na hora."},
+        {"Imagem", "eden_nitidez_fsr", "Nitidez do FSR",
+         {{"auto", "Automático"}, {"0", "0 (máxima)"}, {"25", "25 (padrão)"}, {"50", "50"}, {"75", "75"}, {"100", "100"}, {"150", "150"}, {"200", "200 (mínima)"}},
+         "Só com o filtro FSR. Número menor = mais nítido. Muda na hora."},
+        {"Imagem", "eden_antialiasing", "Antisserrilhado", {{"auto", "Automático"}, {"nenhum", "Nenhum"}, {"fxaa", "FXAA (leve)"}, {"smaa", "SMAA (melhor, pesa um pouco)"}},
+         "Suaviza as bordas serrilhadas. Muda na hora."},
+        {"Imagem", "eden_anisotropica", "Filtragem anisotrópica",
+         {{"auto", "Automático"}, {"nenhuma", "Nenhuma"}, {"2x", "2x"}, {"4x", "4x"}, {"8x", "8x"}, {"16x", "16x"}},
+         "Texturas do chão mais nítidas de longe. Vale ao reabrir."},
+        {"Desempenho", "eden_fps", "Limite de FPS",
+         {{"auto", "Automático"}, {"jogo", "O do jogo"}, {"30", "30"}, {"60", "60"}, {"90", "90"}, {"120", "120"}},
+         "Ritmo em que o emulador entrega quadros. Jogando em sala, deixe igual nos dois PCs. Vale ao reabrir."},
+        {"Desempenho", "eden_vsync", "VSync", {{"auto", "Automático"}, {"ligado", "Ligado (sem rasgo)"}, {"desligado", "Desligado (menos atraso)"}, {"mailbox", "Mailbox"}},
+         "Sincroniza com o monitor. Vale ao reabrir."},
+        {"Desempenho", "eden_precisao_gpu", "Precisão da GPU", {{"auto", "Automático"}, {"baixa", "Baixa (mais rápida)"}, {"media", "Média (padrão)"}, {"alta", "Alta (mais lenta)"}},
+         "Baixa ganha FPS; alta corrige efeitos raros. Vale ao reabrir."},
+        {"Desempenho", "eden_shaders_async", "Shaders em segundo plano", {{"auto", "Automático"}, {"sim", "Sim (menos travadas)"}, {"nao", "Não"}},
+         "Sim tira as travadas da primeira vez que um efeito aparece. Vale ao reabrir."},
+        {"Desempenho", "eden_gpu_rapida", "GPU emulada acelerada", {{"auto", "Automático"}, {"normal", "Normal"}, {"media", "Média"}, {"alta", "Alta"}},
+         "Faz o jogo achar que a GPU do Switch é mais rápida; ajuda alguns jogos a ficarem em 60. Vale ao reabrir."},
+        {"Avançado", "eden_cache_shaders", "Guardar shaders no disco", {{"auto", "Automático (sim)"}, {"sim", "Sim"}, {"nao", "Não"}},
+         "Guarda os shaders prontos para a próxima vez. Vale ao reabrir."},
+        {"Avançado", "eden_video", "Vídeos do jogo", {{"auto", "Automático (placa de vídeo)"}, {"gpu", "Na placa de vídeo"}, {"cpu", "No processador"}, {"desligado", "Desligados"}},
+         "Cenas em vídeo. Se travarem, tente no processador. Vale ao reabrir."},
+    };
+
+    template <typename Label> void SwitchGraphics(const Game& game, Label& label, float labelWidth, float scale) {
+        ImGui::Dummy(ImVec2(0, 4 * scale));
+        ImGui::SetCursorPosX(labelWidth);
+        ImGui::PushStyleColor(ImGuiCol_Text, Color(kText));
+        ImGui::TextUnformatted("Gráficos do Switch (só este jogo)");
+        ImGui::PopStyleColor();
+        const char* group = "";
+        for (const auto& option : kSwitchGraphics) {
+            if (std::strcmp(group, option.group) != 0) {
+                group = option.group;
+                ImGui::SetCursorPosX(labelWidth);
+                ImGui::TextDisabled("%s", group);
+            }
+            int current = 0;
+            for (size_t i = 0; i < option.values.size(); ++i) {
+                if (graphics[option.key] == option.values[i].first) current = static_cast<int>(i);
+            }
+            label(option.label);
+            ImGui::PushID(option.key);
+            if (ImGui::BeginCombo("##g", option.values[static_cast<size_t>(current)].second)) {
+                for (size_t i = 0; i < option.values.size(); ++i) {
+                    if (ImGui::Selectable(option.values[i].second, static_cast<int>(i) == current)) {
+                        graphics[option.key] = option.values[i].first;
+                        WriteCoreOption(game, option.key, option.values[i].first);
+                        // The FSR mode and the resolution both set the size the game draws at: picking one puts the
+                        // other back on Automático, so the screen never shows a choice that is being ignored.
+                        const std::string key = option.key, picked = option.values[i].first;
+                        const char* other = key == "eden_fsr_modo" ? "eden_resolucao" : key == "eden_resolucao" ? "eden_fsr_modo" : nullptr;
+                        if (other != nullptr && picked != "auto" && graphics[other] != "auto" && !graphics[other].empty()) {
+                            graphics[other] = "auto";
+                            WriteCoreOption(game, other, "auto");
+                        }
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", option.note);
+            ImGui::PopID();
+        }
+        ImGui::SetCursorPosX(labelWidth);
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("Automático segue a Qualidade acima. Filtro, nitidez e antisserrilhado também mudam no menu do jogo (Esc ou botão PS/Guide), na hora; o resto vale ao reabrir.");
+        ImGui::PopTextWrapPos();
     }
 
     // The buttons of a console Ranga runs itself, in the order of the console's file (Ranga Retro's RetroPad names), the
@@ -2520,7 +2791,16 @@ LRESULT WINAPI WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 }
 
-int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
+int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
+    // RangaEmu.exe --salas (the shortcut Windows runs when it starts): only opens the rooms marked on, no window.
+    if (commandLine != nullptr && wcsstr(commandLine, L"--salas") != nullptr) {
+        wchar_t self[MAX_PATH * 2] = {};
+        GetModuleFileNameW(nullptr, self, MAX_PATH * 2);
+        std::wstring folder = self;
+        folder.resize(folder.find_last_of(L"\\/"));
+        StartRoomsOn(folder);
+        return 0;
+    }
     // One Ranga at a time; the interface tests (RANGA_CLIENT_TEST_INPUT) run their copy beside the user's.
     HANDLE single = CreateMutexW(nullptr, TRUE, kMutex);
     if (single != nullptr && GetLastError() == ERROR_ALREADY_EXISTS && _wgetenv(L"RANGA_CLIENT_TEST_INPUT") == nullptr) {
@@ -2536,6 +2816,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     root.resize(root.find_last_of(L"\\/"));
     SetCurrentDirectoryW(root.c_str());
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    // RangaEmu.exe --servidor: this PC hosts rooms; the rooms section shows from now on.
+    if (commandLine != nullptr && wcsstr(commandLine, L"--servidor") != nullptr) SetRoomServerEnabled(root, true);
 
     ImGui_ImplWin32_EnableDpiAwareness();
     const float scale = ImGui_ImplWin32_GetDpiScaleForMonitor(MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY));
@@ -2581,20 +2863,47 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     ImGui_ImplWin32_Init(hwnd);
     ImGui_ImplDX11_Init(g_device, g_context);
 
+    // RANGA_CLIENT_TIMING=<file>: how long each step of the start takes, in milliseconds, written to that file.
+    static const wchar_t* timingPath = _wgetenv(L"RANGA_CLIENT_TIMING");
+    LARGE_INTEGER frequency, mark;
+    QueryPerformanceFrequency(&frequency);
+    QueryPerformanceCounter(&mark);
+    std::string timing;
+    const auto step = [&](const char* what) {
+        if (timingPath == nullptr) return;
+        LARGE_INTEGER now;
+        QueryPerformanceCounter(&now);
+        timing += std::string(what) + ": " + std::to_string((now.QuadPart - mark.QuadPart) * 1000 / frequency.QuadPart) + " ms\r\n";
+        mark = now;
+    };
     Client client(root);
     client.window = hwnd;
     client.semibold = semibold != nullptr ? semibold : regular;
     g_runner = &client.runner;
     g_client = &client;
+    step("Client");
     // A Ranga folder copied or extracted somewhere else first gets its saved paths pointed at where it is now.
     if (const int moved = RelocateRoot(client.library.Root()); moved > 0) {
         client.Notify(L"O Ranga está numa pasta nova (" + client.library.Root() + L"). " + std::to_wstring(moved) +
                       L" arquivo(s) de configuração foram ajustados para ela; as versões antigas ficaram em backups\\mudou-de-pasta.");
     }
+    step("RelocateRoot");
     // Every console's folder of games exists from the first start, and what is in them is in the library.
     client.library.ScanGamesFolders();
+    step("ScanGamesFolders");
     RepairLinks(client.library.Root());
+    step("RepairLinks");
+    // Rooms kept on that are not running (the PC restarted without the Windows option) open again.
+    StartRoomsOn(client.library.Root());
+    step("StartRoomsOn");
     client.Reload(client.library.Selected());
+    step("Reload");
+    if (timingPath != nullptr) {
+        if (FILE* file = _wfopen(timingPath, L"wb")) {
+            std::fwrite(timing.data(), 1, timing.size(), file);
+            std::fclose(file);
+        }
+    }
     if (const Game* game = client.Current()) client.console = game->system;
 
     bool done = false;

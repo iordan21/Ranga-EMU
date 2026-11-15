@@ -1,0 +1,48 @@
+#ifndef LAUNCHER_ROOMS_HPP
+#define LAUNCHER_ROOMS_HPP
+
+#include <string>
+#include <vector>
+
+namespace Ranga {
+
+// The Switch's online rooms this PC keeps open for everyone: each one is Eden's room server (tools\eden-room.exe),
+// running on its own, without any game open, on a port a tunnel (playit) can point at. Everyone, the owner of the PC
+// included, joins it with "Entrar em uma sala"; anyone in it creates the game's own group. Kept in salas.ini beside
+// this program; each room's ban list and log in salas\.
+struct Room {
+    std::wstring id;       // the section in salas.ini
+    std::wstring name;
+    std::wstring password; // empty: anyone with the address gets in
+    int port = 24872;
+    int members = 16;      // at most 16, Eden's limit
+    bool on = false;       // kept open: started with Ranga and, when asked, with Windows
+};
+
+// Only the PC that hosts runs room servers: everyone else just joins an address. Off unless enabled once with
+// RangaEmu.exe --servidor (engines.ini [Ranga] servidor=1); while off, the rooms section is hidden and no room starts,
+// with Ranga or with Windows, even if salas.ini came along in a copy.
+bool RoomServerEnabled(const std::wstring& root);
+void SetRoomServerEnabled(const std::wstring& root, bool on);
+
+std::vector<Room> LoadRooms(const std::wstring& root);
+void SaveRoom(const std::wstring& root, const Room& room);
+void RemoveRoom(const std::wstring& root, const std::wstring& id);
+// A new room on the next port no other room uses, saved, not yet started.
+Room AddRoom(const std::wstring& root);
+
+// Whether the room's server is running now (the process it was started as, still Ranga's eden-room.exe).
+bool RoomRunning(const std::wstring& root, const Room& room);
+// Starts the server in the background, with no window; empty on success, otherwise why not.
+std::wstring StartRoomServer(const std::wstring& root, const Room& room);
+void StopRoomServer(const std::wstring& root, const Room& room);
+// Starts every room marked on that is not running. Used when Ranga opens and by RangaEmu.exe --salas (Windows' start).
+void StartRoomsOn(const std::wstring& root);
+
+// The shortcut in the user's Startup folder that runs RangaEmu.exe --salas when Windows starts.
+bool RoomsStartWithWindows();
+void SetRoomsStartWithWindows(const std::wstring& root, bool on);
+
+}
+
+#endif
