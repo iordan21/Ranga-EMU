@@ -75,7 +75,7 @@ if(WIN32)
     target_link_options(RangaEmu PRIVATE -municode -static)
     target_link_libraries(RangaEmu PRIVATE SDL2-static d3d11 d3dcompiler dxgi dwmapi ole32 shell32 shlwapi uuid gdi32 comctl32 winhttp)
     # Ranga Retro: libretro cores inside Ranga's own window (launcher/retro).
-    add_executable(RangaRetro WIN32 launcher/retro/RetroMain.cpp launcher/retro/VulkanVideo.cpp)
+    add_executable(RangaRetro WIN32 launcher/retro/RetroMain.cpp launcher/retro/VulkanVideo.cpp launcher/retro/retro.rc)
     set_target_properties(RangaRetro PROPERTIES OUTPUT_NAME ranga_retro)
     target_include_directories(RangaRetro PRIVATE ${CMAKE_SOURCE_DIR}/3rdparty/libretro ${CMAKE_SOURCE_DIR}/3rdparty/Vulkan-Headers/include)
     target_compile_definitions(RangaRetro PRIVATE UNICODE _UNICODE)

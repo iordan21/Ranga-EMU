@@ -1,2 +1,5 @@
 // Application manifest (RT_MANIFEST): common controls 6, so the launcher window uses themed Windows controls.
 1 24 "launcher.manifest"
+
+// The program's icon (launcher/icon/make_icon.py draws it).
+1 ICON "ranga.ico"

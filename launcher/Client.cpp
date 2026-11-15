@@ -31,6 +31,7 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_PNG
+#define STBI_ONLY_JPEG // the Switch games' own icons
 #define STBI_WINDOWS_UTF8
 #include "stb_image.h"
 
@@ -452,6 +453,7 @@ struct Client {
     int selected = -1;
     Options options;
     std::map<std::wstring, Texture> icons, banners;
+    std::map<std::wstring, ULONGLONG> switchArtChecked;
     ImFont* semibold = nullptr;
     int logFile = 0;
     std::string logText;
@@ -686,6 +688,8 @@ struct Client {
             files.push_back(base + (icon ? L"\\ICON0.PNG" : L"\\PIC1.PNG"));
         }
         if (game.system == L"PSP") files.push_back(art + (icon ? L"\\ICON0.PNG" : L"\\PIC1.PNG"));
+        // The Switch core keeps the game's own icon here the first time the game runs: no box art server has the Switch.
+        if (game.system == L"SWITCH" && icon) files.push_back(art + L"\\icon.jpg");
         files.push_back(BoxartFile(game));
         for (const auto& file : files) if (Exists(file)) return file;
         return L"";
@@ -694,6 +698,14 @@ struct Client {
     const Texture& Icon(const Game& game) {
         auto found = icons.find(game.titleId);
         if (found == icons.end()) found = icons.emplace(game.titleId, LoadTexture(ArtFile(game, true), 512)).first;
+        if (found->second.view == nullptr && game.system == L"SWITCH") {
+            // The icon arrives while the game runs, not from the cover fetcher: looked for again every two seconds.
+            ULONGLONG& checked = switchArtChecked[game.titleId];
+            if (const ULONGLONG now = GetTickCount64(); now - checked > 2000) {
+                checked = now;
+                if (const std::wstring file = ArtFile(game, true); !file.empty()) found->second = LoadTexture(file, 512);
+            }
+        }
         if (found->second.view == nullptr) covers.Request(game);
         return found->second;
     }
@@ -2821,7 +2833,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
 
     ImGui_ImplWin32_EnableDpiAwareness();
     const float scale = ImGui_ImplWin32_GetDpiScaleForMonitor(MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY));
-    WNDCLASSEXW windowClass{sizeof(windowClass), CS_CLASSDC, WindowProc, 0, 0, instance, nullptr, LoadCursorW(nullptr, IDC_ARROW), nullptr, nullptr, kWindowClass, nullptr};
+    WNDCLASSEXW windowClass{sizeof(windowClass), CS_CLASSDC, WindowProc, 0, 0, instance, LoadIconW(instance, MAKEINTRESOURCEW(1)), LoadCursorW(nullptr, IDC_ARROW), nullptr, nullptr, kWindowClass,
+                             LoadIconW(instance, MAKEINTRESOURCEW(1))};
     RegisterClassExW(&windowClass);
     MONITORINFO monitor{};
     monitor.cbSize = sizeof(monitor);

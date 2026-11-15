@@ -1075,7 +1075,8 @@ HWND CreateGameWindow(const std::wstring& title) {
     windowClass.lpfnWndProc = WindowProc;
     windowClass.hInstance = GetModuleHandleW(nullptr);
     windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    windowClass.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    windowClass.hIcon = LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(1));
+    if (windowClass.hIcon == nullptr) windowClass.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
     windowClass.hbrBackground = static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
     windowClass.lpszClassName = L"RangaEmuRetro";
     RegisterClassExW(&windowClass);
@@ -2025,6 +2026,24 @@ int RetroMain(int argc, wchar_t** argv) {
     if (saveDir.empty()) saveDir = noGame ? L"." : romPath.substr(0, romPath.find_last_of(L"\\/"));
     if (systemDir.empty()) systemDir = saveDir;
     CreateDirectoryW(saveDir.c_str(), nullptr);
+    // The game runs ahead of whatever else is open (browser, chat, updaters): above normal, not high, which would get
+    // in the way of the sound and input drivers. Windows 11 also slows down and coarsens the timer of a program it
+    // judges to be in the background; a game is told apart from that here, so a covered or unfocused window keeps pace.
+    SetPriorityClass(GetCurrentProcess(), ABOVE_NORMAL_PRIORITY_CLASS);
+    {
+        PROCESS_POWER_THROTTLING_STATE power{};
+        power.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
+        power.ControlMask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED | PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION;
+        power.StateMask = 0;
+        // Looked up by name: the headers only declare it for Windows 8 and later. 4 is ProcessPowerThrottling.
+        using Setter = BOOL(WINAPI*)(HANDLE, int, void*, DWORD);
+        const auto set = reinterpret_cast<Setter>(reinterpret_cast<void*>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "SetProcessInformation")));
+        if (set != nullptr && !set(GetCurrentProcess(), 4, &power, sizeof(power))) {
+            // Windows 10 knows only the first of the two.
+            power.ControlMask = PROCESS_POWER_THROTTLING_EXECUTION_SPEED;
+            set(GetCurrentProcess(), 4, &power, sizeof(power));
+        }
+    }
     g.systemDir = Utf8(systemDir);
     g.saveDir = Utf8(saveDir);
     ApplyCoreDefaults(corePath, systemDir);

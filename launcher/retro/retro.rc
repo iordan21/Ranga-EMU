@@ -1,0 +1,2 @@
+// The game window's icon: Ranga's own (launcher/icon/make_icon.py draws it).
+1 ICON "../ranga.ico"
