@@ -235,7 +235,7 @@ std::wstring StartExtra(const std::wstring& root, Extra extra) {
     const std::wstring log = Folder(root) + L"\\" + info.log;
     std::wstring command = L"\"" + ExtraExe(root, extra) + L"\" --port " + std::to_wstring(port);
     if (extra == Extra::Classics) {
-        command += L" --log \"" + log + L"\"";
+        command += L" --log \"" + log + L"\" --atualizacao \"" + root + L"\\salas\\atualizacao\"";
     } else {
         // Azahar's room: like Eden's, its ban list is read only when the file starts with its own header.
         const std::wstring bans = Folder(root) + L"\\sala-3ds-banidos.txt";

@@ -8,6 +8,7 @@
 #include "Systems.hpp"
 #include "Rooms.hpp"
 #include "ConsoleGraphics.hpp"
+#include "Update.hpp"
 
 #include <d3d11.h>
 #include <shellapi.h>
@@ -19,6 +20,9 @@
 #include <cstring>
 #include <cmath>
 #include <functional>
+#include <atomic>
+#include <mutex>
+#include <thread>
 #include <array>
 #include <map>
 
@@ -590,7 +594,140 @@ struct Client {
     int barFocus = -1, barPress = -1, emptyFocus = 0;
     std::wstring homeConsole;
 
-    explicit Client(const std::wstring& root) : library(root), covers(root) {}
+    explicit Client(const std::wstring& root) : library(root), covers(root) {
+        // Every PC but the one that hosts looks for a newer Ranga there when it opens (Update.hpp).
+        // RANGA_CLIENT_AUTO_UPDATE=1 (tests): checks even in test mode and takes the update without asking.
+        if (!RoomServerEnabled(root) && (_wgetenv(L"RANGA_CLIENT_TEST_INPUT") == nullptr || autoUpdate)) StartUpdateCheck();
+    }
+    ~Client() {
+        if (updateThread.joinable()) updateThread.join();
+    }
+
+    // The update: checked in the background; when there is one, a bar at the bottom offers it.
+    enum class UpdateState { Idle, Checking, Available, Downloading, Ready, Failed };
+    std::atomic<UpdateState> updateState{UpdateState::Idle};
+    std::atomic<uint64_t> updateDone{0}, updateTotal{0};
+    std::thread updateThread;
+    std::mutex updateLock;
+    UpdateInfo updateInfo;
+    std::wstring updateError;
+    bool updateHidden = false;
+    const bool autoUpdate = _wgetenv(L"RANGA_CLIENT_AUTO_UPDATE") != nullptr;
+    std::array<char, 256> publishNotes{};
+    std::wstring publishResult;
+
+    void StartUpdateCheck() {
+        updateState = UpdateState::Checking;
+        updateThread = std::thread([this] {
+            UpdateInfo info = CheckUpdate(library.Root());
+            std::lock_guard guard(updateLock);
+            updateInfo = info;
+            if (!info.error.empty()) {
+                updateState = UpdateState::Idle;
+            } else if (info.changed.empty()) {
+                // Already this version's files: only the version is noted.
+                if (info.version != InstalledUpdate(library.Root())) ApplyUpdate(library.Root(), info);
+                updateState = UpdateState::Idle;
+            } else {
+                updateState = UpdateState::Available;
+            }
+        });
+    }
+
+    void StartUpdateDownload() {
+        if (updateThread.joinable()) updateThread.join();
+        updateState = UpdateState::Downloading;
+        updateDone = 0;
+        updateTotal = updateInfo.download;
+        updateThread = std::thread([this] {
+            UpdateInfo info;
+            {
+                std::lock_guard guard(updateLock);
+                info = updateInfo;
+            }
+            const std::wstring error = DownloadUpdate(library.Root(), info, [this](uint64_t done, uint64_t total) {
+                updateDone = done;
+                updateTotal = total;
+            });
+            std::lock_guard guard(updateLock);
+            updateError = error;
+            updateState = error.empty() ? UpdateState::Ready : UpdateState::Failed;
+        });
+    }
+
+    // Puts the files in place and opens the new Ranga; this one closes.
+    void FinishUpdate() {
+        const std::wstring error = ApplyUpdate(library.Root(), updateInfo);
+        if (!error.empty()) {
+            updateError = error;
+            updateState = UpdateState::Failed;
+            return;
+        }
+        STARTUPINFOW startup{sizeof(startup)};
+        PROCESS_INFORMATION process{};
+        std::wstring command = L"\"" + library.Root() + L"\\RangaEmu.exe\" --atualizado";
+        // The new one waits for this one's single-instance lock to go (it retries for a few seconds).
+        if (CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, 0, nullptr, library.Root().c_str(), &startup, &process)) {
+            CloseHandle(process.hProcess);
+            CloseHandle(process.hThread);
+        }
+        PostQuitMessage(0);
+    }
+
+    void UpdateBar(float scale) {
+        const UpdateState state = updateState;
+        if (autoUpdate && !pending && state == UpdateState::Available) pending = [this] { StartUpdateDownload(); };
+        if (autoUpdate && !pending && state == UpdateState::Ready) pending = [this] { FinishUpdate(); };
+        if (state == UpdateState::Idle || state == UpdateState::Checking || updateHidden) return;
+        const ImGuiViewport* viewport = ImGui::GetMainViewport();
+        const float width = std::min(620 * scale, viewport->WorkSize.x - 32 * scale);
+        ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x - width - 16 * scale, viewport->WorkPos.y + viewport->WorkSize.y - 16 * scale), ImGuiCond_Always, ImVec2(0, 1));
+        ImGui::SetNextWindowSize(ImVec2(width, 0));
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, Color(kSurface));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16 * scale, 12 * scale));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 10 * scale);
+        ImGui::Begin("##update", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize);
+        std::lock_guard guard(updateLock);
+        ImGui::PushTextWrapPos(0);
+        if (state == UpdateState::Available) {
+            const double megabytes = static_cast<double>(updateInfo.download) / (1024.0 * 1024.0);
+            ImGui::Text("Atualização do Ranga disponível (%s), %.0f MB", updateInfo.version.c_str(), megabytes);
+            if (!updateInfo.notes.empty()) ImGui::TextDisabled("%s", updateInfo.notes.c_str());
+            const bool busy = runner.Busy();
+            ImGui::BeginDisabled(busy);
+            ImGui::PushStyleColor(ImGuiCol_Button, Color(kAccent));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Color(kAccentHover));
+            if (ImGui::Button("Atualizar agora")) pending = [this] { StartUpdateDownload(); };
+            ImGui::PopStyleColor(2);
+            ImGui::EndDisabled();
+            ImGui::SameLine();
+            if (ImGui::Button("Depois")) updateHidden = true;
+            if (busy) ImGui::TextDisabled("Feche o jogo para atualizar.");
+        } else if (state == UpdateState::Downloading) {
+            const uint64_t total = std::max<uint64_t>(updateTotal, 1);
+            ImGui::Text("Baixando a atualização %s...", updateInfo.version.c_str());
+            ImGui::ProgressBar(static_cast<float>(static_cast<double>(updateDone) / static_cast<double>(total)), ImVec2(-1, 0));
+        } else if (state == UpdateState::Ready) {
+            ImGui::Text("Atualização %s baixada e conferida.", updateInfo.version.c_str());
+            ImGui::BeginDisabled(runner.Busy());
+            ImGui::PushStyleColor(ImGuiCol_Button, Color(kAccent));
+            if (ImGui::Button("Reabrir o Ranga atualizado")) pending = [this] { FinishUpdate(); };
+            ImGui::PopStyleColor();
+            ImGui::EndDisabled();
+        } else if (state == UpdateState::Failed) {
+            ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
+            ImGui::Text("A atualização não deu certo: %s", Utf8(updateError).c_str());
+            ImGui::PopStyleColor();
+            ImGui::TextDisabled("Nada do Ranga foi trocado pela metade; ele segue como estava.");
+            if (ImGui::Button("Tentar de novo")) pending = [this] { StartUpdateDownload(); };
+            ImGui::SameLine();
+            if (ImGui::Button("Fechar")) updateHidden = true;
+        }
+        ImGui::PopTextWrapPos();
+        ImGui::End();
+        ImGui::PopStyleVar(2);
+        ImGui::PopStyleColor();
+    }
 
     void RefreshEngines() {
         engines.clear();
@@ -2135,6 +2272,33 @@ struct Client {
             ImGui::TextWrapped("%s", Utf8(serverProblem[k]).c_str());
             ImGui::PopStyleColor();
         }
+        if (classics && CanPublishUpdate(library.Root())) {
+            ImGui::Dummy(ImVec2(0, 4 * scale));
+            ImGui::SetCursorPosX(labelWidth);
+            ImGui::PushStyleColor(ImGuiCol_Text, Color(kText));
+            ImGui::TextUnformatted("Atualização para os amigos");
+            ImGui::PopStyleColor();
+            ImGui::SetCursorPosX(labelWidth);
+            ImGui::PushTextWrapPos(0);
+            const std::string published = InstalledUpdate(library.Root());
+            ImGui::TextDisabled("Publica o Ranga deste PC (programas e núcleos, nunca chaves, BIOS ou jogos), assinado. O Ranga dos amigos acha "
+                                "sozinho quando abrir, por esta mesma sala. Última publicada: %s.", published.empty() ? "nenhuma" : published.c_str());
+            ImGui::PopTextWrapPos();
+            label("O que mudou");
+            ImGui::InputText("##publishNotes", publishNotes.data(), publishNotes.size());
+            ImGui::SetCursorPosX(labelWidth);
+            if (ImGui::Button("Publicar atualização")) {
+                pending = [this] {
+                    std::string version;
+                    const std::wstring error = PublishUpdate(library.Root(), publishNotes.data(), version);
+                    publishResult = error.empty() ? L"Publicada a versão " + Wide(version) + L"." : error;
+                };
+            }
+            if (!publishResult.empty()) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("%s", Utf8(publishResult).c_str());
+            }
+        }
         ImGui::PopID();
     }
 
@@ -3074,6 +3238,7 @@ struct Client {
         BrowserWindow(scale);
         NoticeWindow(scale);
         ImGui::End();
+        UpdateBar(scale);
     }
 };
 
@@ -3128,6 +3293,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     }
     // One Ranga at a time; the interface tests (RANGA_CLIENT_TEST_INPUT) run their copy beside the user's.
     HANDLE single = CreateMutexW(nullptr, TRUE, kMutex);
+    if (single != nullptr && GetLastError() == ERROR_ALREADY_EXISTS && commandLine != nullptr && wcsstr(commandLine, L"--atualizado") != nullptr) {
+        // Reopened by an update: the old Ranga is closing; its lock is taken over once it lets go.
+        const DWORD waited = WaitForSingleObject(single, 10000);
+        if (waited == WAIT_OBJECT_0 || waited == WAIT_ABANDONED) SetLastError(0);
+    }
     if (single != nullptr && GetLastError() == ERROR_ALREADY_EXISTS && _wgetenv(L"RANGA_CLIENT_TEST_INPUT") == nullptr) {
         if (HWND existing = FindWindowW(kWindowClass, nullptr)) {
             ShowWindow(existing, SW_RESTORE);
@@ -3141,6 +3311,19 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     root.resize(root.find_last_of(L"\\/"));
     SetCurrentDirectoryW(root.c_str());
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    // What an update left behind (the old RangaEmu.exe and cores, the download folder) goes once the new one runs.
+    CleanUpdateLeftovers(root);
+    // RangaEmu.exe --publicar "o que mudou": publishes this PC's Ranga for the friends without opening the window;
+    // the result goes to salas\publicar.log.
+    if (commandLine != nullptr && wcsstr(commandLine, L"--publicar") != nullptr) {
+        std::wstring notes = wcsstr(commandLine, L"--publicar") + 10;
+        while (!notes.empty() && (notes.front() == L' ' || notes.front() == L'"')) notes.erase(0, 1);
+        while (!notes.empty() && (notes.back() == L' ' || notes.back() == L'"')) notes.pop_back();
+        std::string version;
+        const std::wstring error = PublishUpdate(root, Utf8(notes), version);
+        WriteTextLine(root + L"\\salas\\publicar.log", error.empty() ? L"publicada " + Wide(version) : error);
+        return error.empty() ? 0 : 1;
+    }
     // RangaEmu.exe --servidor: this PC hosts rooms; the rooms section shows from now on.
     if (commandLine != nullptr && wcsstr(commandLine, L"--servidor") != nullptr) SetRoomServerEnabled(root, true);
     if (commandLine != nullptr && wcsstr(commandLine, L"--mostrar-ps4-ps5") != nullptr) SetShowPs4Ps5(root, true);

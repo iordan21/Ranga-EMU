@@ -2,7 +2,9 @@
 // It keeps no game: it seats everyone who runs the same game at one table, at most four, and passes each one's
 // messages to the others. The first at a table runs the game for everyone (slot 0); when it leaves, the table ends.
 //
-//   ranga-sala.exe [--port 24873] [--log file]
+//   ranga-sala.exe [--port 24873] [--log file] [--lan] [--atualizacao <pasta>]
+//
+// With --atualizacao it also hands out Ranga's published update over HTTP on the same port (Update.hpp).
 //
 // It runs on the PC that hosts, beside Eden's rooms; a TCP tunnel (playit) to 127.0.0.1 on its port lets friends in.
 
@@ -14,7 +16,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cwchar>
+#include <algorithm>
 #include <array>
+#include <cctype>
 #include <map>
 #include <memory>
 #include <string>
@@ -48,7 +52,61 @@ struct Player {
     std::vector<uint8_t> in, out;
     size_t outAt = 0;
     bool closing = false;
+    // A Ranga downloading an update: one HTTP request, the answer, and the line closes once it is sent.
+    bool http = false, closeWhenSent = false;
 };
+
+// The published update (salas\atualizacao, made by the hosting Ranga): manifest.txt, manifest.sig and files\.
+std::string g_updates;
+
+void Answer(Player& player, int code, const std::string& body) {
+    const std::string head = "HTTP/1.1 " + std::to_string(code) + (code == 200 ? " OK" : " Not Found") + "\r\nContent-Type: application/octet-stream\r\nContent-Length: " +
+                             std::to_string(body.size()) + "\r\nConnection: close\r\n\r\n";
+    player.out.insert(player.out.end(), head.begin(), head.end());
+    player.out.insert(player.out.end(), body.begin(), body.end());
+    player.closeWhenSent = true;
+}
+
+std::string ReadWhole(const std::string& path) {
+    std::string bytes;
+    if (FILE* file = std::fopen(path.c_str(), "rb")) {
+        char block[1 << 16];
+        for (size_t got; (got = std::fread(block, 1, sizeof(block), file)) > 0;) bytes.append(block, got);
+        std::fclose(file);
+    }
+    return bytes;
+}
+
+// Only what the hosting Ranga publishes is served: the list, its signature and files\ by plain names (letters,
+// digits, _ - . and one folder), never anything outside the update's folder.
+void ServeHttp(Player& player) {
+    const auto end = std::search(player.in.begin(), player.in.end(), "\r\n\r\n", "\r\n\r\n" + 4);
+    if (end == player.in.end()) {
+        if (player.in.size() > 8192) player.closing = true;
+        return;
+    }
+    const std::string request(player.in.begin(), end);
+    player.in.clear();
+    const size_t space = request.find(' ', 4);
+    const std::string path = space == std::string::npos ? "" : request.substr(4, space - 4);
+    bool safe = !g_updates.empty() && path.find("..") == std::string::npos;
+    for (const char c : path) safe = safe && (std::isalnum(static_cast<unsigned char>(c)) || c == '/' || c == '_' || c == '-' || c == '.');
+    std::string file;
+    if (safe && path == "/ranga/manifest") file = g_updates + "\\manifest.txt";
+    else if (safe && path == "/ranga/manifest.sig") file = g_updates + "\\manifest.sig";
+    else if (safe && path.rfind("/ranga/f/", 0) == 0 && path.size() > 9 && std::count(path.begin() + 9, path.end(), '/') <= 1) {
+        std::string relative = path.substr(9);
+        std::replace(relative.begin(), relative.end(), '/', '\\');
+        file = g_updates + "\\files\\" + relative;
+    }
+    const std::string body = file.empty() ? std::string() : ReadWhole(file);
+    if (file.empty() || body.empty()) {
+        Answer(player, 404, "");
+        return;
+    }
+    Answer(player, 200, body);
+    Log("atualização: %s -> %s (%zu bytes)", path.c_str(), player.address.c_str(), body.size());
+}
 
 std::vector<std::unique_ptr<Player>> g_players;
 // game -> who sits at each slot
@@ -159,6 +217,7 @@ int main(int argc, char** argv) {
     for (int i = 1; i + 1 < argc; ++i) {
         if (std::strcmp(argv[i], "--port") == 0) port = std::atoi(argv[++i]);
         else if (std::strcmp(argv[i], "--log") == 0) g_log = std::fopen(argv[++i], "a");
+        else if (std::strcmp(argv[i], "--atualizacao") == 0) g_updates = argv[++i];
     }
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--lan") == 0) lan = true;
@@ -223,6 +282,12 @@ int main(int argc, char** argv) {
                     if (got == 0 || WSAGetLastError() != WSAEWOULDBLOCK) player->closing = true;
                 } else {
                     player->in.insert(player->in.end(), buffer.begin(), buffer.begin() + got);
+                    // A Ranga asking for an update (HTTP) instead of sitting at a table.
+                    if (player->slot < 0 && (player->http || (player->in.size() >= 4 && std::memcmp(player->in.data(), "GET ", 4) == 0))) {
+                        player->http = true;
+                        ServeHttp(*player);
+                        continue;
+                    }
                     if (!RangaNet::TakeMessages(player->in, [&](uint8_t type, const uint8_t* body, size_t size) { Handle(*player, type, body, size); })) {
                         Log("%s mandou dados que não são do Ranga", player->address.c_str());
                         player->closing = true;
@@ -243,6 +308,7 @@ int main(int argc, char** argv) {
             if (player->outAt == player->out.size()) {
                 player->out.clear();
                 player->outAt = 0;
+                if (player->closeWhenSent) player->closing = true;
             } else if (player->outAt > (8u << 20)) {
                 player->out.erase(player->out.begin(), player->out.begin() + static_cast<std::ptrdiff_t>(player->outAt));
                 player->outAt = 0;
