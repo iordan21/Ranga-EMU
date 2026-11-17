@@ -859,7 +859,8 @@ struct Client {
     }
 
     void AddGame() {
-        Browse(L"Escolha a pasta do jogo (PS5, Bloodborne, PS3, Xbox 360 ou Wii U)", library.Root(), true, {}, [this](const std::wstring& folder) {
+        const wchar_t* title = ShowPs4Ps5(library.Root()) ? L"Escolha a pasta do jogo (PS5, Bloodborne, PS3, Xbox 360 ou Wii U)" : L"Escolha a pasta do jogo (PS3, Xbox 360 ou Wii U)";
+        Browse(title, library.Root(), true, {}, [this](const std::wstring& folder) {
             std::wstring error;
             const int index = library.Add(folder, error);
             if (index < 0) Notify(error);
@@ -1224,9 +1225,12 @@ struct Client {
     };
 
     std::vector<Shelf> Shelves() {
-        std::vector<Shelf> shelves = {{L"PS5"}};
-        for (const auto& game : library.Games()) {
-            if (game.system == L"PS4") { shelves.push_back({L"PS4"}); break; }
+        std::vector<Shelf> shelves;
+        if (ShowPs4Ps5(library.Root())) {
+            shelves.push_back({L"PS5"});
+            for (const auto& game : library.Games()) {
+                if (game.system == L"PS4") { shelves.push_back({L"PS4"}); break; }
+            }
         }
         for (const auto& system : Systems()) shelves.push_back({system.id});
         for (auto& shelf : shelves) {
@@ -1648,7 +1652,7 @@ struct Client {
                 ImGui::SetItemDefaultFocus();
                 ShowRing();
             }
-            ImGui::TextDisabled("   PS5, Bloodborne, PS3, Xbox 360, Wii U");
+            ImGui::TextDisabled(ShowPs4Ps5(library.Root()) ? "   PS5, Bloodborne, PS3, Xbox 360, Wii U" : "   PS3, Xbox 360, Wii U");
             ImGui::Separator();
             if (ImGui::Selectable("Arquivo do jogo...")) pending = [this] { AddGameFile(); };
             ImGui::TextDisabled("   ISO, CHD, ROM, NSP, WBFS e outros");
@@ -3139,6 +3143,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     // RangaEmu.exe --servidor: this PC hosts rooms; the rooms section shows from now on.
     if (commandLine != nullptr && wcsstr(commandLine, L"--servidor") != nullptr) SetRoomServerEnabled(root, true);
+    if (commandLine != nullptr && wcsstr(commandLine, L"--mostrar-ps4-ps5") != nullptr) SetShowPs4Ps5(root, true);
+    if (commandLine != nullptr && wcsstr(commandLine, L"--esconder-ps4-ps5") != nullptr) SetShowPs4Ps5(root, false);
 
     ImGui_ImplWin32_EnableDpiAwareness();
     const float scale = ImGui_ImplWin32_GetDpiScaleForMonitor(MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY));

@@ -327,7 +327,7 @@ int Library::ScanGamesFolders(const std::wstring& only) {
     };
     std::vector<std::wstring> ids;
     if (only.empty()) {
-        ids.push_back(L"PS5");
+        if (ShowPs4Ps5(root)) ids.push_back(L"PS5");
         for (const auto& system : Systems()) ids.push_back(system.id);
     } else {
         ids.push_back(only);

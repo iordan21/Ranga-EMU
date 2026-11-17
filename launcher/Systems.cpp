@@ -667,6 +667,13 @@ void RepairLinks(const std::wstring& root) {
     }
 }
 
+bool ShowPs4Ps5(const std::wstring& root) { return ReadIni(EnginesIni(root), L"Ranga", L"ps4ps5", L"0") == L"1"; }
+
+void SetShowPs4Ps5(const std::wstring& root, bool on) {
+    EnsureUnicodeIni(EnginesIni(root));
+    WritePrivateProfileStringW(L"Ranga", L"ps4ps5", on ? L"1" : nullptr, EnginesIni(root).c_str());
+}
+
 std::wstring Quality(const std::wstring& root) {
     const std::wstring level = ReadIni(EnginesIni(root), L"Ranga", L"qualidade", L"bom");
     return level == L"ruim" || level == L"fraco" || level == L"otimo" ? level : L"bom";
