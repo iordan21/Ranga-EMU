@@ -7,6 +7,7 @@
 #include "Runner.hpp"
 #include "Systems.hpp"
 #include "Rooms.hpp"
+#include "ConsoleGraphics.hpp"
 
 #include <d3d11.h>
 #include <shellapi.h>
@@ -82,6 +83,57 @@ bool CreateDevice(HWND hwnd) {
     if (result != S_OK) return false;
     CreateTarget();
     return true;
+}
+
+// RANGA_CLIENT_SHOT=<file.bmp>: the window's own picture written there once a second, straight from what it draws, for
+// the interface tests; with it the window draws even when Windows says no one sees it (a screen asleep).
+void WriteShot(const wchar_t* path) {
+    ID3D11Texture2D* back = nullptr;
+    if (FAILED(g_swapChain->GetBuffer(0, IID_PPV_ARGS(&back)))) return;
+    D3D11_TEXTURE2D_DESC description;
+    back->GetDesc(&description);
+    description.Usage = D3D11_USAGE_STAGING;
+    description.BindFlags = 0;
+    description.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    description.MiscFlags = 0;
+    ID3D11Texture2D* copy = nullptr;
+    if (SUCCEEDED(g_device->CreateTexture2D(&description, nullptr, &copy))) {
+        g_context->CopyResource(copy, back);
+        D3D11_MAPPED_SUBRESOURCE mapped;
+        if (SUCCEEDED(g_context->Map(copy, 0, D3D11_MAP_READ, 0, &mapped))) {
+            const int width = static_cast<int>(description.Width), height = static_cast<int>(description.Height);
+            std::vector<unsigned char> pixels(static_cast<size_t>(width) * height * 4);
+            for (int y = 0; y < height; ++y) {
+                const auto* row = static_cast<const unsigned char*>(mapped.pData) + static_cast<size_t>(y) * mapped.RowPitch;
+                unsigned char* out = pixels.data() + static_cast<size_t>(height - 1 - y) * width * 4;
+                for (int x = 0; x < width; ++x) {
+                    out[x * 4 + 0] = row[x * 4 + 2];
+                    out[x * 4 + 1] = row[x * 4 + 1];
+                    out[x * 4 + 2] = row[x * 4 + 0];
+                    out[x * 4 + 3] = 255;
+                }
+            }
+            g_context->Unmap(copy, 0);
+            BITMAPFILEHEADER file{};
+            BITMAPINFOHEADER info{};
+            info.biSize = sizeof(info);
+            info.biWidth = width;
+            info.biHeight = height;
+            info.biPlanes = 1;
+            info.biBitCount = 32;
+            file.bfType = 0x4D42;
+            file.bfOffBits = sizeof(file) + sizeof(info);
+            file.bfSize = static_cast<DWORD>(file.bfOffBits + pixels.size());
+            if (FILE* out = _wfopen(path, L"wb")) {
+                std::fwrite(&file, sizeof(file), 1, out);
+                std::fwrite(&info, sizeof(info), 1, out);
+                std::fwrite(pixels.data(), 1, pixels.size(), out);
+                std::fclose(out);
+            }
+        }
+        copy->Release();
+    }
+    back->Release();
 }
 
 void ReleaseDevice() {
@@ -480,6 +532,18 @@ struct Client {
     // 2 host. The core reads them when the game starts.
     int roomMode = 0;
     std::array<char, 128> roomAddress{}, roomPort{}, roomNickname{}, roomPassword{};
+    // Online play of the classics (Ranga Retro's own, Netplay.hpp): this game's choice and the table server's state.
+    std::array<char, 128> onlineAddress{}, onlineName{};
+    bool onlineOn = false;
+    int onlineDelay = 4;
+    // The servers beside the Switch's rooms (Rooms.hpp Extra), by kind: the port typed, whether it runs, why not.
+    std::array<char, 8> serverPort[2]{};
+    bool serverRunning[2] = {};
+    ULONGLONG serverCheckedAt[2] = {};
+    std::wstring serverProblem[2];
+    // The 3DS's room: this game's choice.
+    bool room3dsOn = false;
+    std::array<char, 128> room3dsAddress{}, room3dsName{};
     // The Controle tab: the console's button map as read from its file, and the RetroPad button waiting for a press
     // (-1 when none), with the buttons already down when the wait began and when it gives up.
     std::wstring controlsSystem;
@@ -562,6 +626,64 @@ struct Client {
         return missingText;
     }
 
+    static bool ClassicOnline(const std::wstring& system) {
+        static const wchar_t* consoles[] = {L"NES", L"SNES", L"MD", L"SMS", L"SEGACD", L"PCE", L"A2600", L"ARCADE", L"GB", L"GBA",
+                                            L"PS1", L"N64", L"SATURN", L"NDS", L"DC", L"GC", L"WII", L"PS2"};
+        for (const wchar_t* id : consoles) if (system == id) return true;
+        return false;
+    }
+
+    std::wstring RememberedOnline(const wchar_t* key) const { return ReadIni(library.Root() + L"\\engines.ini", L"Ranga", key, L""); }
+    void RememberOnline(const wchar_t* key, const std::string& value) {
+        const std::wstring ini = library.Root() + L"\\engines.ini";
+        EnsureUnicodeIni(ini);
+        WritePrivateProfileStringW(L"Ranga", key, Wide(value).c_str(), ini.c_str());
+    }
+
+    void LoadOnline(const Game& game) {
+        onlineOn = ReadCoreOption(game, "ranga_online") == "ligado";
+        const auto fill = [&](std::array<char, 128>& field, const char* key, std::string remembered) {
+            const std::string own = ReadCoreOption(game, key);
+            const std::string value = own.empty() ? remembered : own;
+            field.fill(0);
+            value.copy(field.data(), field.size() - 1);
+            if (value != own && !value.empty()) WriteCoreOption(game, key, value);
+        };
+        // What was last typed for any game; the name falls back to the Switch player's.
+        std::string name = Utf8(RememberedOnline(L"online_nome"));
+        if (name.empty()) name = Utf8(RememberedSwitch(L"jogador"));
+        fill(onlineAddress, "ranga_online_endereco", Utf8(RememberedOnline(L"online_endereco")));
+        fill(onlineName, "ranga_online_nome", name);
+        const int delay = std::atoi(ReadCoreOption(game, "ranga_online_atraso").c_str());
+        onlineDelay = delay >= 2 && delay <= 8 ? delay : 4;
+        LoadServerPorts();
+    }
+
+    void LoadServerPorts() {
+        for (const Extra extra : {Extra::Classics, Extra::Rooms3ds}) {
+            const std::string port = std::to_string(ExtraPort(library.Root(), extra));
+            auto& field = serverPort[static_cast<int>(extra)];
+            field.fill(0);
+            port.copy(field.data(), field.size() - 1);
+        }
+    }
+
+    void Load3dsRoom(const Game& game) {
+        room3dsOn = ReadCoreOption(game, "citra_sala") == "entrar";
+        const auto fill = [&](std::array<char, 128>& field, const char* key, std::string remembered) {
+            const std::string own = ReadCoreOption(game, key);
+            const std::string value = own.empty() ? remembered : own;
+            field.fill(0);
+            value.copy(field.data(), field.size() - 1);
+            if (value != own && !value.empty()) WriteCoreOption(game, key, value);
+        };
+        std::string name = Utf8(RememberedOnline(L"online_nome"));
+        if (name.empty()) name = Utf8(RememberedSwitch(L"jogador"));
+        fill(room3dsAddress, "citra_sala_endereco", Utf8(RememberedOnline(L"sala3ds_endereco")));
+        fill(room3dsName, "citra_sala_nome", name);
+        LoadServerPorts();
+    }
+
     Game* Current() { return selected >= 0 && selected < static_cast<int>(library.Games().size()) ? &library.Games()[static_cast<size_t>(selected)] : nullptr; }
 
     void Select(int index) {
@@ -599,6 +721,12 @@ struct Client {
                 LoadContent(*game);
                 graphics.clear();
                 for (const auto& option : kSwitchGraphics) graphics[option.key] = ReadCoreOption(*game, option.key);
+            }
+            if (ClassicOnline(game->system)) LoadOnline(*game);
+            if (game->system == L"3DS") Load3dsRoom(*game);
+            if (const auto* list = ConsoleGraphics(game->system); list != nullptr && EngineFor(game->system).native) {
+                graphics.clear();
+                for (const auto& option : *list) graphics[option.key] = ReadCoreOption(*game, option.key);
             }
             library.Select(game->titleId);
             // The Bloodborne port and the emulators write everything to game.log; PS5 games put their errors in game.err.
@@ -1568,6 +1696,11 @@ struct Client {
             ImGui::SetCursorPosX(labelWidth);
             ImGui::TextDisabled("%s", notes[level]);
             if (game.system == L"SWITCH") SwitchGraphics(game, label, labelWidth, scale);
+            else if (const auto* list = ConsoleGraphics(game.system); list != nullptr && EngineFor(game.system).native)
+                GraphicsSection(game, *list, ("Gráficos do " + SystemName(game.system) + " (só este jogo)").c_str(),
+                                "Automático segue a Qualidade acima ou o padrão do console. Vale quando o jogo abrir de novo; no jogo, o menu (Esc "
+                                "ou botão PS/Guide) > Opções do core mostra todas as opções do console.",
+                                label, labelWidth, scale);
         }
         if (profile.sonsOfSparta) {
             const char* resolutions[] = {"Manter a do jogo", "3840 x 2160 (4K)", "2560 x 1440", "1920 x 1080"};
@@ -1631,6 +1764,9 @@ struct Client {
             ImGui::TextWrapped("Jogo experimental: o Ranga Emu só foi testado com God of War Sons of Sparta. Este jogo pode travar ou nem abrir. Se der erro, a aba Log mostra o que aconteceu.");
             ImGui::PopStyleColor();
         }
+        if (ClassicOnline(game.system) && EngineFor(game.system).native) OnlineSection(game, label, labelWidth, scale);
+        if (game.system == L"PSP" && EngineFor(game.system).native) PspOnlineSection(game, label, scale);
+        if (game.system == L"3DS" && EngineFor(game.system).native) Room3dsSection(game, label, labelWidth, scale);
         if (game.system == L"SWITCH" && EngineFor(game.system).native) {
             // Eden's multiplayer rooms: the game's local wireless / LAN mode goes through a room over UDP. The core
             // joins or hosts the room when the game starts, so nothing here changes a game that is already open.
@@ -1824,6 +1960,180 @@ struct Client {
 
     // The rooms this PC keeps open for everyone (Eden's room server), each with its name, port, password and limit,
     // switched on and off here. Everyone, this PC's owner too, then joins with "Entrar em uma sala".
+    // Online play of the classics: every player runs the same game in Ranga and only the buttons travel, through the
+    // table server (tools\ranga-sala.exe) on the PC that hosts. The first to open the game runs it for the others.
+    template <typename Label> void OnlineSection(const Game& game, Label& label, float labelWidth, float scale) {
+        ImGui::Dummy(ImVec2(0, 6 * scale));
+        ImGui::Separator();
+        ImGui::Dummy(ImVec2(0, 2 * scale));
+        const bool running = runner.Busy() && runner.TitleId() == game.titleId;
+        ImGui::BeginDisabled(running);
+        label("Jogar online");
+        if (ImGui::Checkbox("##online", &onlineOn)) WriteCoreOption(game, "ranga_online", onlineOn ? "ligado" : "desligado");
+        ImGui::SameLine();
+        ImGui::TextDisabled(onlineOn ? "ligado: o jogo entra na sala quando abrir" : "desligado");
+        if (onlineOn) {
+            const auto field = [&](const char* name, const char* id, std::array<char, 128>& text, const char* key, const wchar_t* remembered) {
+                label(name);
+                ImGui::InputText(id, text.data(), text.size());
+                if (ImGui::IsItemDeactivatedAfterEdit()) {
+                    WriteCoreOption(game, key, text.data());
+                    RememberOnline(remembered, text.data());
+                }
+            };
+            field("Endereço da sala", "##onlineAddress", onlineAddress, "ranga_online_endereco", L"online_endereco");
+            field("Seu nome", "##onlineName", onlineName, "ranga_online_nome", L"online_nome");
+            label("Atraso");
+            if (ImGui::SliderInt("##onlineDelay", &onlineDelay, 2, 8, "%d quadros")) WriteCoreOption(game, "ranga_online_atraso", std::to_string(onlineDelay));
+            if (onlineAddress[0] == 0) {
+                ImGui::SetCursorPosX(labelWidth);
+                ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
+                ImGui::TextUnformatted("Falta o endereço da sala (o do playit que o dono passou).");
+                ImGui::PopStyleColor();
+            }
+            ImGui::SetCursorPosX(labelWidth);
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextDisabled("Todos abrem o mesmo jogo (o mesmo arquivo) com o mesmo endereço. Quem abrir primeiro é o anfitrião: os outros "
+                                "entram no jogo dele, até 4 jogadores, cada um com o próprio controle. Os estados (salvar/carregar) ficam "
+                                "desligados enquanto joga online, e o save de quem entra não é mexido.");
+            ImGui::SetCursorPosX(labelWidth);
+            ImGui::TextDisabled("Atraso: quanto maior, menos o jogo para esperando o amigo, mas os botões respondem um pouco depois. "
+                                "4 serve para quase todos; suba se o título mostrar \"esperando o outro jogador\" com frequência.");
+            if (game.system == L"NDS" || game.system == L"DC" || game.system == L"N64" || game.system == L"SATURN" || game.system == L"GC" ||
+                game.system == L"WII" || game.system == L"PS2") {
+                ImGui::SetCursorPosX(labelWidth);
+                ImGui::TextDisabled("Neste console o online é experimental: o estado do jogo é grande e pode demorar alguns segundos para o amigo entrar.");
+            }
+            ImGui::PopTextWrapPos();
+        }
+        ImGui::EndDisabled();
+        if (running) ImGui::TextDisabled("Feche o jogo para mudar o online.");
+        ServerSection(Extra::Classics, label, labelWidth, scale);
+    }
+
+    // The 3DS's local wireless through Azahar's room (as the Switch's): every player joins the room, and in the game
+    // they meet as if side by side. The room server runs on the PC that hosts (tools\azahar-room.exe, UDP).
+    template <typename Label> void Room3dsSection(const Game& game, Label& label, float labelWidth, float scale) {
+        ImGui::Dummy(ImVec2(0, 6 * scale));
+        ImGui::Separator();
+        ImGui::Dummy(ImVec2(0, 2 * scale));
+        const bool running = runner.Busy() && runner.TitleId() == game.titleId;
+        ImGui::BeginDisabled(running);
+        label("Sala online");
+        if (ImGui::Checkbox("##room3ds", &room3dsOn)) WriteCoreOption(game, "citra_sala", room3dsOn ? "entrar" : "desligada");
+        ImGui::SameLine();
+        ImGui::TextDisabled(room3dsOn ? "ligada: o jogo entra na sala quando abrir" : "desligada");
+        if (room3dsOn) {
+            label("Endereço da sala");
+            ImGui::InputText("##room3dsAddress", room3dsAddress.data(), room3dsAddress.size());
+            if (ImGui::IsItemDeactivatedAfterEdit()) {
+                WriteCoreOption(game, "citra_sala_endereco", room3dsAddress.data());
+                RememberOnline(L"sala3ds_endereco", room3dsAddress.data());
+            }
+            label("Seu nome");
+            ImGui::InputText("##room3dsName", room3dsName.data(), 32);
+            if (ImGui::IsItemDeactivatedAfterEdit()) {
+                WriteCoreOption(game, "citra_sala_nome", room3dsName.data());
+                RememberOnline(L"online_nome", room3dsName.data());
+            }
+            ImGui::SetCursorPosX(labelWidth);
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextDisabled("Igual à sala do Switch: todos entram na mesma sala e, no jogo, escolhem o multijogador local (sem fio). "
+                                "Cada um precisa de um nome diferente. É a sala do 3DS, com endereço próprio (não serve o do Switch).");
+            ImGui::PopTextWrapPos();
+        }
+        ImGui::EndDisabled();
+        if (running) ImGui::TextDisabled("Feche o jogo para mudar a sala.");
+        ServerSection(Extra::Rooms3ds, label, labelWidth, scale);
+    }
+
+    // The PSP's own online: its local wireless (ad hoc), through a public PRO ad hoc server kept by fans. PPSSPP's
+    // server takes a fixed port (27312) and a plain IP, and the players' consoles then talk to each other directly, so
+    // a playit tunnel cannot carry it; the public servers can, when the players' routers let the games through (UPnP).
+    template <typename Label> void PspOnlineSection(const Game& game, Label& label, float scale) {
+        ImGui::Dummy(ImVec2(0, 6 * scale));
+        ImGui::Separator();
+        ImGui::Dummy(ImVec2(0, 2 * scale));
+        const bool running = runner.Busy() && runner.TitleId() == game.titleId;
+        ImGui::BeginDisabled(running);
+        static const char* servers[] = {"socom.cc", "psp.gameplayer.club", "myneighborsushicat.com"};
+        const bool on = ReadCoreOption(game, "ppsspp_enable_wlan") == "enabled";
+        const std::string server = ReadCoreOption(game, "ppsspp_change_pro_ad_hoc_server_address");
+        int picked = 0;
+        for (int i = 0; i < 3; ++i) if (server == servers[i]) picked = i;
+        label("Online (ad hoc)");
+        bool wanted = on;
+        if (ImGui::Checkbox("##pspOnline", &wanted)) {
+            WriteCoreOption(game, "ppsspp_enable_wlan", wanted ? "enabled" : "disabled");
+            WriteCoreOption(game, "ppsspp_change_pro_ad_hoc_server_address", servers[picked]);
+        }
+        if (wanted) {
+            label("Servidor");
+            if (ImGui::Combo("##pspServer", &picked, servers, 3)) WriteCoreOption(game, "ppsspp_change_pro_ad_hoc_server_address", servers[picked]);
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextDisabled("Para jogos com multijogador local do PSP (Monster Hunter, Tekken, Ridge Racer...). Todos escolhem o mesmo servidor "
+                                "e, no jogo, o modo ad hoc / multijogador local. É um servidor público de fãs, não o playit: os PSPs conversam "
+                                "direto entre si, então depende do roteador de cada um deixar passar (UPnP ligado). Se não conectar, é o roteador.");
+            ImGui::PopTextWrapPos();
+        }
+        ImGui::EndDisabled();
+        if (running) ImGui::TextDisabled("Feche o jogo para mudar o online.");
+    }
+
+    // A server on the PC that hosts (RangaEmu.exe --servidor once), as the Switch's rooms: the classics' table server or
+    // the 3DS's room server.
+    template <typename Label> void ServerSection(Extra extra, Label& label, float labelWidth, float scale) {
+        if (!RoomServerEnabled(library.Root())) return;
+        const int k = static_cast<int>(extra);
+        const bool classics = extra == Extra::Classics;
+        if (GetTickCount64() - serverCheckedAt[k] > 2000) {
+            serverRunning[k] = ExtraRunning(library.Root(), extra);
+            serverCheckedAt[k] = GetTickCount64();
+        }
+        ImGui::PushID(k);
+        ImGui::Dummy(ImVec2(0, 6 * scale));
+        ImGui::SetCursorPosX(labelWidth);
+        ImGui::PushStyleColor(ImGuiCol_Text, Color(kText));
+        ImGui::TextUnformatted(classics ? "Sala dos clássicos deste PC (servidor)" : "Sala do 3DS deste PC (servidor)");
+        ImGui::PopStyleColor();
+        ImGui::SetCursorPosX(labelWidth);
+        ImGui::PushTextWrapPos(0);
+        if (classics)
+            ImGui::TextDisabled("Uma sala só serve para todos os jogos clássicos. Precisa de um túnel TCP do playit para 127.0.0.1 nesta porta; "
+                                "o endereço do túnel é o que todos (você também, ou 127.0.0.1:porta) põem em \"Endereço da sala\".");
+        else
+            ImGui::TextDisabled("Uma sala serve para todos os jogos de 3DS. Precisa de um túnel UDP do playit para 127.0.0.1 nesta porta; "
+                                "o endereço do túnel é o que todos (você também, ou 127.0.0.1:porta) põem em \"Endereço da sala\".");
+        ImGui::PopTextWrapPos();
+        label("Porta");
+        ImGui::BeginDisabled(serverRunning[k]);
+        ImGui::InputText("##serverPort", serverPort[k].data(), serverPort[k].size(), ImGuiInputTextFlags_CharsDecimal);
+        if (ImGui::IsItemDeactivatedAfterEdit()) SetExtraPort(library.Root(), extra, std::atoi(serverPort[k].data()));
+        ImGui::EndDisabled();
+        ImGui::SetCursorPosX(labelWidth);
+        ImGui::PushStyleColor(ImGuiCol_Text, Color(serverRunning[k] ? kGreen : kDim));
+        if (serverRunning[k]) ImGui::Text(classics ? "Ligada na porta %d (TCP)" : "Ligada na porta %d (UDP)", ExtraPort(library.Root(), extra));
+        else ImGui::TextUnformatted("Desligada");
+        ImGui::PopStyleColor();
+        ImGui::SameLine();
+        if (ImGui::Button(serverRunning[k] ? "Desligar" : "Ligar")) {
+            if (serverRunning[k]) {
+                StopExtra(library.Root(), extra);
+                serverProblem[k].clear();
+            } else {
+                serverProblem[k] = StartExtra(library.Root(), extra);
+            }
+            serverCheckedAt[k] = 0;
+        }
+        if (!serverProblem[k].empty()) {
+            ImGui::SetCursorPosX(labelWidth);
+            ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
+            ImGui::TextWrapped("%s", Utf8(serverProblem[k]).c_str());
+            ImGui::PopStyleColor();
+        }
+        ImGui::PopID();
+    }
+
     template <typename Label> void RoomsSection(const Game& game, Label& label, float labelWidth, float scale) {
         // Only on the PC that hosts (RangaEmu.exe --servidor once): friends just join an address.
         if (!RoomServerEnabled(library.Root())) return;
@@ -1956,13 +2266,6 @@ struct Client {
 
     // The Switch core's graphics options, each with "Automático" first (what the Qualidade level sets). The core
     // applies the filter, its sharpness and the anti-aliasing while the game runs; the rest when it opens again.
-    struct GraphicsOption {
-        const char* group;
-        const char* key;
-        const char* label;
-        std::vector<std::pair<const char*, const char*>> values;
-        const char* note;
-    };
     inline static const std::vector<GraphicsOption> kSwitchGraphics = {
         {"Imagem", "eden_resolucao", "Resolução",
          {{"auto", "Automático"}, {"0.5x", "0,5x (360p, PC bem fraco)"}, {"0.75x", "0,75x (540p)"}, {"1x", "1x (720p/1080p, original)"},
@@ -2007,13 +2310,21 @@ struct Client {
     };
 
     template <typename Label> void SwitchGraphics(const Game& game, Label& label, float labelWidth, float scale) {
+        GraphicsSection(game, kSwitchGraphics, "Gráficos do Switch (só este jogo)",
+                        "Automático segue a Qualidade acima. Filtro, nitidez e antisserrilhado também mudam no menu do jogo (Esc ou botão PS/Guide), na hora; o resto vale ao reabrir.",
+                        label, labelWidth, scale);
+    }
+
+    // A console's graphics options on the game page, in groups, each a list of the values the core takes.
+    template <typename Label> void GraphicsSection(const Game& game, const std::vector<GraphicsOption>& options, const char* title, const char* closing, Label& label,
+                                                   float labelWidth, float scale) {
         ImGui::Dummy(ImVec2(0, 4 * scale));
         ImGui::SetCursorPosX(labelWidth);
         ImGui::PushStyleColor(ImGuiCol_Text, Color(kText));
-        ImGui::TextUnformatted("Gráficos do Switch (só este jogo)");
+        ImGui::TextUnformatted(title);
         ImGui::PopStyleColor();
         const char* group = "";
-        for (const auto& option : kSwitchGraphics) {
+        for (const auto& option : options) {
             if (std::strcmp(group, option.group) != 0) {
                 group = option.group;
                 ImGui::SetCursorPosX(labelWidth);
@@ -2047,7 +2358,7 @@ struct Client {
         }
         ImGui::SetCursorPosX(labelWidth);
         ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled("Automático segue a Qualidade acima. Filtro, nitidez e antisserrilhado também mudam no menu do jogo (Esc ou botão PS/Guide), na hora; o resto vale ao reabrir.");
+        ImGui::TextDisabled("%s", closing);
         ImGui::PopTextWrapPos();
     }
 
@@ -2929,7 +3240,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
             if (message.message == WM_QUIT) done = true;
         }
         if (done) break;
-        if (IsIconic(hwnd) || (g_occluded && g_swapChain->Present(0, DXGI_PRESENT_TEST) == DXGI_STATUS_OCCLUDED)) {
+        static const wchar_t* shotPath = _wgetenv(L"RANGA_CLIENT_SHOT");
+        if (IsIconic(hwnd) || (shotPath == nullptr && g_occluded && g_swapChain->Present(0, DXGI_PRESENT_TEST) == DXGI_STATUS_OCCLUDED)) {
             Sleep(50);
             if (!IsIconic(hwnd)) g_occluded = false;
             client.Watch();
@@ -2956,7 +3268,16 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
         g_context->OMSetRenderTargets(1, &g_target, nullptr);
         g_context->ClearRenderTargetView(g_target, clearColor);
         ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+        if (shotPath != nullptr) {
+            static ULONGLONG shotAt = 0;
+            if (GetTickCount64() - shotAt > 1000) {
+                WriteShot(shotPath);
+                shotAt = GetTickCount64();
+            }
+        }
         g_occluded = g_swapChain->Present(1, 0) == DXGI_STATUS_OCCLUDED;
+        // A screen asleep presents nothing and returns at once: the loop is held to about 60 turns a second.
+        if (shotPath != nullptr && g_occluded) Sleep(16);
     }
     g_runner = nullptr;
     g_client = nullptr;

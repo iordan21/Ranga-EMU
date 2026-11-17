@@ -12,6 +12,7 @@
 #include "libretro.h"
 #include "RangaRetroExt.h"
 #include "VulkanVideo.hpp"
+#include "Netplay.hpp"
 
 #ifndef UNICODE
 #define UNICODE
@@ -324,6 +325,16 @@ int16_t PadAnalog(int port, unsigned index, unsigned id) {
 
 void RETRO_CALLCONV InputPoll() {}
 
+Netplay::Input LocalInput() {
+    Netplay::Input input;
+    for (unsigned button = 0; button <= RETRO_DEVICE_ID_JOYPAD_R3; ++button) input.mask |= static_cast<uint16_t>(PadButton(0, button) ? 1u << button : 0u);
+    input.axis[0] = PadAnalog(0, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X);
+    input.axis[1] = PadAnalog(0, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y);
+    input.axis[2] = PadAnalog(0, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X);
+    input.axis[3] = PadAnalog(0, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y);
+    return input;
+}
+
 int16_t RETRO_CALLCONV InputState(unsigned port, unsigned device, unsigned index, unsigned id) {
     // RANGA_RETRO_DEBUG=1: each kind of question the core asks about the controls, once.
     static const bool debug = std::getenv("RANGA_RETRO_DEBUG") != nullptr;
@@ -335,6 +346,19 @@ int16_t RETRO_CALLCONV InputState(unsigned port, unsigned device, unsigned index
     // The xemu core asks for player 1 as port 2 and player 2 as port 3 (the Xbox's USB port less one, xemu's
     // port_map { 3, 4, 1, 2 }), so its dashboard and games saw no controller on ports 0 and 1.
     if (g_xemuPorts) port = (port + 2) % 4;
+    if (Netplay::Active()) {
+        const Netplay::Input& input = Netplay::InputOf(port);
+        switch (device & RETRO_DEVICE_MASK) {
+            case RETRO_DEVICE_JOYPAD:
+                if (id == RETRO_DEVICE_ID_JOYPAD_MASK) return static_cast<int16_t>(input.mask);
+                return id < 16 ? (input.mask >> id) & 1 : 0;
+            case RETRO_DEVICE_ANALOG:
+                if (index == RETRO_DEVICE_INDEX_ANALOG_BUTTON) return id < 16 && ((input.mask >> id) & 1) ? 0x7fff : 0;
+                if (index > RETRO_DEVICE_INDEX_ANALOG_RIGHT || id > RETRO_DEVICE_ID_ANALOG_Y) return 0;
+                return input.axis[index * 2 + id];
+        }
+        return 0;
+    }
     if (port >= kPorts) return 0;
     switch (device & RETRO_DEVICE_MASK) {
         case RETRO_DEVICE_JOYPAD:
@@ -506,9 +530,13 @@ bool RETRO_CALLCONV Environment(unsigned command, void* data) {
             return true;
         case RETRO_ENVIRONMENT_GET_VARIABLE: {
             auto* variable = static_cast<retro_variable*>(data);
-            const auto found = g.options.find(variable->key != nullptr ? variable->key : "");
-            variable->value = found != g.options.end() ? found->second.c_str() : nullptr;
-            return found != g.options.end();
+            const std::string key = variable->key != nullptr ? variable->key : "";
+            const std::string* value = nullptr;
+            if (const auto found = g.options.find(key); found != g.options.end()) value = &found->second;
+            // A key the core never listed but the game's options file has (Ranga's own, for the core's online rooms).
+            else if (const auto extra = g.overrides.find(key); extra != g.overrides.end()) value = &extra->second;
+            variable->value = value != nullptr ? value->c_str() : nullptr;
+            return value != nullptr;
         }
         case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE:
             *static_cast<bool*>(data) = g.optionsChanged;
@@ -691,6 +719,11 @@ private:
     std::vector<int16_t> out;
 };
 
+// The picture's filter and size on the screen, from the game's options (ranga_filtro, ranga_escala), for the cores whose
+// frames Ranga draws itself: filter 0 sharp pixels, 1 smooth, 2 old TV, 3 plain pixels; size 0 fill, 1 whole
+// multiples, 2 stretch.
+int g_screenFilter = 0, g_screenScale = 0;
+
 // Draws the frame scaled to the window with the core's aspect ratio, through "sharp bilinear": pixels stay square and
 // crisp at any size, and only the seams between them are blended.
 const char kShader[] = R"(
@@ -708,10 +741,20 @@ V vs(uint id : SV_VertexID) {
 float4 ps(V v) : SV_Target {
     float2 texel = v.uv;
     float2 floored = floor(texel);
+    if (pad.x > 2.5) return image.Sample(smooth, (floored + 0.5) / texSize);
+    if (pad.x > 0.5 && pad.x < 1.5) return image.Sample(smooth, texel / texSize);
     float2 range = 0.5 - 0.5 / scale;
     float2 center = frac(texel) - 0.5;
     float2 f = (center - clamp(center, -range, range)) * scale + 0.5;
-    return image.Sample(smooth, (floored + f) / texSize);
+    float4 color = image.Sample(smooth, (floored + f) / texSize);
+    if (pad.x > 1.5) {
+        // An old TV: dark gaps between the lines (only where a line is at least two screen rows tall) and a faint
+        // aperture grille, with the brightness given back so the picture is not dimmer overall.
+        float rows = scale.y >= 2.0 ? 0.62 + 0.38 * sin(3.14159 * frac(texel.y)) : 1.0;
+        float grille = 0.92 + 0.08 * sin(v.position.x * 2.0944);
+        color.rgb = saturate(color.rgb * rows * grille * 1.22);
+    }
+    return color;
 }
 )";
 
@@ -802,9 +845,21 @@ public:
                 height = windowHeight;
                 width = windowHeight * aspect;
             }
+            if (g_screenScale == 1) {
+                // Whole multiples of the game's lines, so every pixel is the same size (pixel perfect).
+                float times = std::floor(height / static_cast<float>(frameHeight));
+                while (times > 1 && times * frameHeight * aspect > windowWidth) times -= 1;
+                if (times >= 1) {
+                    height = times * static_cast<float>(frameHeight);
+                    width = height * aspect;
+                }
+            } else if (g_screenScale == 2) {
+                width = windowWidth;
+                height = windowHeight;
+            }
             const D3D11_VIEWPORT viewport{(windowWidth - width) / 2, (windowHeight - height) / 2, width, height, 0, 1};
             const float values[8] = {static_cast<float>(textureWidth), static_cast<float>(textureHeight), static_cast<float>(frameWidth), static_cast<float>(frameHeight),
-                                     width / static_cast<float>(frameWidth), height / static_cast<float>(frameHeight), 0, 0};
+                                     width / static_cast<float>(frameWidth), height / static_cast<float>(frameHeight), static_cast<float>(g_screenFilter), 0};
             context->UpdateSubresource(constants, 0, nullptr, values, 0, 0);
             context->OMSetRenderTargets(1, &target, nullptr);
             context->RSSetViewports(1, &viewport);
@@ -1124,6 +1179,7 @@ struct Saves {
 
     // Writes the game's own save memory when it changed since the last write.
     void FlushSram() {
+        if (Netplay::Active() && !Netplay::Hosting()) return;
         const size_t size = g.core.memorySize(RETRO_MEMORY_SAVE_RAM);
         const auto* memory = static_cast<const unsigned char*>(g.core.memoryData(RETRO_MEMORY_SAVE_RAM));
         if (size == 0 || memory == nullptr) return;
@@ -1955,6 +2011,14 @@ void ApplyCoreDefaults(const std::wstring& corePath, const std::wstring& systemD
         {L"xemu", "xemu_surface_scale", {"1", "1", "2", "3"}},
         {L"dolphin", "dolphin_efb_scale", {"1", "2", "3", "4"}},
         {L"eden", "eden_qualidade", {"ruim", "fraco", "bom", "otimo"}},
+        {L"ppsspp", "ppsspp_texture_anisotropic_filtering", {"disabled", "4x", "16x", "16x"}},
+        {L"flycast", "reicast_anisotropic_filtering", {"off", "2", "4", "16"}},
+        {L"pcsx2", "pcsx2_blending_accuracy", {"Minimum", "Basic", "Basic", "Medium"}},
+        {L"dolphin", "dolphin_max_anisotropy", {"0", "0", "0", "3"}},
+        // Shaders built in the background, the frame drawn without them meanwhile: no stutter the first time an effect
+        // shows, which is what a weak PC feels most.
+        {L"dolphin", "dolphin_shader_compilation_mode", {"3", "3", "2", "2"}},
+        {L"swanstation", "swanstation_GPU_ShaderPrecompile", {"Enabled", "Enabled", "Lazy", "Lazy"}},
     };
     for (const auto& entry : qualities) {
         if (name.rfind(entry.core, 0) == 0) g.overrides[entry.key] = entry.values[g_quality];
@@ -1992,10 +2056,60 @@ void ReadOptionsFile(const std::wstring& path) {
         while (!key.empty() && key.back() == ' ') key.pop_back();
         while (!value.empty() && value.front() == ' ') value.erase(0, 1);
         if (value.size() >= 2 && value.front() == '"' && value.back() == '"') value = value.substr(1, value.size() - 2);
+        if (value == "auto" && key.rfind("eden_", 0) != 0) continue;
         g.overrides[key] = value;
     }
 }
 
+}
+
+// Online play (Netplay.hpp), when the game's options ask for it: ranga_online = ligado, ranga_online_endereco (the
+// table server, "host:port"), ranga_online_atraso (frames, 2 to 8) and ranga_online_nome. The game is told apart by
+// the core and the file (its size and the first 8 MB), so only the same game of the same core sits at one table.
+void StartOnline(const std::wstring& corePath, const std::wstring& romPath, bool noGame) {
+    const auto option = [](const char* key) {
+        const auto found = g.overrides.find(key);
+        return found == g.overrides.end() ? std::string() : found->second;
+    };
+    if (option("ranga_online") != "ligado" || noGame) return;
+    std::string address = option("ranga_online_endereco");
+    if (address.empty()) {
+        ShowMessage(L"Online: falta o endereço da sala; jogando sozinho", 0);
+        return;
+    }
+    if (g.core.serializeSize() == 0) {
+        ShowMessage(L"Online: este core não salva estado, então não joga online", 0);
+        Log("[online] o core não salva estado\n");
+        return;
+    }
+    std::string game = Utf8(corePath.substr(corePath.find_last_of(L"\\/") + 1));
+    for (char& c : game) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    {
+        HANDLE file = CreateFileW(romPath.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+        LARGE_INTEGER size{};
+        std::vector<unsigned char> head(8u << 20);
+        DWORD read = 0;
+        if (file != INVALID_HANDLE_VALUE) {
+            GetFileSizeEx(file, &size);
+            ::ReadFile(file, head.data(), static_cast<DWORD>(head.size()), &read, nullptr);
+            CloseHandle(file);
+        }
+        uint32_t hash = 2166136261u;
+        for (DWORD i = 0; i < read; ++i) hash = (hash ^ head[i]) * 16777619u;
+        char text[64];
+        std::snprintf(text, sizeof(text), ":%llx:%08x", static_cast<unsigned long long>(size.QuadPart), hash);
+        game += text;
+    }
+    const int delay = std::clamp(std::atoi(option("ranga_online_atraso").c_str()), 0, 15);
+    Netplay::Hooks hooks;
+    hooks.stateSize = [] { return g.core.serializeSize(); };
+    hooks.saveState = [](void* data, size_t size) { return g.core.serialize(data, size); };
+    hooks.loadState = [](const void* data, size_t size) { return g.core.unserialize(data, size); };
+    hooks.log = Log;
+    hooks.message = [](const std::wstring& text) { ShowMessage(text, 240); };
+    // Players 3 and 4 need their ports too.
+    for (unsigned port = 2; port < 4; ++port) g.core.setControllerPort(port, RETRO_DEVICE_JOYPAD);
+    Netplay::Start(address, game, option("ranga_online_nome"), delay > 0 ? delay : 4, hooks);
 }
 
 int RetroMain(int argc, wchar_t** argv) {
@@ -2055,6 +2169,27 @@ int RetroMain(int argc, wchar_t** argv) {
     }
     if (!optionsPath.empty()) ReadOptionsFile(optionsPath);
     g.optionsPath = optionsPath;
+    {
+        const auto pick = [](const char* key, std::initializer_list<const char*> names) {
+            const auto found = g.overrides.find(key);
+            int index = 0;
+            for (const char* name : names) {
+                if (found != g.overrides.end() && found->second == name) return index;
+                ++index;
+            }
+            return 0;
+        };
+        g_screenFilter = pick("ranga_filtro", {"nitido", "suave", "crt", "pixel"});
+        g_screenScale = pick("ranga_escala", {"preencher", "inteira", "esticar"});
+    }
+    // Online play needs a game that runs the same on every PC from the same buttons: the cores' threads that run beside
+    // the emulated CPU (Dolphin's dual core, PCSX2's VU1 thread) make it depend on each PC's timing, so they go off.
+    if (const auto online = g.overrides.find("ranga_online"); online != g.overrides.end() && online->second == "ligado") {
+        std::wstring coreName = corePath.substr(corePath.find_last_of(L"\\/") + 1);
+        for (auto& character : coreName) character = static_cast<wchar_t>(towlower(character));
+        if (coreName.rfind(L"dolphin", 0) == 0) g.overrides["dolphin_main_cpu_thread"] = "disabled";
+        if (coreName.rfind(L"pcsx2", 0) == 0) g.overrides["pcsx2_mtvu"] = "disabled";
+    }
 
     // Per-monitor DPI awareness, so the picture is not blurred by Windows' scaling (Windows 10 1703 and later).
     using SetAwareness = BOOL(WINAPI*)(HANDLE);
@@ -2125,6 +2260,7 @@ int RetroMain(int argc, wchar_t** argv) {
     romName = romName.substr(0, romName.find_last_of(L'.'));
     Saves saves{saveDir + L"\\" + romName + L".srm", saveDir + L"\\" + romName + L".state"};
     saves.LoadSram();
+    StartOnline(corePath, romPath, noGame);
 
     Video video;
     GlVideo glVideo;
@@ -2199,17 +2335,24 @@ int RetroMain(int argc, wchar_t** argv) {
             const int picked = ShowMenu(saves.slot, fullscreen);
             if (saves.slot != slot) ShowMessage(L"Posição do estado: " + std::to_wstring(saves.slot + 1), 0);
             if (fullscreen != g_fullscreen) ToggleFullscreen();
-            if (picked == kSave) saves.SaveState();
+            const bool online = Netplay::Active();
+            if ((picked == kSave || picked == kLoad) && online) ShowMessage(L"Online: estados ficam desligados enquanto joga com amigos", 0);
+            else if (picked == kSave) saves.SaveState();
             else if (picked == kLoad) saves.LoadState();
-            else if (picked == kReset) g.core.reset();
+            else if (picked == kReset && online && !Netplay::Hosting()) ShowMessage(L"Online: só o anfitrião reinicia o jogo", 0);
+            else if (picked == kReset) {
+                g.core.reset();
+                if (online) Netplay::Resync();
+            }
             else if (picked == kQuit) g_running = false;
             // The pause leaves no catching up and no stale sound behind.
             audio.Clear();
             last = std::chrono::steady_clock::now();
             accumulator = 0;
         }
-        if (g_hotkey == VK_F5) saves.SaveState();
-        if (g_hotkey == VK_F7) saves.LoadState();
+        if ((g_hotkey == VK_F5 || g_hotkey == VK_F7) && Netplay::Active()) ShowMessage(L"Online: estados ficam desligados enquanto joga com amigos", 0);
+        else if (g_hotkey == VK_F5) saves.SaveState();
+        else if (g_hotkey == VK_F7) saves.LoadState();
         g_hotkey = 0;
         if (g_resized) {
             if (!g_hwActive && !g_coreDraws) video.Resize();
@@ -2238,9 +2381,20 @@ int RetroMain(int argc, wchar_t** argv) {
         // on a 60 Hz screen repeats one in six): presenting again on the one still in flight stalled the core's next
         // frame, and PAL games and the PS2's PAL menu ran at about 30 FPS.
         if (g_hwVulkan && (frames > 0 || !g_coreDraws)) RetroVulkan::BeginFrame();
+        Netplay::Pump();
         for (int i = 0; i < frames; ++i) {
+            if (Netplay::Active()) {
+                Netplay::Send(LocalInput());
+                Netplay::Pump();
+                if (!Netplay::Ready()) {
+                    // Waiting for a friend's controls: the loop goes on (window, sound), only the game holds.
+                    Sleep(1);
+                    break;
+                }
+            }
             if (g.frameTime.callback != nullptr) g.frameTime.callback(static_cast<retro_usec_t>(1000000.0 / fps));
             g.core.run();
+            Netplay::FrameDone();
             ++fpsFrames;
         }
         // RANGA_RETRO_STATS=1 puts the sound's loudest sample, the device queue and where a loop's time goes (the
@@ -2303,11 +2457,13 @@ int RetroMain(int argc, wchar_t** argv) {
             wchar_t text[64] = L"";
             if (measured >= 0) std::swprintf(text, 64, L" | %.0f FPS", measured);
             std::wstring next = L"Ranga Emu - " + title + text;
+            if (const std::wstring online = Netplay::Status(); !online.empty()) next += L" | " + online;
             if (tick < g.messageUntil) next += L" | " + g.message;
             if (next != shownTitle) SetWindowTextW(g_window, (shownTitle = next).c_str());
         }
     }
     saves.FlushSram();
+    Netplay::Stop();
     // The context goes first, while the game is still loaded: SwanStation, told its context is lost, switches to its
     // software renderer, which needs the game's system still there.
     if (g_hwActive && g_hw.context_destroy != nullptr) g_hw.context_destroy();

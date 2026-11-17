@@ -180,6 +180,104 @@ void StartRoomsOn(const std::wstring& root) {
     for (const Room& room : LoadRooms(root)) {
         if (room.on) StartRoomServer(root, room);
     }
+    for (const Extra extra : {Extra::Classics, Extra::Rooms3ds}) {
+        if (ExtraOn(root, extra)) StartExtra(root, extra);
+    }
+}
+
+namespace {
+
+// The servers beside Eden's rooms, one of each: Ranga's own table server and the 3DS's room server.
+struct ExtraInfo {
+    const wchar_t* section;   // in salas.ini
+    const wchar_t* exe;       // in tools
+    const wchar_t* label;     // in messages
+    const wchar_t* log;       // in salas
+    int port;
+};
+
+const ExtraInfo& Info(Extra extra) {
+    static const ExtraInfo infos[] = {
+        {L"Classicos", L"ranga-sala.exe", L"o servidor dos clássicos", L"classicos.log", 24873},
+        {L"Sala3DS", L"azahar-room.exe", L"a sala do 3DS", L"sala-3ds.log", 24874},
+    };
+    return infos[static_cast<int>(extra)];
+}
+
+std::wstring ExtraExe(const std::wstring& root, Extra extra) { return root + L"\\tools\\" + Info(extra).exe; }
+
+}
+
+int ExtraPort(const std::wstring& root, Extra extra) { return std::clamp(ReadNumber(Ini(root), Info(extra).section, L"porta", Info(extra).port), 1, 65535); }
+
+void SetExtraPort(const std::wstring& root, Extra extra, int port) {
+    EnsureUnicodeIni(Ini(root));
+    WritePrivateProfileStringW(Info(extra).section, L"porta", std::to_wstring(std::clamp(port, 1, 65535)).c_str(), Ini(root).c_str());
+}
+
+bool ExtraOn(const std::wstring& root, Extra extra) { return ReadNumber(Ini(root), Info(extra).section, L"ligada", 1) != 0; }
+
+bool ExtraRunning(const std::wstring& root, Extra extra) {
+    const unsigned long pid = static_cast<unsigned long>(ReadNumber(Ini(root), Info(extra).section, L"pid", 0));
+    if (pid == 0) return false;
+    const std::wstring path = ProcessPath(pid);
+    return !path.empty() && _wcsicmp(path.c_str(), ExtraExe(root, extra).c_str()) == 0;
+}
+
+std::wstring StartExtra(const std::wstring& root, Extra extra) {
+    const ExtraInfo& info = Info(extra);
+    EnsureUnicodeIni(Ini(root));
+    WritePrivateProfileStringW(info.section, L"ligada", L"1", Ini(root).c_str());
+    if (ExtraRunning(root, extra)) return L"";
+    if (!Exists(ExtraExe(root, extra))) return L"Falta " + std::wstring(info.label) + L" em " + ExtraExe(root, extra) + L".";
+    CreateDirectoryW(Folder(root).c_str(), nullptr);
+    const int port = ExtraPort(root, extra);
+    const std::wstring log = Folder(root) + L"\\" + info.log;
+    std::wstring command = L"\"" + ExtraExe(root, extra) + L"\" --port " + std::to_wstring(port);
+    if (extra == Extra::Classics) {
+        command += L" --log \"" + log + L"\"";
+    } else {
+        // Azahar's room: like Eden's, its ban list is read only when the file starts with its own header.
+        const std::wstring bans = Folder(root) + L"\\sala-3ds-banidos.txt";
+        if (!Exists(bans)) {
+            if (FILE* file = _wfopen(bans.c_str(), L"wb")) {
+                std::fputs("CitraRoom-BanList-1\n\n", file);
+                std::fclose(file);
+            }
+        }
+        command += L" --room-name \"Sala do Ranga (3DS)\" --max_members 8 --preferred-app \"Nintendo 3DS\" --preferred-app-id 4000000000000"
+                   L" --ban-list-file \"" + bans + L"\" --log-file \"" + log + L"\"";
+    }
+    STARTUPINFOW startup{sizeof(startup)};
+    startup.dwFlags = STARTF_USESHOWWINDOW;
+    startup.wShowWindow = SW_HIDE;
+    PROCESS_INFORMATION process{};
+    if (!CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW | DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP, nullptr,
+                        Folder(root).c_str(), &startup, &process)) {
+        return std::wstring(info.label) + L" não abriu (erro " + std::to_wstring(GetLastError()) + L").";
+    }
+    if (WaitForSingleObject(process.hProcess, 800) == WAIT_OBJECT_0) {
+        CloseHandle(process.hProcess);
+        CloseHandle(process.hThread);
+        return std::wstring(info.label) + L" fechou logo ao abrir: a porta " + std::to_wstring(port) + L" deve estar em uso. Veja salas\\" + info.log + L".";
+    }
+    WritePrivateProfileStringW(info.section, L"pid", std::to_wstring(process.dwProcessId).c_str(), Ini(root).c_str());
+    CloseHandle(process.hProcess);
+    CloseHandle(process.hThread);
+    return L"";
+}
+
+void StopExtra(const std::wstring& root, Extra extra) {
+    EnsureUnicodeIni(Ini(root));
+    WritePrivateProfileStringW(Info(extra).section, L"ligada", L"0", Ini(root).c_str());
+    if (!ExtraRunning(root, extra)) return;
+    const unsigned long pid = static_cast<unsigned long>(ReadNumber(Ini(root), Info(extra).section, L"pid", 0));
+    if (HANDLE process = OpenProcess(PROCESS_TERMINATE | SYNCHRONIZE, FALSE, pid)) {
+        TerminateProcess(process, 0);
+        WaitForSingleObject(process, 3000);
+        CloseHandle(process);
+    }
+    WritePrivateProfileStringW(Info(extra).section, L"pid", nullptr, Ini(root).c_str());
 }
 
 bool RoomsStartWithWindows() { return Exists(StartupShortcut()); }

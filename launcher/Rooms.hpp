@@ -39,6 +39,19 @@ void StopRoomServer(const std::wstring& root, const Room& room);
 // Starts every room marked on that is not running. Used when Ranga opens and by RangaEmu.exe --salas (Windows' start).
 void StartRoomsOn(const std::wstring& root);
 
+// The servers beside Eden's rooms, one of each, started and stopped with the rooms. In salas.ini, a section each with
+// porta and ligada (on unless turned off):
+//   Classics  [Classicos] tools\ranga-sala.exe: the table server of online play for the consoles whose cores have none
+//             (NES to PS2, launcher/net), TCP 24873, one for every game.
+//   Rooms3ds  [Sala3DS] tools\azahar-room.exe: Azahar's room server for the 3DS's local wireless, UDP 24874.
+enum class Extra { Classics, Rooms3ds };
+int ExtraPort(const std::wstring& root, Extra extra);
+void SetExtraPort(const std::wstring& root, Extra extra, int port);
+bool ExtraOn(const std::wstring& root, Extra extra);
+bool ExtraRunning(const std::wstring& root, Extra extra);
+std::wstring StartExtra(const std::wstring& root, Extra extra);
+void StopExtra(const std::wstring& root, Extra extra);
+
 // The shortcut in the user's Startup folder that runs RangaEmu.exe --salas when Windows starts.
 bool RoomsStartWithWindows();
 void SetRoomsStartWithWindows(const std::wstring& root, bool on);
