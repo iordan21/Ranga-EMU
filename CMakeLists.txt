@@ -67,7 +67,7 @@ add_subdirectory(core/relinker)
 if(WIN32)
     set(IMGUI_DIR ${CMAKE_SOURCE_DIR}/3rdparty/imgui)
     add_executable(RangaEmu WIN32
-        launcher/Client.cpp launcher/Common.cpp launcher/Covers.cpp launcher/Dlss5.cpp launcher/Library.cpp launcher/Runner.cpp launcher/Systems.cpp launcher/Embed.cpp launcher/Rooms.cpp launcher/ConsoleGraphics.cpp launcher/Update.cpp launcher/launcher.rc
+        launcher/Client.cpp launcher/Common.cpp launcher/Covers.cpp launcher/Dlss5.cpp launcher/Library.cpp launcher/Runner.cpp launcher/Systems.cpp launcher/Embed.cpp launcher/Rooms.cpp launcher/ConsoleGraphics.cpp launcher/Update.cpp launcher/Http.cpp launcher/PlayerProfile.cpp launcher/launcher.rc
         ${IMGUI_DIR}/imgui.cpp ${IMGUI_DIR}/imgui_draw.cpp ${IMGUI_DIR}/imgui_tables.cpp ${IMGUI_DIR}/imgui_widgets.cpp
         ${IMGUI_DIR}/backends/imgui_impl_win32.cpp ${IMGUI_DIR}/backends/imgui_impl_dx11.cpp)
     target_include_directories(RangaEmu PRIVATE ${IMGUI_DIR} ${IMGUI_DIR}/backends ${CMAKE_SOURCE_DIR}/3rdparty/stb)
@@ -75,12 +75,19 @@ if(WIN32)
     target_link_options(RangaEmu PRIVATE -municode -static)
     target_link_libraries(RangaEmu PRIVATE SDL2-static d3d11 d3dcompiler dxgi dwmapi ole32 shell32 shlwapi uuid gdi32 comctl32 winhttp bcrypt)
     # Ranga Retro: libretro cores inside Ranga's own window (launcher/retro).
-    add_executable(RangaRetro WIN32 launcher/retro/RetroMain.cpp launcher/retro/VulkanVideo.cpp launcher/retro/Netplay.cpp launcher/retro/retro.rc)
+    # RetroAchievements (3rdparty/rcheevos, MIT): the achievements Ranga Retro checks in the game's memory.
+    enable_language(C)
+    file(GLOB RCHEEVOS_SOURCES ${CMAKE_SOURCE_DIR}/3rdparty/rcheevos/src/*.c ${CMAKE_SOURCE_DIR}/3rdparty/rcheevos/src/rapi/*.c
+         ${CMAKE_SOURCE_DIR}/3rdparty/rcheevos/src/rcheevos/*.c ${CMAKE_SOURCE_DIR}/3rdparty/rcheevos/src/rhash/*.c)
+    add_library(rcheevos STATIC ${RCHEEVOS_SOURCES})
+    target_include_directories(rcheevos PUBLIC ${CMAKE_SOURCE_DIR}/3rdparty/rcheevos/include ${CMAKE_SOURCE_DIR}/3rdparty/rcheevos/src ${CMAKE_SOURCE_DIR}/3rdparty/libretro)
+    target_compile_definitions(rcheevos PUBLIC RC_CLIENT_SUPPORTS_HASH RC_DISABLE_LUA)
+    add_executable(RangaRetro WIN32 launcher/retro/RetroMain.cpp launcher/retro/VulkanVideo.cpp launcher/retro/Netplay.cpp launcher/retro/Achievements.cpp launcher/Http.cpp launcher/retro/retro.rc)
     set_target_properties(RangaRetro PROPERTIES OUTPUT_NAME ranga_retro)
     target_include_directories(RangaRetro PRIVATE ${CMAKE_SOURCE_DIR}/3rdparty/libretro ${CMAKE_SOURCE_DIR}/3rdparty/Vulkan-Headers/include)
     target_compile_definitions(RangaRetro PRIVATE UNICODE _UNICODE)
     target_link_options(RangaRetro PRIVATE -municode -static)
-    target_link_libraries(RangaRetro PRIVATE SDL2-static d3d11 d3dcompiler dxgi dwmapi opengl32 gdi32 ws2_32)
+    target_link_libraries(RangaRetro PRIVATE SDL2-static rcheevos d3d11 d3dcompiler dxgi dwmapi opengl32 gdi32 ws2_32 winhttp)
     # The table server of online play for the consoles whose cores have none (launcher/net), shipped as toolsanga-sala.exe.
     add_executable(RangaSala launcher/net/RangaSala.cpp)
     set_target_properties(RangaSala PROPERTIES OUTPUT_NAME ranga-sala)

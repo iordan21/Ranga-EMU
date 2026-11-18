@@ -4,6 +4,7 @@
 #include "Systems.hpp"
 
 #include <cstdio>
+#include <ctime>
 #include <cwchar>
 #include <utility>
 #include <vector>
@@ -225,6 +226,7 @@ void Runner::Await(PROCESS_INFORMATION& process, const std::wstring& logs, const
         if (journal != INVALID_HANDLE_VALUE) { DWORD put = 0; WriteFile(journal, line, static_cast<DWORD>(length), &put, nullptr); CloseHandle(journal); }
         if (code != 0) CopyFileW((logs + L"\\" + errorLog).c_str(), (logs + L"\\" + errorLog + L".last-error").c_str(), FALSE);
     }
+    if (ended) ended(game, static_cast<long long>(std::time(nullptr)) - seconds, seconds);
     const bool crashed = (code & 0xf0000000u) == 0xc0000000u && code != 0xcfffffffu;
     wchar_t hex[16];
     std::swprintf(hex, 16, L"0x%lx", code);
@@ -394,6 +396,8 @@ void Runner::RunExternal(const std::wstring& root, const Game& game, const Optio
     startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
     PROCESS_INFORMATION process{};
     // Emulators keep their settings, BIOS and saves beside themselves when portable, so they start from their own folder.
+    // Ranga Retro tells the console by it, for RetroAchievements (retro/Achievements.hpp).
+    SetEnvironmentVariableW(L"RANGA_SISTEMA", game.system.c_str());
     const BOOL started = CreateProcessW(nullptr, command.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, exeFolder.c_str(), &startup, &process);
     if (out != INVALID_HANDLE_VALUE) CloseHandle(out);
     if (!started) {

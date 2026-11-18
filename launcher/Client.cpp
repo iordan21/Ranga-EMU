@@ -9,6 +9,8 @@
 #include "Rooms.hpp"
 #include "ConsoleGraphics.hpp"
 #include "Update.hpp"
+#include "Http.hpp"
+#include "PlayerProfile.hpp"
 
 #include <d3d11.h>
 #include <shellapi.h>
@@ -25,6 +27,9 @@
 #include <thread>
 #include <array>
 #include <map>
+#include <set>
+#include <ctime>
+#include <cfloat>
 
 #include "imgui.h"
 #include "imgui_impl_dx11.h"
@@ -505,6 +510,108 @@ private:
     std::array<bool, Count> pressed{};
 };
 
+// A texture made from RGBA pixels in memory (the profile photos).
+Texture UploadTexture(const unsigned char* pixels, int width, int height) {
+    Texture texture;
+    texture.width = width;
+    texture.height = height;
+    D3D11_TEXTURE2D_DESC description{};
+    description.Width = static_cast<UINT>(width);
+    description.Height = static_cast<UINT>(height);
+    description.MipLevels = 1;
+    description.ArraySize = 1;
+    description.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    description.SampleDesc.Count = 1;
+    description.Usage = D3D11_USAGE_DEFAULT;
+    description.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    D3D11_SUBRESOURCE_DATA data{pixels, description.Width * 4, 0};
+    ID3D11Texture2D* image = nullptr;
+    if (SUCCEEDED(g_device->CreateTexture2D(&description, &data, &image))) {
+        D3D11_SHADER_RESOURCE_VIEW_DESC view{};
+        view.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        view.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+        view.Texture2D.MipLevels = 1;
+        g_device->CreateShaderResourceView(image, &view, &texture.view);
+        image->Release();
+    }
+    return texture;
+}
+
+// A photo for the profile: the middle square of the picture, shrunk to kAvatarSide by averaging; empty when the
+// file is no PNG or JPEG.
+std::string MakeAvatar(const std::wstring& path) {
+    const std::string bytes = ReadBytes(path);
+    if (bytes.empty()) return {};
+    int width = 0, height = 0, channels = 0;
+    unsigned char* pixels = stbi_load_from_memory(reinterpret_cast<const stbi_uc*>(bytes.data()), static_cast<int>(bytes.size()), &width, &height, &channels, 4);
+    if (pixels == nullptr) return {};
+    const int side = std::min(width, height), left = (width - side) / 2, top = (height - side) / 2, out = kAvatarSide;
+    std::string avatar(static_cast<size_t>(out) * out * 4, '\0');
+    for (int y = 0; y < out; ++y) {
+        const int y0 = top + y * side / out, y1 = std::max(y0 + 1, top + (y + 1) * side / out);
+        for (int x = 0; x < out; ++x) {
+            const int x0 = left + x * side / out, x1 = std::max(x0 + 1, left + (x + 1) * side / out);
+            unsigned long long sum[4] = {};
+            for (int sy = y0; sy < y1; ++sy) {
+                const unsigned char* row = pixels + (static_cast<size_t>(sy) * width + x0) * 4;
+                for (int sx = 0; sx < x1 - x0; ++sx) for (int c = 0; c < 4; ++c) sum[c] += row[sx * 4 + c];
+            }
+            const unsigned long long count = static_cast<unsigned long long>(y1 - y0) * (x1 - x0);
+            for (int c = 0; c < 4; ++c) avatar[(static_cast<size_t>(y) * out + x) * 4 + c] = static_cast<char>(sum[c] / count);
+        }
+    }
+    stbi_image_free(pixels);
+    return avatar;
+}
+
+// One of Ranga's own achievements: a rounded square in a color of its own with a star; grey while locked.
+void DrawMedal(ImDrawList* draw, ImVec2 min, float size, const std::string& id, bool lit) {
+    static const unsigned colors[] = {0xe5484d, 0xf5a524, 0x46a758, 0x3e8ed0, 0x8e4ec6, 0xd6409f};
+    unsigned hash = 2166136261u;
+    for (const char c : id) hash = (hash ^ static_cast<unsigned char>(c)) * 16777619u;
+    draw->AddRectFilled(min, ImVec2(min.x + size, min.y + size), Packed(lit ? colors[hash % 6] : kHover), size * 0.22f);
+    const ImVec2 center(min.x + size / 2, min.y + size * 0.53f);
+    ImVec2 points[10];
+    for (int i = 0; i < 10; ++i) {
+        const float angle = -1.5707963f + i * 0.6283185f, radius = size * (i % 2 == 0 ? 0.33f : 0.14f);
+        points[i] = ImVec2(center.x + std::cos(angle) * radius, center.y + std::sin(angle) * radius);
+    }
+    draw->AddConcavePolyFilled(points, 10, Packed(0xffffff, lit ? 0.95f : 0.16f));
+}
+
+// The color of the ring around a level, as on Steam: it changes every ten levels.
+unsigned LevelColor(int level) {
+    static const unsigned colors[] = {0x9a9ca3, 0xe5484d, 0xf08c2e, 0xf5c524, 0x46a758, 0x3e8ed0, 0x8e4ec6, 0xd6409f};
+    return colors[std::min(level / 10, 7)];
+}
+
+std::string FormatDate(long long when) {
+    if (when <= 0) return "-";
+    const time_t at = static_cast<time_t>(when);
+    tm local{};
+    localtime_s(&local, &at);
+    char text[32];
+    std::snprintf(text, sizeof(text), "%02d/%02d/%04d", local.tm_mday, local.tm_mon + 1, local.tm_year + 1900);
+    return text;
+}
+
+std::string FormatPlayed(long long seconds) {
+    char text[32];
+    if (seconds < 3600) std::snprintf(text, sizeof(text), "%lld min", seconds / 60);
+    else if (seconds < 36000) std::snprintf(text, sizeof(text), "%.1f h", static_cast<double>(seconds) / 3600.0);
+    else std::snprintf(text, sizeof(text), "%lld h", seconds / 3600);
+    return text;
+}
+
+std::string FormatAgo(long long when) {
+    const long long ago = static_cast<long long>(std::time(nullptr)) - when;
+    if (when <= 0) return "nunca";
+    if (ago < 120) return "há pouco";
+    if (ago < 3600) return "há " + std::to_string(ago / 60) + " min";
+    if (ago < 86400) return "há " + std::to_string(ago / 3600) + " h";
+    return "há " + std::to_string(ago / 86400) + (ago / 86400 == 1 ? " dia" : " dias");
+}
+
 const char* kLogFiles[] = {"game.err", "game.log", "prepare.log", "launcher.log", "dlss5.log"};
 
 struct Client {
@@ -601,6 +708,7 @@ struct Client {
     }
     ~Client() {
         if (updateThread.joinable()) updateThread.join();
+        StopProfileThreads();
     }
 
     // The update: checked in the background; when there is one, a bar at the bottom offers it.
@@ -1454,16 +1562,20 @@ struct Client {
     // Adicionar jogo and Emuladores; first is Adicionar jogo's place on the top row (TopBar).
     void TopButtons(float scale, float right, int first) {
         const float wide = 170 * scale, narrow = 130 * scale, height = 36 * scale;
-        ImGui::SetCursorPos(ImVec2(right - wide - narrow - 10 * scale, 22 * scale));
+        ImGui::SetCursorPos(ImVec2(right - wide - 2 * narrow - 20 * scale, 22 * scale));
         if (ImGui::Button("+  Adicionar jogo", ImVec2(wide, height)) || barPress == first) ImGui::OpenPopup("##add");
         FocusLast(barFocus == first, scale);
         AddMenu(scale);
         ImGui::SameLine(0, 10 * scale);
         if (ImGui::Button("Emuladores", ImVec2(narrow, height)) || barPress == first + 1) {
             enginesPage = true;
+            profileOpen = false;
             RefreshEngines();
         }
         FocusLast(barFocus == first + 1, scale);
+        ImGui::SameLine(0, 10 * scale);
+        if (ImGui::Button("Perfil", ImVec2(narrow, height)) || barPress == first + 2) OpenProfile();
+        FocusLast(barFocus == first + 2, scale);
     }
 
     // The art of a game in a box: its own square art fills it; box art of another shape sits whole on the console's
@@ -1515,7 +1627,7 @@ struct Client {
 
     void Home(float scale, const Nav& input) {
         // On the top row (Adicionar jogo, Emuladores) the gamepad moves nothing else; up from the consoles reaches it.
-        const bool inBar = TopBar(input, 2);
+        const bool inBar = TopBar(input, 3);
         const Nav nav = inBar ? Nav{} : input;
         if (!inBar && homeRow == 0 && input.up) barFocus = 0;
         const auto shelves = Shelves();
@@ -1669,7 +1781,7 @@ struct Client {
         ImDrawList* draw = ImGui::GetWindowDrawList();
         const ImVec2 origin = ImGui::GetWindowPos(), size = ImGui::GetWindowSize();
         // The top row here is Consoles, Adicionar jogo and Emuladores.
-        const bool inBar = TopBar(input, 3);
+        const bool inBar = TopBar(input, 4);
         const Nav nav = inBar ? Nav{} : input;
         if (nav.back) {
             page = Page::Home;
@@ -2989,6 +3101,10 @@ struct Client {
     void Play(Game& game) {
         Save();
         RefreshEngines();
+        // For the profile: online or not, and what the friends see as being played.
+        playOnline = OnlineChosen(game);
+        playingTitle = Utf8(game.title);
+        playingSystem = SystemName(game.system);
         runner.Start(library.Root(), game, options);
         logDirty = true;
     }
@@ -3155,8 +3271,867 @@ struct Client {
         ImGui::EndChild();
     }
 
+    // ---- The profile, Steam-style (PlayerProfile.hpp) ----
+    PlayerProfile profile;
+    bool profileLoaded = false, profileOpen = false, profileEdit = false;
+    // Whose profile the page shows: a friend's id, or empty for this player's own.
+    std::string profileViewing;
+    // Games that closed (told by the runner's thread), waiting to be counted on the window's thread.
+    struct Ended {
+        Game game;
+        long long started = 0, seconds = 0;
+        bool online = false;
+    };
+    std::mutex endedLock;
+    std::vector<Ended> endedQueue;
+    std::atomic<bool> playOnline{false};
+    std::string playingTitle, playingSystem;
+    struct Toast {
+        std::string title, text, badge;
+        double until = 0;
+    };
+    std::vector<Toast> toasts;
+    // The friends' cards, as the room handed them over the last time (SyncProfiles, in the background).
+    std::mutex friendsLock;
+    std::vector<PlayerCard> friends;
+    std::string friendsProblem;
+    long long friendsAt = 0;
+    std::thread profileThread;
+    std::atomic<bool> profileBusy{false};
+    ULONGLONG profileSyncedAt = 0;
+    uint64_t sentRevision = 0;
+    std::string sentPlaying;
+    // Pictures: this player's photo, the friends' (by id), and RetroAchievements' badges, downloaded once to
+    // perfil\insignias.
+    Texture avatarTexture;
+    std::string avatarShown;
+    std::map<std::string, std::pair<std::string, Texture>> friendAvatars;
+    std::map<std::string, Texture> badgeTextures;
+    std::set<std::string> badgeMissing, badgeAsked;
+    std::mutex badgeLock;
+    std::vector<std::string> badgeQueue;
+    std::thread badgeThread;
+    std::atomic<bool> badgeBusy{false};
+    std::atomic<int> badgeDone{0};
+    int badgeSeen = 0;
+    // Editar perfil, and the RetroAchievements sign-in running in the background.
+    std::array<char, 64> editName{};
+    std::array<char, 160> editPhrase{};
+    std::array<char, 64> raUserField{};
+    std::array<char, 128> raPasswordField{};
+    std::thread raThread;
+    std::atomic<bool> raBusy{false};
+    std::mutex raLock;
+    std::string raProblem, raTokenNew, raUserNew;
+    bool raDone = false;
+
+    void StopProfileThreads() {
+        if (profileThread.joinable()) profileThread.join();
+        // The friends see this Ranga closed at once, not five minutes later.
+        if (profileLoaded && profileSyncedAt != 0) {
+            PlayerCard card = profile.Card("", "");
+            card.closed = true;
+            HttpRequest("POST", ProfilesServer(library.Root()) + "/ranga/perfil", "segredo\t" + profile.secret + "\n" + WriteCard(card), "text/plain; charset=utf-8", "RangaEmu", 2000);
+        }
+        if (badgeThread.joinable()) badgeThread.join();
+        if (raThread.joinable()) raThread.join();
+    }
+
+    int LibraryCount() { return static_cast<int>(library.Games().size()); }
+
+    void InitProfile() {
+        profileLoaded = true;
+        profile.Load(library.Root());
+        runner.ended = [this](const Game& game, long long started, long long seconds) {
+            std::lock_guard guard(endedLock);
+            endedQueue.push_back({game, started, seconds, playOnline.load()});
+        };
+        ScanProfileRa();
+        for (const auto& title : profile.Evaluate(LibraryCount())) AddToast("Conquista desbloqueada", title, "");
+    }
+
+    void ScanProfileRa() {
+        std::vector<std::pair<std::wstring, std::wstring>> spaces;
+        std::map<std::wstring, std::pair<std::wstring, std::wstring>> info;
+        for (const auto& game : library.Games()) {
+            spaces.push_back({game.titleId, game.workspace});
+            info[game.titleId] = {game.system, game.title};
+        }
+        profile.ScanRetroAchievements(spaces, info);
+    }
+
+    void AddToast(const std::string& title, const std::string& text, const std::string& badge) {
+        toasts.push_back({title, text, badge, ImGui::GetTime() + 7.0});
+    }
+
+    // Whether the game was set to play online when it started (any of the online choices on its page).
+    static bool OnlineChosen(const Game& game) {
+        const std::string room = ReadCoreOption(game, "eden_sala");
+        return ReadCoreOption(game, "ranga_online") == "ligado" || ReadCoreOption(game, "citra_sala") == "entrar" ||
+               ReadCoreOption(game, "ppsspp_enable_wlan") == "enabled" || (!room.empty() && room != "desligada");
+    }
+
+    // The games that closed: their time goes to the profile, and what that unlocks shows at the bottom.
+    void ProcessEnded() {
+        if (!runner.Busy() && !playingTitle.empty()) {
+            playingTitle.clear();
+            playingSystem.clear();
+        }
+        std::vector<Ended> done;
+        {
+            std::lock_guard guard(endedLock);
+            done.swap(endedQueue);
+        }
+        if (done.empty()) return;
+        for (const auto& ended : done) {
+            const std::wstring& key = ended.game.titleId;
+            // The console's own menu (StartSystem) is no game.
+            if (key.size() > 8 && key.compare(key.size() - 8, 8, L"-SISTEMA") == 0) continue;
+            profile.RecordSession(key, ended.game.system, ended.game.title, ended.started, ended.seconds, ended.online);
+        }
+        ScanProfileRa();
+        for (const auto& title : profile.Evaluate(LibraryCount())) AddToast("Conquista desbloqueada", title, "");
+    }
+
+    void TakeRaLogin() {
+        std::lock_guard guard(raLock);
+        if (!raDone) return;
+        raDone = false;
+        profile.SetRetroAchievements(raUserNew, raTokenNew);
+        raTokenNew.clear();
+        AddToast("RetroAchievements", "Conectado como " + raUserNew, "");
+    }
+
+    void StartRaLogin() {
+        if (raBusy) return;
+        if (raThread.joinable()) raThread.join();
+        const std::string user = raUserField.data(), password = raPasswordField.data();
+        // The password is used once and not kept, not even in the field.
+        std::fill(raPasswordField.begin(), raPasswordField.end(), '\0');
+        {
+            std::lock_guard guard(raLock);
+            raProblem.clear();
+        }
+        if (user.empty() || password.empty()) {
+            std::lock_guard guard(raLock);
+            raProblem = "Digite o usuário e a senha do RetroAchievements.";
+            return;
+        }
+        raBusy = true;
+        raThread = std::thread([this, user, password] {
+            std::string token, name, error;
+            const bool ok = RetroAchievementsLogin(user, password, token, name, error);
+            std::lock_guard guard(raLock);
+            if (ok) {
+                raTokenNew = token;
+                raUserNew = name;
+                raDone = true;
+            } else {
+                raProblem = error;
+            }
+            raBusy = false;
+        });
+    }
+
+    // Sends this player's card to the room and takes everyone's back: at once when something changed (a game opened
+    // or closed, the profile was edited), otherwise every two minutes, so "jogando agora" and "visto" stay true.
+    void SyncProfiles(bool force) {
+        if (!profileLoaded || profileBusy) return;
+        const ULONGLONG now = GetTickCount64();
+        const std::string playing = playingTitle.empty() ? "" : playingTitle + "\t" + playingSystem;
+        const bool changed = profile.Revision() != sentRevision || playing != sentPlaying;
+        if (!force && profileSyncedAt != 0) {
+            if (!changed && now - profileSyncedAt < 120000) return;
+            if (changed && now - profileSyncedAt < 5000) return;
+        }
+        if (profileThread.joinable()) profileThread.join();
+        profileSyncedAt = now;
+        sentRevision = profile.Revision();
+        sentPlaying = playing;
+        const std::string body = "segredo\t" + profile.secret + "\n" + WriteCard(profile.Card(playingTitle, playingSystem));
+        const std::string server = ProfilesServer(library.Root());
+        profileBusy = true;
+        profileThread = std::thread([this, body, server] {
+            const HttpResult sent = HttpRequest("POST", server + "/ranga/perfil", body, "text/plain; charset=utf-8", "RangaEmu", 8000);
+            const HttpResult got = sent.status == 0 ? HttpResult{} : HttpRequest("GET", server + "/ranga/perfis", "", "", "RangaEmu", 8000);
+            {
+                std::lock_guard guard(friendsLock);
+                if (got.status == 200) {
+                    friends = ReadCards(got.body);
+                    friendsAt = static_cast<long long>(std::time(nullptr));
+                    friendsProblem.clear();
+                } else if (sent.status == 0) {
+                    friendsProblem = "A sala dos amigos não respondeu (" + server + "). O PC que hospeda precisa estar ligado, com o playit e a sala dos clássicos.";
+                } else {
+                    friendsProblem = "A sala respondeu com erro " + std::to_string(got.status) + ". O servidor da sala pode ser de uma versão antiga do Ranga.";
+                }
+                if (sent.status == 403) friendsProblem = "A sala recusou este perfil: outro Ranga já usa o mesmo código.";
+            }
+            profileBusy = false;
+        });
+    }
+
+    static bool BadgeName(const std::string& name) {
+        if (name.empty() || name.size() > 40) return false;
+        for (const char c : name) if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_') return false;
+        return true;
+    }
+
+    // A RetroAchievements badge (its locked look when locked), null while it downloads or when there is none.
+    const Texture* Badge(const std::string& name, bool locked) {
+        if (!BadgeName(name)) return nullptr;
+        const std::string file = name + (locked ? "_lock" : "");
+        if (badgeDone != badgeSeen) {
+            badgeSeen = badgeDone;
+            badgeMissing.clear();
+        }
+        if (const auto found = badgeTextures.find(file); found != badgeTextures.end()) return found->second.view != nullptr ? &found->second : nullptr;
+        if (badgeMissing.count(file) != 0) return nullptr;
+        const std::wstring path = library.Root() + L"\\perfil\\insignias\\" + Wide(file) + L".png";
+        if (Exists(path)) {
+            Texture& texture = badgeTextures[file] = LoadTexture(path, 128);
+            return texture.view != nullptr ? &texture : nullptr;
+        }
+        badgeMissing.insert(file);
+        if (badgeAsked.insert(file).second) {
+            {
+                std::lock_guard guard(badgeLock);
+                badgeQueue.push_back(file);
+            }
+            StartBadgeDownloads();
+        }
+        return nullptr;
+    }
+
+    void StartBadgeDownloads() {
+        if (badgeBusy) return;
+        if (badgeThread.joinable()) badgeThread.join();
+        badgeBusy = true;
+        const std::wstring folder = library.Root() + L"\\perfil\\insignias";
+        badgeThread = std::thread([this, folder] {
+            MakeFolders(folder);
+            for (;;) {
+                std::string file;
+                {
+                    std::lock_guard guard(badgeLock);
+                    if (badgeQueue.empty()) break;
+                    file = badgeQueue.back();
+                    badgeQueue.pop_back();
+                }
+                const HttpResult got = HttpRequest("GET", "https://media.retroachievements.org/Badge/" + file + ".png", "", "", kRaUserAgent, 10000);
+                if (got.status != 200 || got.body.size() < 8 || got.body.compare(1, 3, "PNG") != 0) continue;
+                const std::wstring path = folder + L"\\" + Wide(file) + L".png";
+                HANDLE out = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+                if (out == INVALID_HANDLE_VALUE) continue;
+                DWORD put = 0;
+                WriteFile(out, got.body.data(), static_cast<DWORD>(got.body.size()), &put, nullptr);
+                CloseHandle(out);
+            }
+            ++badgeDone;
+            badgeBusy = false;
+        });
+    }
+
+    const Texture* AvatarOf(const PlayerCard& card) {
+        if (card.avatar.empty()) return nullptr;
+        const auto make = [](Texture& texture, const std::string& pixels) {
+            if (texture.view != nullptr) texture.view->Release();
+            texture = UploadTexture(reinterpret_cast<const unsigned char*>(pixels.data()), kAvatarSide, kAvatarSide);
+        };
+        if (card.id == profile.id) {
+            if (avatarShown != card.avatar) {
+                make(avatarTexture, card.avatar);
+                avatarShown = card.avatar;
+            }
+            return avatarTexture.view != nullptr ? &avatarTexture : nullptr;
+        }
+        auto& [pixels, texture] = friendAvatars[card.id];
+        if (pixels != card.avatar) {
+            make(texture, card.avatar);
+            pixels = card.avatar;
+        }
+        return texture.view != nullptr ? &texture : nullptr;
+    }
+
+    // The photo in a square with a ring of the level's color; no photo is the name's first letter.
+    void DrawAvatar(ImDrawList* draw, ImVec2 min, float side, const PlayerCard& card, float scale) {
+        const ImVec2 max(min.x + side, min.y + side);
+        const float ring = std::max(2.0f, 3 * scale * side / (128 * scale));
+        draw->AddRectFilled(ImVec2(min.x - ring, min.y - ring), ImVec2(max.x + ring, max.y + ring), Packed(LevelColor(LevelFor(card.xp).level)), 8 * scale);
+        if (const Texture* photo = AvatarOf(card)) {
+            draw->AddImageRounded(photo->Ref(), min, max, ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, 6 * scale);
+            return;
+        }
+        draw->AddRectFilled(min, max, Packed(kSelected), 6 * scale);
+        std::string initial = card.name.empty() ? "?" : card.name.substr(0, 1);
+        // The whole first character, when it takes more than one byte.
+        for (size_t i = 1; i < card.name.size() && (static_cast<unsigned char>(card.name[i]) & 0xc0) == 0x80; ++i) initial += card.name[i];
+        const float size = side * 0.5f;
+        const ImVec2 extent = semibold->CalcTextSizeA(size, FLT_MAX, 0, initial.c_str());
+        draw->AddText(semibold, size, ImVec2(min.x + (side - extent.x) / 2, min.y + (side - extent.y) / 2), Packed(kText), initial.c_str());
+    }
+
+    // A showcase item or achievement picture: RetroAchievements' badge, or Ranga's medal.
+    void DrawAchievement(ImDrawList* draw, ImVec2 min, float side, bool ra, const std::string& badge, bool lit) {
+        if (ra) {
+            if (const Texture* image = Badge(badge, !lit)) {
+                draw->AddImageRounded(image->Ref(), min, ImVec2(min.x + side, min.y + side), ImVec2(0, 0), ImVec2(1, 1), lit ? IM_COL32_WHITE : IM_COL32(255, 255, 255, 140), side * 0.12f);
+                return;
+            }
+        }
+        DrawMedal(draw, min, side, badge, lit);
+    }
+
+    const Game* LibraryGame(const std::wstring& key, const std::wstring& system, const std::wstring& title) {
+        for (const auto& game : library.Games()) {
+            if (!key.empty() && game.titleId == key) return &game;
+            if (key.empty() && game.system == system && game.title == title) return &game;
+        }
+        return nullptr;
+    }
+
+    void OpenProfile() {
+        profileOpen = true;
+        enginesPage = false;
+        profileViewing.clear();
+        SyncProfiles(true);
+    }
+
+    void OpenProfileEditor() {
+        profileEdit = true;
+        std::snprintf(editName.data(), editName.size(), "%s", profile.name.c_str());
+        std::snprintf(editPhrase.data(), editPhrase.size(), "%s", profile.phrase.c_str());
+        if (raUserField[0] == '\0') std::snprintf(raUserField.data(), raUserField.size(), "%s", profile.raUser.c_str());
+    }
+
+    void SectionTitle(const char* text, float scale) {
+        ImGui::Dummy(ImVec2(0, 10 * scale));
+        ImGui::PushFont(semibold, 20);
+        ImGui::TextUnformatted(text);
+        ImGui::PopFont();
+        ImGui::Dummy(ImVec2(0, 4 * scale));
+    }
+
+    void ProfilePage(float scale, const Nav& nav) {
+        if (nav.back && !profileEdit) {
+            if (!profileViewing.empty()) profileViewing.clear();
+            else profileOpen = false;
+            return;
+        }
+        const bool own = profileViewing.empty();
+        PlayerCard card;
+        if (own) {
+            card = profile.Card(playingTitle, playingSystem);
+        } else {
+            std::lock_guard guard(friendsLock);
+            const auto found = std::find_if(friends.begin(), friends.end(), [&](const PlayerCard& c) { return c.id == profileViewing; });
+            if (found == friends.end()) {
+                profileViewing.clear();
+                return;
+            }
+            card = *found;
+        }
+        ImDrawList* draw = ImGui::GetWindowDrawList();
+        const ImVec2 origin = ImGui::GetWindowPos(), size = ImGui::GetWindowSize();
+        const float left = 40 * scale, headerHeight = 220 * scale;
+        draw->AddRectFilled(origin, ImVec2(origin.x + size.x, origin.y + headerHeight), Packed(kSidebar));
+        ImGui::SetCursorPos(ImVec2(20 * scale, 18 * scale));
+        if (ImGui::Button(own ? "<  Voltar" : "<  Meu perfil", ImVec2(0, 34 * scale))) {
+            pending = [this, own] {
+                if (own) profileOpen = false;
+                else profileViewing.clear();
+            };
+        }
+
+        // The photo, the name and what the player is doing; the level on the right.
+        const float avatarSide = 120 * scale;
+        const ImVec2 avatarAt(origin.x + left, origin.y + 70 * scale);
+        DrawAvatar(draw, avatarAt, avatarSide, card, scale);
+        const float textX = left + avatarSide + 28 * scale;
+        ImGui::SetCursorPos(ImVec2(textX, 72 * scale));
+        ImGui::PushFont(semibold, 32);
+        ImGui::TextUnformatted(card.name.c_str());
+        ImGui::PopFont();
+        if (!card.phrase.empty()) {
+            ImGui::SetCursorPosX(textX);
+            ImGui::PushTextWrapPos(size.x - 260 * scale);
+            ImGui::TextDisabled("%s", card.phrase.c_str());
+            ImGui::PopTextWrapPos();
+        }
+        ImGui::SetCursorPosX(textX);
+        const long long now = static_cast<long long>(std::time(nullptr));
+        const bool fresh = own || (!card.closed && now - card.seen < 300);
+        if (!card.playing.empty() && fresh) {
+            ImGui::PushStyleColor(ImGuiCol_Text, Color(kGreen));
+            ImGui::Text("Jogando agora: %s (%s)", card.playing.c_str(), card.playingSystem.c_str());
+            ImGui::PopStyleColor();
+        } else if (own || fresh) {
+            ImGui::PushStyleColor(ImGuiCol_Text, Color(kGreen));
+            ImGui::TextUnformatted("Online");
+            ImGui::PopStyleColor();
+        } else {
+            ImGui::TextDisabled("Visto %s", FormatAgo(card.seen).c_str());
+        }
+
+        const Level level = LevelFor(card.xp);
+        const float radius = 32 * scale;
+        const ImVec2 circle(origin.x + size.x - left - 190 * scale + radius, origin.y + 100 * scale);
+        draw->AddCircleFilled(circle, radius, Packed(kSurface));
+        draw->AddCircle(circle, radius, Packed(LevelColor(level.level)), 0, 3 * scale);
+        const std::string number = std::to_string(level.level);
+        const ImVec2 extent = semibold->CalcTextSizeA(26 * scale, FLT_MAX, 0, number.c_str());
+        draw->AddText(semibold, 26 * scale, ImVec2(circle.x - extent.x / 2, circle.y - extent.y / 2), Packed(kText), number.c_str());
+        ImGui::SetCursorScreenPos(ImVec2(circle.x + radius + 14 * scale, circle.y - 30 * scale));
+        ImGui::BeginGroup();
+        ImGui::PushFont(semibold, 18);
+        ImGui::Text("Nível %d", level.level);
+        ImGui::PopFont();
+        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, Color(LevelColor(level.level)));
+        ImGui::ProgressBar(static_cast<float>(level.into) / static_cast<float>(level.size), ImVec2(110 * scale, 6 * scale), "");
+        ImGui::PopStyleColor();
+        ImGui::TextDisabled("%d / %d XP", level.into, level.size);
+        ImGui::EndGroup();
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("XP: 10 por hora jogada, 50 por conquista do Ranga e os pontos de cada conquista do RetroAchievements.");
+        if (own) {
+            ImGui::SetCursorScreenPos(ImVec2(origin.x + size.x - left - 190 * scale, origin.y + 150 * scale));
+            if (ImGui::Button("Editar perfil", ImVec2(190 * scale, 36 * scale))) OpenProfileEditor();
+        }
+
+        // The numbers under the header.
+        const float tilesY = headerHeight + 16 * scale, gap = 14 * scale;
+        const float tileWidth = (size.x - 2 * left - 3 * gap) / 4, tileHeight = 66 * scale;
+        const std::string tiles[4][2] = {
+            {FormatPlayed(card.seconds), "jogados"},
+            {std::to_string(card.games), card.games == 1 ? "jogo" : "jogos"},
+            {std::to_string(card.consoles), card.consoles == 1 ? "console" : "consoles"},
+            {std::to_string(card.achievements), card.raPoints > 0 ? "conquistas · " + std::to_string(card.raPoints) + " pontos RA" : "conquistas"},
+        };
+        for (int i = 0; i < 4; ++i) {
+            const ImVec2 min(origin.x + left + i * (tileWidth + gap), origin.y + tilesY);
+            draw->AddRectFilled(min, ImVec2(min.x + tileWidth, min.y + tileHeight), Packed(kSurface), 8 * scale);
+            draw->AddText(semibold, 24 * scale, ImVec2(min.x + 16 * scale, min.y + 9 * scale), Packed(kText), tiles[i][0].c_str());
+            draw->AddText(nullptr, ImGui::GetFontSize() * 0.92f, ImVec2(min.x + 16 * scale, min.y + 40 * scale), Packed(kDim), tiles[i][1].c_str());
+        }
+
+        ImGui::SetCursorPos(ImVec2(left, tilesY + tileHeight + 18 * scale));
+        ImGui::BeginChild("##profileTabs", ImVec2(size.x - 2 * left, 0), ImGuiChildFlags_NavFlattened);
+        if (ImGui::BeginTabBar("##profileTabBar")) {
+            if (ImGui::BeginTabItem("Visão geral")) {
+                ImGui::BeginChild("##overview", ImVec2(0, 0), ImGuiChildFlags_NavFlattened);
+                ProfileOverview(card, own, scale);
+                ImGui::EndChild();
+                ImGui::EndTabItem();
+            }
+            if (own && ImGui::BeginTabItem("Conquistas")) {
+                ImGui::BeginChild("##achievements", ImVec2(0, 0), ImGuiChildFlags_NavFlattened);
+                ProfileAchievements(scale);
+                ImGui::EndChild();
+                ImGui::EndTabItem();
+            }
+            if (own && ImGui::BeginTabItem("Jogos")) {
+                ImGui::BeginChild("##played", ImVec2(0, 0), ImGuiChildFlags_NavFlattened);
+                ProfileGames(scale);
+                ImGui::EndChild();
+                ImGui::EndTabItem();
+            }
+            if (own && ImGui::BeginTabItem("Amigos")) {
+                ImGui::BeginChild("##friends", ImVec2(0, 0), ImGuiChildFlags_NavFlattened);
+                ProfileFriends(scale);
+                ImGui::EndChild();
+                ImGui::EndTabItem();
+            }
+            ImGui::EndTabBar();
+        }
+        ImGui::EndChild();
+    }
+
+    void ProfileOverview(const PlayerCard& card, bool own, float scale) {
+        ImDrawList* draw = ImGui::GetWindowDrawList();
+        SectionTitle("Vitrine de conquistas", scale);
+        if (card.showcase.empty()) {
+            ImGui::TextDisabled(own ? "Nenhuma conquista ainda. Jogue um pouco: as primeiras aparecem aqui." : "Nenhuma conquista ainda.");
+        } else {
+            const float cell = 128 * scale, icon = 72 * scale;
+            const int columns = std::max(1, static_cast<int>(ImGui::GetContentRegionAvail().x / cell));
+            for (size_t i = 0; i < card.showcase.size(); ++i) {
+                const ShowcaseItem& item = card.showcase[i];
+                if (i % columns != 0) ImGui::SameLine(0, 0);
+                ImGui::BeginGroup();
+                const ImVec2 at = ImGui::GetCursorScreenPos();
+                DrawAchievement(draw, ImVec2(at.x + (cell - icon) / 2, at.y), icon, item.ra, item.badge, true);
+                ImGui::Dummy(ImVec2(cell, icon + 4 * scale));
+                // The title centered under the picture, on two lines when it is long.
+                const float wrap = cell - 12 * scale, textWidth = std::min(wrap, ImGui::CalcTextSize(item.title.c_str(), nullptr, false, wrap).x);
+                const float x = ImGui::GetCursorPosX() + (cell - textWidth) / 2;
+                ImGui::SetCursorPosX(x);
+                ImGui::PushTextWrapPos(x + textWidth + 1);
+                ImGui::TextWrapped("%s", item.title.c_str());
+                ImGui::PopTextWrapPos();
+                ImGui::EndGroup();
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("%s\n%s\n%s%s", item.title.c_str(), item.description.c_str(), FormatDate(item.when).c_str(),
+                                      item.ra ? ("  ·  " + std::to_string(item.points) + " pontos (RetroAchievements)").c_str() : "  ·  Ranga");
+                }
+            }
+        }
+        SectionTitle("Jogos recentes", scale);
+        if (card.recent.empty()) ImGui::TextDisabled("Nenhum jogo ainda.");
+        for (const PlayedGame& game : card.recent) {
+            const ImVec2 at = ImGui::GetCursorScreenPos();
+            const float side = 56 * scale;
+            if (const Game* known = LibraryGame(game.key, game.system, game.title)) {
+                GameArt(draw, *known, at, ImVec2(at.x + side, at.y + side), scale * 0.5f);
+            } else {
+                draw->AddRectFilled(at, ImVec2(at.x + side, at.y + side), Packed(kSurface), 6 * scale);
+                DrawGlyph(draw, LookFor(game.system).glyph, ImVec2(at.x + side / 2, at.y + side / 2), side * 0.5f, Packed(0xffffff, 0.5f), Packed(kSurface));
+            }
+            ImGui::Dummy(ImVec2(side, side));
+            ImGui::SameLine(0, 14 * scale);
+            ImGui::BeginGroup();
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 6 * scale);
+            ImGui::PushFont(semibold, 17);
+            ImGui::TextUnformatted(Utf8(game.title).c_str());
+            ImGui::PopFont();
+            ImGui::TextDisabled("%s   ·   %s no total   ·   última vez em %s", SystemName(game.system).c_str(), FormatPlayed(game.seconds).c_str(), FormatDate(game.last).c_str());
+            ImGui::EndGroup();
+            ImGui::Dummy(ImVec2(0, 6 * scale));
+        }
+    }
+
+    void ProfileAchievements(float scale) {
+        ImDrawList* draw = ImGui::GetWindowDrawList();
+        int lit = 0;
+        for (const auto& achievement : profile.achievements) lit += achievement.unlocked != 0;
+        char heading[96];
+        std::snprintf(heading, sizeof(heading), "Do Ranga   (%d de %d)", lit, static_cast<int>(profile.achievements.size()));
+        SectionTitle(heading, scale);
+        ImGui::TextDisabled("Valem em todos os consoles, Switch e 3DS também: vêm do tempo de jogo, dos consoles, do online e da biblioteca.");
+        ImGui::Dummy(ImVec2(0, 4 * scale));
+        const float side = 48 * scale, width = ImGui::GetContentRegionAvail().x;
+        for (const auto& achievement : profile.achievements) {
+            const ImVec2 at = ImGui::GetCursorScreenPos();
+            DrawMedal(draw, at, side, achievement.id, achievement.unlocked != 0);
+            ImGui::Dummy(ImVec2(side, side));
+            ImGui::SameLine(0, 14 * scale);
+            ImGui::BeginGroup();
+            ImGui::PushFont(semibold, 17);
+            ImGui::PushStyleColor(ImGuiCol_Text, Color(achievement.unlocked != 0 ? kText : kDim));
+            ImGui::TextUnformatted(achievement.title);
+            ImGui::PopStyleColor();
+            ImGui::PopFont();
+            ImGui::TextDisabled("%s", achievement.description);
+            ImGui::EndGroup();
+            ImGui::SameLine(width - 190 * scale);
+            ImGui::BeginGroup();
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 6 * scale);
+            if (achievement.unlocked != 0) {
+                ImGui::PushStyleColor(ImGuiCol_Text, Color(kGreen));
+                ImGui::Text("Desbloqueada em %s", FormatDate(achievement.unlocked).c_str());
+                ImGui::PopStyleColor();
+            } else if (achievement.goal > 1) {
+                char progress[32];
+                std::snprintf(progress, sizeof(progress), "%d / %d", achievement.progress, achievement.goal);
+                ImGui::ProgressBar(static_cast<float>(achievement.progress) / static_cast<float>(achievement.goal), ImVec2(180 * scale, 0), progress);
+            } else {
+                ImGui::TextDisabled("Bloqueada");
+            }
+            ImGui::EndGroup();
+            ImGui::Dummy(ImVec2(0, 4 * scale));
+        }
+
+        SectionTitle("RetroAchievements", scale);
+        if (profile.raToken.empty()) {
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextDisabled("As conquistas de verdade de cada jogo clássico (NES, SNES, Mega Drive, Master System, Game Boy, GBA, N64, PS1, PS2, PSP, DS, "
+                                "Saturn, Dreamcast e outros), feitas pela comunidade do retroachievements.org. Crie uma conta grátis lá e conecte aqui.");
+            ImGui::PopTextWrapPos();
+            if (ImGui::Button("Conectar conta")) OpenProfileEditor();
+            return;
+        }
+        if (profile.raGames.empty()) {
+            ImGui::TextDisabled("Conectado como %s. Abra um jogo clássico: as conquistas dele aparecem aqui.", profile.raUser.c_str());
+            return;
+        }
+        ImGui::TextDisabled("Conectado como %s   ·   %d pontos", profile.raUser.c_str(), profile.RaPoints());
+        const float badge = 48 * scale, cell = badge + 8 * scale;
+        for (const RaGame& game : profile.raGames) {
+            ImGui::Dummy(ImVec2(0, 8 * scale));
+            ImGui::PushFont(semibold, 17);
+            ImGui::TextUnformatted(game.title.c_str());
+            ImGui::PopFont();
+            int points = 0, total = 0;
+            for (const auto& achievement : game.achievements) {
+                total += achievement.points;
+                if (achievement.unlocked != 0) points += achievement.points;
+            }
+            char progress[64];
+            std::snprintf(progress, sizeof(progress), "%d de %d   ·   %d de %d pontos", game.Unlocked(), static_cast<int>(game.achievements.size()), points, total);
+            ImGui::ProgressBar(game.achievements.empty() ? 0.0f : static_cast<float>(game.Unlocked()) / static_cast<float>(game.achievements.size()), ImVec2(std::min(width, 520 * scale), 0), progress);
+            const int columns = std::max(1, static_cast<int>(ImGui::GetContentRegionAvail().x / cell));
+            for (size_t i = 0; i < game.achievements.size(); ++i) {
+                const RaAchievement& achievement = game.achievements[i];
+                if (i % columns != 0) ImGui::SameLine(0, 0);
+                const ImVec2 at = ImGui::GetCursorScreenPos();
+                DrawAchievement(draw, at, badge, true, achievement.badge, achievement.unlocked != 0);
+                ImGui::PushID(static_cast<int>(achievement.id));
+                ImGui::Dummy(ImVec2(cell, cell));
+                ImGui::PopID();
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("%s\n%s\n%d pontos   ·   %s", achievement.title.c_str(), achievement.description.c_str(), achievement.points,
+                                      achievement.unlocked != 0 ? ("desbloqueada em " + FormatDate(achievement.unlocked)).c_str() : "bloqueada");
+                }
+            }
+        }
+    }
+
+    void ProfileGames(float scale) {
+        std::vector<const PlayedGame*> list;
+        for (const auto& [key, game] : profile.games) list.push_back(&game);
+        std::sort(list.begin(), list.end(), [](const PlayedGame* a, const PlayedGame* b) { return a->seconds > b->seconds; });
+        if (list.empty()) {
+            ImGui::Dummy(ImVec2(0, 8 * scale));
+            ImGui::TextDisabled("Nenhum jogo jogado ainda. O tempo conta a partir de agora, em cada jogo que abrir pelo Ranga.");
+            return;
+        }
+        if (ImGui::BeginTable("##playedTable", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_PadOuterX)) {
+            ImGui::TableSetupColumn("Jogo", ImGuiTableColumnFlags_WidthStretch, 3.0f);
+            ImGui::TableSetupColumn("Console", ImGuiTableColumnFlags_WidthStretch, 1.4f);
+            ImGui::TableSetupColumn("Tempo", ImGuiTableColumnFlags_WidthStretch, 0.8f);
+            ImGui::TableSetupColumn("Vezes", ImGuiTableColumnFlags_WidthStretch, 0.6f);
+            ImGui::TableSetupColumn("Última vez", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+            ImGui::TableHeadersRow();
+            for (const PlayedGame* game : list) {
+                ImGui::TableNextRow(ImGuiTableRowFlags_None, 30 * scale);
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(Utf8(game->title).c_str());
+                ImGui::TableNextColumn();
+                ImGui::TextDisabled("%s", SystemName(game->system).c_str());
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(FormatPlayed(game->seconds).c_str());
+                ImGui::TableNextColumn();
+                ImGui::Text("%lld", static_cast<long long>(game->sessions));
+                ImGui::TableNextColumn();
+                ImGui::TextDisabled("%s", FormatDate(game->last).c_str());
+            }
+            ImGui::EndTable();
+        }
+    }
+
+    void ProfileFriends(float scale) {
+        ImDrawList* draw = ImGui::GetWindowDrawList();
+        std::vector<PlayerCard> list;
+        std::string problem;
+        long long at = 0;
+        {
+            std::lock_guard guard(friendsLock);
+            for (const auto& card : friends) if (card.id != profile.id) list.push_back(card);
+            problem = friendsProblem;
+            at = friendsAt;
+        }
+        const long long now = static_cast<long long>(std::time(nullptr));
+        std::sort(list.begin(), list.end(), [&](const PlayerCard& a, const PlayerCard& b) {
+            const bool aOn = !a.closed && now - a.seen < 300, bOn = !b.closed && now - b.seen < 300;
+            if (aOn != bOn) return aOn;
+            return a.seen > b.seen;
+        });
+        ImGui::Dummy(ImVec2(0, 8 * scale));
+        ImGui::BeginDisabled(profileBusy);
+        if (ImGui::Button(profileBusy ? "Atualizando..." : "Atualizar agora")) SyncProfiles(true);
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        ImGui::AlignTextToFramePadding();
+        if (!problem.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextWrapped("%s", problem.c_str());
+            ImGui::PopTextWrapPos();
+            ImGui::PopStyleColor();
+        } else if (at != 0) {
+            ImGui::TextDisabled("Atualizado %s, pela sala em %s", FormatAgo(at).c_str(), ProfilesServer(library.Root()).c_str());
+        }
+        ImGui::Dummy(ImVec2(0, 6 * scale));
+        if (list.empty()) {
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextDisabled("Nenhum amigo apareceu ainda. O perfil de cada um aparece aqui quando o Ranga dele abre com a sala do PC que hospeda no ar.");
+            ImGui::PopTextWrapPos();
+            return;
+        }
+        const float cardWidth = 300 * scale, cardHeight = 96 * scale, gap = 14 * scale;
+        const int columns = std::max(1, static_cast<int>((ImGui::GetContentRegionAvail().x + gap) / (cardWidth + gap)));
+        for (size_t i = 0; i < list.size(); ++i) {
+            const PlayerCard& card = list[i];
+            if (i % columns != 0) ImGui::SameLine(0, gap);
+            const ImVec2 min = ImGui::GetCursorScreenPos(), max(min.x + cardWidth, min.y + cardHeight);
+            ImGui::PushID(card.id.c_str());
+            const bool clicked = ImGui::InvisibleButton("##friend", ImVec2(cardWidth, cardHeight));
+            const bool hovered = ImGui::IsItemHovered() || ImGui::IsItemFocused();
+            ImGui::PopID();
+            draw->AddRectFilled(min, max, Packed(hovered ? kHover : kSurface), 10 * scale);
+            const float side = 64 * scale;
+            DrawAvatar(draw, ImVec2(min.x + 16 * scale, min.y + 16 * scale), side, card, scale * 0.6f);
+            const float x = min.x + 16 * scale + side + 16 * scale;
+            draw->AddText(semibold, 18 * scale, ImVec2(x, min.y + 14 * scale), Packed(kText), card.name.c_str());
+            const std::string level = "Nível " + std::to_string(LevelFor(card.xp).level) + "   ·   " + FormatPlayed(card.seconds);
+            draw->AddText(nullptr, ImGui::GetFontSize() * 0.92f, ImVec2(x, min.y + 40 * scale), Packed(kDim), level.c_str());
+            const bool online = !card.closed && now - card.seen < 300;
+            const std::string status = online ? (card.playing.empty() ? "Online" : "Jogando " + card.playing) : "Visto " + FormatAgo(card.seen);
+            const ImVec4 clip(x, min.y, max.x - 8 * scale, max.y);
+            draw->AddText(nullptr, ImGui::GetFontSize() * 0.92f, ImVec2(x, min.y + 62 * scale), Packed(online ? kGreen : kDim), status.c_str(), nullptr, 0, &clip);
+            if (clicked) pending = [this, id = card.id] { profileViewing = id; };
+        }
+    }
+
+    void ProfileEditor(float scale) {
+        if (!profileEdit) return;
+        if (!ImGui::IsPopupOpen("##profileEdit")) ImGui::OpenPopup("##profileEdit");
+        const ImGuiViewport* viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowSize(ImVec2(std::min(640 * scale, viewport->WorkSize.x - 40 * scale), 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(26 * scale, 22 * scale));
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, Color(kSelected));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, Color(kSelected));
+        ImGui::PushStyleColor(ImGuiCol_Button, Color(kSelected));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Color(0x34353c));
+        if (ImGui::BeginPopupModal("##profileEdit", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::PushFont(semibold, 22);
+            ImGui::TextUnformatted("Editar perfil");
+            ImGui::PopFont();
+            ImGui::Dummy(ImVec2(0, 6 * scale));
+            const PlayerCard card = profile.Card("", "");
+            const ImVec2 at = ImGui::GetCursorScreenPos();
+            DrawAvatar(ImGui::GetWindowDrawList(), ImVec2(at.x + 3 * scale, at.y + 3 * scale), 96 * scale, card, scale);
+            ImGui::Dummy(ImVec2(102 * scale, 102 * scale));
+            ImGui::SameLine(0, 20 * scale);
+            ImGui::BeginGroup();
+            ImGui::TextDisabled("Foto (PNG ou JPG; fica o quadrado do meio)");
+            if (ImGui::Button("Escolher foto...")) {
+                profileEdit = false;
+                ImGui::CloseCurrentPopup();
+                pending = [this] {
+                    Browse(L"Escolher foto do perfil", L"", false, {{L"Imagens (png, jpg)", L"*.png;*.jpg;*.jpeg"}}, [this](const std::wstring& path) {
+                        const std::string pixels = MakeAvatar(path);
+                        if (pixels.empty()) {
+                            Notify(L"Não deu para ler essa imagem. Escolha um arquivo PNG ou JPG.");
+                        } else {
+                            profile.SetAvatar(pixels);
+                            for (const auto& title : profile.Evaluate(LibraryCount())) AddToast("Conquista desbloqueada", title, "");
+                        }
+                        OpenProfileEditor();
+                    });
+                };
+            }
+            if (!profile.avatar.empty()) {
+                ImGui::SameLine();
+                if (ImGui::Button("Tirar foto")) profile.SetAvatar("");
+            }
+            ImGui::EndGroup();
+            ImGui::Dummy(ImVec2(0, 6 * scale));
+            ImGui::TextDisabled("Nome");
+            ImGui::SetNextItemWidth(-1);
+            ImGui::InputText("##editName", editName.data(), 41);
+            ImGui::TextDisabled("Frase");
+            ImGui::SetNextItemWidth(-1);
+            ImGui::InputText("##editPhrase", editPhrase.data(), 121);
+
+            ImGui::Dummy(ImVec2(0, 8 * scale));
+            ImGui::Separator();
+            ImGui::Dummy(ImVec2(0, 4 * scale));
+            ImGui::PushFont(semibold, 18);
+            ImGui::TextUnformatted("RetroAchievements");
+            ImGui::PopFont();
+            if (profile.raToken.empty()) {
+                ImGui::PushTextWrapPos(0);
+                ImGui::TextDisabled("Conta grátis em retroachievements.org. A senha vai só para o RetroAchievements e não fica guardada: "
+                                    "o Ranga guarda só a chave de acesso que ele devolve.");
+                ImGui::PopTextWrapPos();
+                ImGui::TextDisabled("Usuário");
+                ImGui::SetNextItemWidth(-1);
+                ImGui::InputText("##raUser", raUserField.data(), raUserField.size());
+                ImGui::TextDisabled("Senha");
+                ImGui::SetNextItemWidth(-1);
+                const bool enter = ImGui::InputText("##raPassword", raPasswordField.data(), raPasswordField.size(), ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue);
+                ImGui::BeginDisabled(raBusy);
+                if (ImGui::Button(raBusy ? "Entrando..." : "Entrar") || (enter && !raBusy)) StartRaLogin();
+                ImGui::EndDisabled();
+                std::string problem;
+                {
+                    std::lock_guard guard(raLock);
+                    problem = raProblem;
+                }
+                if (!problem.empty()) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
+                    ImGui::PushTextWrapPos(0);
+                    ImGui::TextWrapped("%s", problem.c_str());
+                    ImGui::PopTextWrapPos();
+                    ImGui::PopStyleColor();
+                }
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Text, Color(kGreen));
+                ImGui::Text("Conectado como %s", profile.raUser.c_str());
+                ImGui::PopStyleColor();
+                ImGui::PushTextWrapPos(0);
+                ImGui::TextDisabled("As conquistas valem no modo normal (softcore) do RetroAchievements e aparecem no jogo e aqui no perfil.");
+                ImGui::PopTextWrapPos();
+                if (ImGui::Button("Sair da conta")) profile.SetRetroAchievements("", "");
+            }
+
+            ImGui::Dummy(ImVec2(0, 10 * scale));
+            ImGui::PushStyleColor(ImGuiCol_Button, Color(kAccent));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Color(kAccentHover));
+            if (ImGui::Button("Salvar", ImVec2(130 * scale, 36 * scale))) {
+                if (editName[0] != '\0' && profile.name != editName.data()) profile.SetName(editName.data());
+                if (profile.phrase != editPhrase.data()) profile.SetPhrase(editPhrase.data());
+                profileEdit = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::PopStyleColor(2);
+            ImGui::SameLine();
+            if (ImGui::Button("Fechar", ImVec2(130 * scale, 36 * scale)) || ImGui::IsKeyPressed(ImGuiKey_Escape) || ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight)) {
+                profileEdit = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+        ImGui::PopStyleColor(4);
+        ImGui::PopStyleVar();
+    }
+
+    // Achievements just unlocked, at the bottom left for a few seconds.
+    void Toasts(float scale) {
+        const double now = ImGui::GetTime();
+        toasts.erase(std::remove_if(toasts.begin(), toasts.end(), [&](const Toast& toast) { return toast.until < now; }), toasts.end());
+        const ImGuiViewport* viewport = ImGui::GetMainViewport();
+        float bottom = viewport->WorkPos.y + viewport->WorkSize.y - 16 * scale;
+        for (size_t i = 0; i < toasts.size() && i < 4; ++i) {
+            const Toast& toast = toasts[i];
+            const float height = 74 * scale, width = 360 * scale;
+            ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + 16 * scale, bottom), ImGuiCond_Always, ImVec2(0, 1));
+            ImGui::SetNextWindowSize(ImVec2(width, height));
+            ImGui::PushStyleColor(ImGuiCol_WindowBg, Color(kSurface));
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 10 * scale);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12 * scale, 12 * scale));
+            char name[32];
+            std::snprintf(name, sizeof(name), "##toast%zu", i);
+            ImGui::Begin(name, nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoSavedSettings |
+                                            ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav);
+            const ImVec2 at = ImGui::GetCursorScreenPos();
+            DrawMedal(ImGui::GetWindowDrawList(), at, 50 * scale, toast.text, true);
+            ImGui::SetCursorScreenPos(ImVec2(at.x + 62 * scale, at.y + 2 * scale));
+            ImGui::BeginGroup();
+            ImGui::TextDisabled("%s", toast.title.c_str());
+            ImGui::PushFont(semibold, 18);
+            ImGui::TextUnformatted(toast.text.c_str());
+            ImGui::PopFont();
+            ImGui::EndGroup();
+            ImGui::End();
+            ImGui::PopStyleVar(2);
+            ImGui::PopStyleColor();
+            bottom -= height + 10 * scale;
+        }
+    }
+
     bool NeedsFrames() const {
-        return (gamepads.Connected() && GetForegroundWindow() == window) || std::fabs(homeTarget - homeScroll) > 0.0f;
+        return (gamepads.Connected() && GetForegroundWindow() == window) || std::fabs(homeTarget - homeScroll) > 0.0f || !toasts.empty();
     }
 
     // The client gets out of the way while a game runs and comes back when it ends.
@@ -3179,6 +4154,10 @@ struct Client {
             pending = nullptr;
             action();
         }
+        if (!profileLoaded) InitProfile();
+        ProcessEnded();
+        TakeRaLogin();
+        SyncProfiles(false);
         for (const auto& titleId : covers.TakeDone()) {
             for (const auto& game : library.Games()) if (game.titleId == titleId) ForgetArt(game);
         }
@@ -3191,13 +4170,14 @@ struct Client {
         ImGuiIO& io = ImGui::GetIO();
         // A page left behind takes the gamepad's place on its top row with it.
         static Page lastPage = page;
-        static bool lastEngines = enginesPage;
-        if (page != lastPage || enginesPage != lastEngines) barFocus = -1;
+        static bool lastEngines = enginesPage, lastProfile = profileOpen;
+        if (page != lastPage || enginesPage != lastEngines || profileOpen != lastProfile) barFocus = -1;
+        lastProfile = profileOpen;
         if (enginesPage && !lastEngines) focusEngines = true;
         lastPage = page;
         lastEngines = enginesPage;
         // ImGui's own focus also runs an open list, such as Adicionar jogo's.
-        const bool fieldNav = enginesPage || page == Page::Game || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId);
+        const bool fieldNav = enginesPage || profileOpen || page == Page::Game || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId);
         if (ringFrames > 0 && ringFrames--) ImGui::SetNavCursorVisible(true);
         if (fieldNav) io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
         else io.ConfigFlags &= ~(ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad);
@@ -3224,7 +4204,9 @@ struct Client {
         ImGui::SetNextWindowPos(viewport->WorkPos);
         ImGui::SetNextWindowSize(viewport->WorkSize);
         ImGui::Begin("##root", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus);
-        if (enginesPage) {
+        if (profileOpen) {
+            ProfilePage(scale, nav);
+        } else if (enginesPage) {
             if (nav.back) enginesPage = false;
             EnginesPage(scale);
         } else if (page == Page::Home) {
@@ -3237,8 +4219,10 @@ struct Client {
         AskSystem(scale);
         BrowserWindow(scale);
         NoticeWindow(scale);
+        ProfileEditor(scale);
         ImGui::End();
         UpdateBar(scale);
+        Toasts(scale);
     }
 };
 
@@ -3246,6 +4230,10 @@ Client* g_client = nullptr;
 bool g_closeConfirmed = false;
 
 LRESULT WINAPI WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
+    // The interface tests post clicks to a window the real pointer is not over; Windows says the pointer left at once,
+    // which would undo them.
+    static const bool testInput = _wgetenv(L"RANGA_CLIENT_TEST_INPUT") != nullptr;
+    if (testInput && message == WM_MOUSELEAVE) return 0;
     if (ImGui_ImplWin32_WndProcHandler(hwnd, message, wParam, lParam)) return true;
     switch (message) {
         case WM_SIZE:

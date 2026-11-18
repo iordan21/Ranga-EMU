@@ -13,6 +13,7 @@
 #include "RangaRetroExt.h"
 #include "VulkanVideo.hpp"
 #include "Netplay.hpp"
+#include "Achievements.hpp"
 
 #ifndef UNICODE
 #define UNICODE
@@ -549,8 +550,11 @@ bool RETRO_CALLCONV Environment(unsigned command, void* data) {
         case RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS:
         case RETRO_ENVIRONMENT_SET_CONTROLLER_INFO:
         case RETRO_ENVIRONMENT_SET_SUBSYSTEM_INFO:
-        case RETRO_ENVIRONMENT_SET_MEMORY_MAPS:
         case RETRO_ENVIRONMENT_SET_PERFORMANCE_LEVEL:
+            return true;
+        // Where the game's memory is, for RetroAchievements (Achievements.hpp).
+        case RETRO_ENVIRONMENT_SET_MEMORY_MAPS:
+            Achievements::SetMemoryMap(static_cast<const retro_memory_map*>(data));
             return true;
         case RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME:
             g.supportsNoGame = data != nullptr && *static_cast<const bool*>(data);
@@ -1197,6 +1201,7 @@ struct Saves {
     void LoadState() {
         const auto data = ReadFile(StatePath());
         const bool loaded = !data.empty() && g.core.unserialize(data.data(), data.size());
+        if (loaded) Achievements::Reset();
         ShowMessage(loaded ? L"Estado carregado da posição " + std::to_wstring(slot + 1) : L"Nenhum estado na posição " + std::to_wstring(slot + 1), 0);
     }
 };
@@ -2104,7 +2109,11 @@ void StartOnline(const std::wstring& corePath, const std::wstring& romPath, bool
     Netplay::Hooks hooks;
     hooks.stateSize = [] { return g.core.serializeSize(); };
     hooks.saveState = [](void* data, size_t size) { return g.core.serialize(data, size); };
-    hooks.loadState = [](const void* data, size_t size) { return g.core.unserialize(data, size); };
+    hooks.loadState = [](const void* data, size_t size) {
+        const bool loaded = g.core.unserialize(data, size);
+        if (loaded) Achievements::Reset();
+        return loaded;
+    };
     hooks.log = Log;
     hooks.message = [](const std::wstring& text) { ShowMessage(text, 240); };
     // Players 3 and 4 need their ports too.
@@ -2261,6 +2270,24 @@ int RetroMain(int argc, wchar_t** argv) {
     Saves saves{saveDir + L"\\" + romName + L".srm", saveDir + L"\\" + romName + L".state"};
     saves.LoadSram();
     StartOnline(corePath, romPath, noGame);
+    if (!noGame) {
+        // RetroAchievements, when the player signed in on Ranga's profile and the console has them.
+        Achievements::Setup achievements;
+        wchar_t program[MAX_PATH] = {};
+        GetModuleFileNameW(nullptr, program, MAX_PATH);
+        achievements.programFolder = program;
+        achievements.programFolder = achievements.programFolder.substr(0, achievements.programFolder.find_last_of(L"\\/"));
+        if (const wchar_t* system = _wgetenv(L"RANGA_SISTEMA")) achievements.system = system;
+        achievements.rom = romPath;
+        achievements.data = romData.empty() ? nullptr : romData.data();
+        achievements.size = romData.size();
+        if (!saveDir.empty()) achievements.workspace = saveDir.substr(0, saveDir.find_last_of(L"\\/"));
+        achievements.window = g_window;
+        achievements.memoryData = [](unsigned id) { return g.core.memoryData(id); };
+        achievements.memorySize = [](unsigned id) { return g.core.memorySize(id); };
+        achievements.log = [](const char* text) { Log("%s", text); };
+        Achievements::Start(achievements);
+    }
 
     Video video;
     GlVideo glVideo;
@@ -2312,6 +2339,7 @@ int RetroMain(int argc, wchar_t** argv) {
         // At most one WM_PAINT a turn: a core's own window that repaints itself on every paint (Xenia's) would otherwise
         // keep this loop in the message queue for good, since Windows hands out WM_PAINT whenever the queue is empty.
         MSG message;
+        Achievements::Idle();
         for (int pending = 0; pending < 256 && PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE); ++pending) {
             TranslateMessage(&message);
             DispatchMessageW(&message);
@@ -2342,6 +2370,7 @@ int RetroMain(int argc, wchar_t** argv) {
             else if (picked == kReset && online && !Netplay::Hosting()) ShowMessage(L"Online: só o anfitrião reinicia o jogo", 0);
             else if (picked == kReset) {
                 g.core.reset();
+                Achievements::Reset();
                 if (online) Netplay::Resync();
             }
             else if (picked == kQuit) g_running = false;
@@ -2395,6 +2424,7 @@ int RetroMain(int argc, wchar_t** argv) {
             if (g.frameTime.callback != nullptr) g.frameTime.callback(static_cast<retro_usec_t>(1000000.0 / fps));
             g.core.run();
             Netplay::FrameDone();
+            Achievements::Frame();
             ++fpsFrames;
         }
         // RANGA_RETRO_STATS=1 puts the sound's loudest sample, the device queue and where a loop's time goes (the
@@ -2464,6 +2494,7 @@ int RetroMain(int argc, wchar_t** argv) {
     }
     saves.FlushSram();
     Netplay::Stop();
+    Achievements::Stop();
     // The context goes first, while the game is still loaded: SwanStation, told its context is lost, switches to its
     // software renderer, which needs the game's system still there.
     if (g_hwActive && g_hw.context_destroy != nullptr) g_hw.context_destroy();

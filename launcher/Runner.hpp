@@ -4,6 +4,7 @@
 #include "Library.hpp"
 
 #include <atomic>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -25,6 +26,9 @@ public:
     // The console's own system with no game (the PS2's menu, the Xbox dashboard on its hard disk, the Switch's Mii
     // editor), through its native core; its saves and logs go to games\<console>-SISTEMA.
     void StartSystem(const std::wstring& root, const std::wstring& system);
+
+    // Told on the runner's thread when a game closes: the game, when it started (Unix time) and for how many seconds.
+    std::function<void(const Game&, long long, long long)> ended;
 
 private:
     void Run(std::wstring root, Game game, Options options);

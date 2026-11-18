@@ -229,13 +229,15 @@ std::wstring StartExtra(const std::wstring& root, Extra extra) {
     EnsureUnicodeIni(Ini(root));
     WritePrivateProfileStringW(info.section, L"ligada", L"1", Ini(root).c_str());
     if (ExtraRunning(root, extra)) return L"";
+    // A newer server left beside the one that was running (<exe>.novo) takes its place now that it is stopped.
+    if (const std::wstring newer = ExtraExe(root, extra) + L".novo"; Exists(newer)) MoveFileExW(newer.c_str(), ExtraExe(root, extra).c_str(), MOVEFILE_REPLACE_EXISTING);
     if (!Exists(ExtraExe(root, extra))) return L"Falta " + std::wstring(info.label) + L" em " + ExtraExe(root, extra) + L".";
     CreateDirectoryW(Folder(root).c_str(), nullptr);
     const int port = ExtraPort(root, extra);
     const std::wstring log = Folder(root) + L"\\" + info.log;
     std::wstring command = L"\"" + ExtraExe(root, extra) + L"\" --port " + std::to_wstring(port);
     if (extra == Extra::Classics) {
-        command += L" --log \"" + log + L"\" --atualizacao \"" + root + L"\\salas\\atualizacao\"";
+        command += L" --log \"" + log + L"\" --atualizacao \"" + root + L"\\salas\\atualizacao\" --perfis \"" + root + L"\\salas\\perfis\"";
     } else {
         // Azahar's room: like Eden's, its ban list is read only when the file starts with its own header.
         const std::wstring bans = Folder(root) + L"\\sala-3ds-banidos.txt";
