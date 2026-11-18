@@ -1,0 +1,13 @@
+# A central do Ranga na Cloudflare (plano grátis). Publicar: npx wrangler@4.165.0 deploy
+name = "ranga-central"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+# O banco fica no leste da América do Norte, a região do D1 mais perto do Brasil.
+[[d1_databases]]
+binding = "DB"
+database_name = "ranga-central"
+database_id = "7e4dbc87-634e-4f4e-b338-00f3d45014e7"
+
+# O código do grupo é um segredo do Worker (wrangler secret put GRUPO), nunca neste arquivo.

@@ -1,27 +1,50 @@
-// tools\ranga-sala.exe: the table server of Ranga's online play for the consoles whose cores have none (RangaNet.hpp).
-// It keeps no game: it seats everyone who runs the same game at one table, at most four, and passes each one's
-// messages to the others. The first at a table runs the game for everyone (slot 0); when it leaves, the table ends.
+// tools\ranga-sala.exe (and ranga-sala on Linux, for an always-on server): the table server of Ranga's online play for
+// the consoles whose cores have none (RangaNet.hpp). It keeps no game: it seats everyone who runs the same game at one
+// table, at most four, and passes each one's messages to the others. The first at a table runs the game for everyone
+// (slot 0); when it leaves, the table ends.
 //
-//   ranga-sala.exe [--port 24873] [--log file] [--lan] [--atualizacao <pasta>] [--perfis <pasta>]
+//   ranga-sala [--port 24873] [--log file] [--lan] [--atualizacao <pasta>] [--perfis <pasta>] [--grupo <codigo>]
 //
-// With --atualizacao it also hands out Ranga's published update over HTTP on the same port (Update.hpp). With --perfis
-// it keeps the players' profiles (PlayerProfile.hpp): POST /ranga/perfil stores one, GET /ranga/perfis hands all out.
+// On the same port it answers plain HTTP too:
+//   --atualizacao  hands out Ranga's published update (Update.hpp): GET /ranga/manifest, /ranga/manifest.sig, /ranga/f/...
+//   --perfis       keeps the players' profiles (PlayerProfile.hpp) and the friends' chat, in that folder:
+//                  POST /ranga/perfil, GET /ranga/perfis, POST /ranga/chat, GET /ranga/chat?desde=N
+//   --grupo        the group's code: profiles and chat answer only a Ranga that sends it (X-Ranga-Grupo), so a stranger
+//                  who finds the address reads and writes nothing. Updates stay open (they are signed anyway).
 //
-// It runs on the PC that hosts, beside Eden's rooms; a TCP tunnel (playit) to 127.0.0.1 on its port lets friends in.
+// On the PC that hosts it listens on 127.0.0.1, where a playit tunnel reaches it; --lan opens it to every network,
+// which is what a server of its own (Oracle Cloud, launcher/net/oracle) needs.
 
+#ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
+using Socket = SOCKET;
+#else
+#include <arpa/inet.h>
+#include <dirent.h>
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <signal.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <cerrno>
+using Socket = int;
+constexpr Socket INVALID_SOCKET = -1;
+#endif
 
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
-#include <cwchar>
+#include <cstring>
+#include <ctime>
 #include <algorithm>
 #include <array>
 #include <cctype>
-#include <cstring>
-#include <ctime>
+#include <deque>
 #include <map>
 #include <memory>
 #include <string>
@@ -31,11 +54,59 @@
 
 namespace {
 
+// ---- What differs between Windows and Linux ----
+
+#ifdef _WIN32
+constexpr char kSep = '\\';
+void CloseSocket(Socket s) { closesocket(s); }
+void NonBlocking(Socket s) {
+    u_long on = 1;
+    ioctlsocket(s, FIONBIO, &on);
+}
+bool WouldBlock() { return WSAGetLastError() == WSAEWOULDBLOCK; }
+int LastError() { return WSAGetLastError(); }
+void MakeFolder(const std::string& path) { CreateDirectoryA(path.c_str(), nullptr); }
+bool Replace(const std::string& from, const std::string& to) { return MoveFileExA(from.c_str(), to.c_str(), MOVEFILE_REPLACE_EXISTING) != 0; }
+void Pause(int ms) { Sleep(static_cast<DWORD>(ms)); }
+std::vector<std::string> FilesIn(const std::string& folder) {
+    std::vector<std::string> names;
+    WIN32_FIND_DATAA found;
+    HANDLE search = FindFirstFileA((folder + "\\*").c_str(), &found);
+    if (search == INVALID_HANDLE_VALUE) return names;
+    do {
+        if ((found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0) names.push_back(found.cFileName);
+    } while (FindNextFileA(search, &found));
+    FindClose(search);
+    return names;
+}
+void LocalTime(time_t at, tm& out) { localtime_s(&out, &at); }
+#else
+constexpr char kSep = '/';
+void CloseSocket(Socket s) { close(s); }
+void NonBlocking(Socket s) { fcntl(s, F_SETFL, fcntl(s, F_GETFL, 0) | O_NONBLOCK); }
+bool WouldBlock() { return errno == EWOULDBLOCK || errno == EAGAIN; }
+int LastError() { return errno; }
+void MakeFolder(const std::string& path) { mkdir(path.c_str(), 0755); }
+bool Replace(const std::string& from, const std::string& to) { return rename(from.c_str(), to.c_str()) == 0; }
+void Pause(int ms) { usleep(static_cast<useconds_t>(ms) * 1000); }
+std::vector<std::string> FilesIn(const std::string& folder) {
+    std::vector<std::string> names;
+    if (DIR* dir = opendir(folder.c_str())) {
+        while (dirent* entry = readdir(dir)) {
+            if (entry->d_name[0] != '.') names.push_back(entry->d_name);
+        }
+        closedir(dir);
+    }
+    return names;
+}
+void LocalTime(time_t at, tm& out) { localtime_r(&at, &out); }
+#endif
+
 FILE* g_log = nullptr;
 
 void Log(const char* format, ...) {
-    SYSTEMTIME now;
-    GetLocalTime(&now);
+    tm now{};
+    LocalTime(std::time(nullptr), now);
     char text[1024];
     va_list args;
     va_start(args, format);
@@ -43,27 +114,30 @@ void Log(const char* format, ...) {
     va_end(args);
     for (FILE* out : {stdout, g_log}) {
         if (out == nullptr) continue;
-        std::fprintf(out, "%02d/%02d %02d:%02d:%02d %s\n", now.wDay, now.wMonth, now.wHour, now.wMinute, now.wSecond, text);
+        std::fprintf(out, "%02d/%02d %02d:%02d:%02d %s\n", now.tm_mday, now.tm_mon + 1, now.tm_hour, now.tm_min, now.tm_sec, text);
         std::fflush(out);
     }
 }
 
 struct Player {
-    SOCKET socket = INVALID_SOCKET;
+    Socket socket = INVALID_SOCKET;
     std::string address, game, name;
     int slot = -1;
     std::vector<uint8_t> in, out;
     size_t outAt = 0;
     bool closing = false;
-    // A Ranga downloading an update: one HTTP request, the answer, and the line closes once it is sent.
+    // A Ranga asking over HTTP (update, profiles, chat): one request, the answer, and the line closes once it is sent.
     bool http = false, closeWhenSent = false;
 };
 
 // The published update (salas\atualizacao, made by the hosting Ranga): manifest.txt, manifest.sig and files\.
 std::string g_updates;
+// The group's code (--grupo); empty: profiles and chat are open, as on the hosting PC behind playit.
+std::string g_group;
 
 void Answer(Player& player, int code, const std::string& body) {
-    const std::string head = "HTTP/1.1 " + std::to_string(code) + (code == 200 ? " OK" : code == 404 ? " Not Found" : " Error") + "\r\nContent-Type: application/octet-stream\r\nContent-Length: " +
+    const char* reason = code == 200 ? " OK" : code == 404 ? " Not Found" : code == 401 ? " Unauthorized" : code == 429 ? " Too Many Requests" : " Error";
+    const std::string head = "HTTP/1.1 " + std::to_string(code) + reason + "\r\nContent-Type: application/octet-stream\r\nContent-Length: " +
                              std::to_string(body.size()) + "\r\nConnection: close\r\n\r\n";
     player.out.insert(player.out.end(), head.begin(), head.end());
     player.out.insert(player.out.end(), body.begin(), body.end());
@@ -80,14 +154,25 @@ std::string ReadWhole(const std::string& path) {
     return bytes;
 }
 
-// The profiles: each one's card as its Ranga sent it, the secret that lets only that Ranga change it, and when.
+// Written beside and moved over, so a crash halfway never leaves half a file.
+void WriteWhole(const std::string& path, const std::string& bytes) {
+    if (FILE* file = std::fopen((path + ".novo").c_str(), "wb")) {
+        const bool ok = std::fwrite(bytes.data(), 1, bytes.size(), file) == bytes.size();
+        std::fclose(file);
+        if (ok) Replace(path + ".novo", path);
+    }
+}
+
+// ---- Profiles ----
+
+// Each one's card as its Ranga sent it, the secret that lets only that Ranga change it, and when.
 struct StoredProfile {
-    std::string secret, card;
+    std::string secret, card, name;
     long long seen = 0;
 };
-std::string g_profilesFolder;
+std::string g_dataFolder;
 std::map<std::string, StoredProfile> g_profiles;
-constexpr size_t kMaxProfiles = 200, kMaxProfileBody = 512 * 1024;
+constexpr size_t kMaxProfiles = 200, kMaxBody = 512 * 1024;
 
 bool HexId(const std::string& text) {
     if (text.size() != 32) return false;
@@ -95,31 +180,41 @@ bool HexId(const std::string& text) {
     return true;
 }
 
+// The value of a "key<TAB>value" line.
+std::string LineValue(const std::string& text, const std::string& key) {
+    const std::string start = key + "\t";
+    size_t at = 0;
+    if (text.rfind(start, 0) != 0) {
+        at = text.find("\n" + start);
+        if (at == std::string::npos) return "";
+        at += 1;
+    }
+    at += start.size();
+    const size_t end = text.find('\n', at);
+    return text.substr(at, end == std::string::npos ? std::string::npos : end - at);
+}
+
 void LoadProfiles() {
-    WIN32_FIND_DATAA found;
-    HANDLE search = FindFirstFileA((g_profilesFolder + "\\*.txt").c_str(), &found);
-    if (search == INVALID_HANDLE_VALUE) return;
-    do {
-        const std::string file = found.cFileName;
-        if (file.size() != 36) continue;
+    for (const std::string& file : FilesIn(g_dataFolder)) {
+        if (file.size() != 36 || file.compare(32, 4, ".txt") != 0) continue;
         const std::string id = file.substr(0, 32);
         if (!HexId(id)) continue;
-        const std::string text = ReadWhole(g_profilesFolder + "\\" + file);
+        const std::string text = ReadWhole(g_dataFolder + kSep + file);
         const size_t first = text.find('\n'), second = first == std::string::npos ? first : text.find('\n', first + 1);
         if (second == std::string::npos || text.rfind("segredo\t", 0) != 0 || text.compare(first + 1, 6, "visto\t") != 0) continue;
         StoredProfile& profile = g_profiles[id];
         profile.secret = text.substr(8, first - 8);
         profile.seen = std::atoll(text.c_str() + first + 7);
         profile.card = text.substr(second + 1);
-    } while (FindNextFileA(search, &found));
-    FindClose(search);
+        profile.name = LineValue(profile.card, "nome");
+    }
     Log("%zu perfis guardados", g_profiles.size());
 }
 
 // A card from a Ranga: "segredo<TAB>hex" then the card, whose "id" line names it. The first card of an id sets its
 // secret; another Ranga cannot overwrite it without that secret.
 int StoreProfile(const std::string& body) {
-    if (g_profilesFolder.empty()) return 404;
+    if (g_dataFolder.empty()) return 404;
     const size_t first = body.find('\n');
     if (body.rfind("segredo\t", 0) != 0 || first == std::string::npos) return 400;
     const std::string secret = body.substr(8, first - 8);
@@ -134,16 +229,10 @@ int StoreProfile(const std::string& body) {
     StoredProfile& profile = g_profiles[id];
     profile.secret = secret;
     profile.card = card;
+    profile.name = LineValue(card, "nome");
     profile.seen = static_cast<long long>(std::time(nullptr));
     // Kept on disk, so the friends' profiles survive the server restarting.
-    const std::string path = g_profilesFolder + "\\" + id + ".txt";
-    if (FILE* file = std::fopen((path + ".novo").c_str(), "wb")) {
-        const std::string head = "segredo\t" + secret + "\nvisto\t" + std::to_string(profile.seen) + "\n";
-        std::fwrite(head.data(), 1, head.size(), file);
-        std::fwrite(card.data(), 1, card.size(), file);
-        std::fclose(file);
-        MoveFileExA((path + ".novo").c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING);
-    }
+    WriteWhole(g_dataFolder + kSep + id + ".txt", "segredo\t" + secret + "\nvisto\t" + std::to_string(profile.seen) + "\n" + card);
     return 200;
 }
 
@@ -158,8 +247,99 @@ std::string AllProfiles() {
     return out;
 }
 
-// Only what the hosting Ranga publishes is served: the list, its signature and files\ by plain names (letters,
-// digits, _ - . and one folder), never anything outside the update's folder.
+// ---- Chat ----
+
+// The friends' messages: the last kKeptMessages, numbered, in chat.txt beside the profiles.
+struct Message {
+    long long number = 0, when = 0;
+    std::string id, name, text;
+};
+std::deque<Message> g_chat;
+long long g_chatNumber = 0;
+std::map<std::string, long long> g_lastSaid;
+constexpr size_t kKeptMessages = 500, kMaxText = 500;
+
+std::string ChatLine(const Message& m) {
+    return "m\t" + std::to_string(m.number) + "\t" + std::to_string(m.when) + "\t" + m.id + "\t" + m.name + "\t" + m.text + "\n";
+}
+
+void SaveChat() {
+    std::string text;
+    for (const Message& m : g_chat) text += ChatLine(m);
+    WriteWhole(g_dataFolder + kSep + "chat.txt", text);
+}
+
+void LoadChat() {
+    const std::string text = ReadWhole(g_dataFolder + kSep + "chat.txt");
+    size_t at = 0;
+    while (at < text.size()) {
+        size_t end = text.find('\n', at);
+        if (end == std::string::npos) end = text.size();
+        const std::string line = text.substr(at, end - at);
+        at = end + 1;
+        std::vector<std::string> parts;
+        for (size_t from = 0;;) {
+            const size_t tab = line.find('\t', from);
+            parts.push_back(line.substr(from, tab == std::string::npos ? std::string::npos : tab - from));
+            if (tab == std::string::npos) break;
+            from = tab + 1;
+        }
+        if (parts.size() != 6 || parts[0] != "m") continue;
+        Message m{std::atoll(parts[1].c_str()), std::atoll(parts[2].c_str()), parts[3], parts[4], parts[5]};
+        g_chat.push_back(m);
+        g_chatNumber = std::max(g_chatNumber, m.number);
+    }
+    while (g_chat.size() > kKeptMessages) g_chat.pop_front();
+}
+
+std::string Clean(std::string text, size_t limit) {
+    for (char& c : text) if (c == '\t' || c == '\n' || c == '\r') c = ' ';
+    if (text.size() > limit) {
+        text.resize(limit);
+        while (!text.empty() && (static_cast<unsigned char>(text.back()) & 0xc0) == 0x80) text.pop_back();
+        if (!text.empty() && (static_cast<unsigned char>(text.back()) & 0xc0) == 0xc0) text.pop_back();
+    }
+    return text;
+}
+
+// A message: "segredo", "id" and "texto" lines. Only a profile's own Ranga speaks as it, the name comes from the
+// profile, and one message a second at most.
+int Say(const std::string& body) {
+    if (g_dataFolder.empty()) return 404;
+    const std::string secret = LineValue(body, "segredo"), id = LineValue(body, "id");
+    std::string text = Clean(LineValue(body, "texto"), kMaxText);
+    const auto profile = g_profiles.find(id);
+    if (profile == g_profiles.end() || profile->second.secret != secret) return 403;
+    if (text.find_first_not_of(' ') == std::string::npos) return 400;
+    const long long now = static_cast<long long>(std::time(nullptr));
+    long long& last = g_lastSaid[id];
+    if (now - last < 1) return 429;
+    last = now;
+    g_chat.push_back({++g_chatNumber, now, id, Clean(profile->second.name, 40), text});
+    while (g_chat.size() > kKeptMessages) g_chat.pop_front();
+    SaveChat();
+    return 200;
+}
+
+std::string ChatSince(long long after) {
+    std::string out;
+    for (const Message& m : g_chat) if (m.number > after) out += ChatLine(m);
+    return out;
+}
+
+// ---- HTTP ----
+
+std::string Header(const std::string& request, const std::string& name) {
+    std::string lower = request;
+    for (char& c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    const size_t at = lower.find("\r\n" + name + ":");
+    if (at == std::string::npos) return "";
+    size_t from = at + 3 + name.size();
+    while (from < request.size() && request[from] == ' ') ++from;
+    const size_t end = request.find("\r\n", from);
+    return request.substr(from, end == std::string::npos ? std::string::npos : end - from);
+}
+
 void ServeHttp(Player& player) {
     const auto end = std::search(player.in.begin(), player.in.end(), "\r\n\r\n", "\r\n\r\n" + 4);
     if (end == player.in.end()) {
@@ -167,53 +347,69 @@ void ServeHttp(Player& player) {
         return;
     }
     const std::string request(player.in.begin(), end);
-    if (request.rfind("POST ", 0) == 0) {
-        // A profile: the whole body has to be here first.
-        std::string lower = request;
-        for (char& c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        const size_t lengthAt = lower.find("content-length:");
-        const size_t length = lengthAt == std::string::npos ? 0 : static_cast<size_t>(std::atoll(lower.c_str() + lengthAt + 15));
-        if (length == 0 || length > kMaxProfileBody) {
+    const bool post = request.rfind("POST ", 0) == 0;
+    const size_t pathAt = post ? 5 : 4, space = request.find(' ', pathAt);
+    std::string path = space == std::string::npos ? "" : request.substr(pathAt, space - pathAt), query;
+    if (const size_t mark = path.find('?'); mark != std::string::npos) {
+        query = path.substr(mark + 1);
+        path.resize(mark);
+    }
+    std::string body;
+    if (post) {
+        // The whole body has to be here first.
+        const size_t length = static_cast<size_t>(std::atoll(Header(request, "content-length").c_str()));
+        if (length == 0 || length > kMaxBody) {
             player.in.clear();
             Answer(player, 400, "");
             return;
         }
         const size_t start = static_cast<size_t>(end - player.in.begin()) + 4;
         if (player.in.size() < start + length) return;
-        const std::string body(player.in.begin() + static_cast<std::ptrdiff_t>(start), player.in.begin() + static_cast<std::ptrdiff_t>(start + length));
-        player.in.clear();
-        const size_t space = request.find(' ', 5);
-        const std::string path = space == std::string::npos ? "" : request.substr(5, space - 5);
-        const int code = path == "/ranga/perfil" ? StoreProfile(body) : 404;
-        Answer(player, code, "");
-        if (code != 200) Log("perfil recusado (%d) de %s", code, player.address.c_str());
-        return;
+        body.assign(player.in.begin() + static_cast<std::ptrdiff_t>(start), player.in.begin() + static_cast<std::ptrdiff_t>(start + length));
     }
     player.in.clear();
-    const size_t space = request.find(' ', 4);
-    const std::string path = space == std::string::npos ? "" : request.substr(4, space - 4);
-    if (path == "/ranga/perfis" && !g_profilesFolder.empty()) {
+
+    const bool social = path == "/ranga/perfil" || path == "/ranga/perfis" || path == "/ranga/chat";
+    if (social && !g_group.empty() && Header(request, "x-ranga-grupo") != g_group) {
+        Answer(player, 401, "");
+        return;
+    }
+    if (post) {
+        const int code = path == "/ranga/perfil" ? StoreProfile(body) : path == "/ranga/chat" ? Say(body) : 404;
+        Answer(player, code, "");
+        if (code != 200 && code != 429) Log("%s recusado (%d) de %s", path.c_str(), code, player.address.c_str());
+        return;
+    }
+    if (path == "/ranga/perfis" && !g_dataFolder.empty()) {
         Answer(player, 200, AllProfiles());
         return;
     }
+    if (path == "/ranga/chat" && !g_dataFolder.empty()) {
+        const long long after = query.rfind("desde=", 0) == 0 ? std::atoll(query.c_str() + 6) : 0;
+        Answer(player, 200, ChatSince(after));
+        return;
+    }
+    // The update: only what the hosting Ranga published, by plain names (letters, digits, _ - . and one folder).
     bool safe = !g_updates.empty() && path.find("..") == std::string::npos;
     for (const char c : path) safe = safe && (std::isalnum(static_cast<unsigned char>(c)) || c == '/' || c == '_' || c == '-' || c == '.');
     std::string file;
-    if (safe && path == "/ranga/manifest") file = g_updates + "\\manifest.txt";
-    else if (safe && path == "/ranga/manifest.sig") file = g_updates + "\\manifest.sig";
+    if (safe && path == "/ranga/manifest") file = g_updates + kSep + "manifest.txt";
+    else if (safe && path == "/ranga/manifest.sig") file = g_updates + kSep + "manifest.sig";
     else if (safe && path.rfind("/ranga/f/", 0) == 0 && path.size() > 9 && std::count(path.begin() + 9, path.end(), '/') <= 1) {
         std::string relative = path.substr(9);
-        std::replace(relative.begin(), relative.end(), '/', '\\');
-        file = g_updates + "\\files\\" + relative;
+        std::replace(relative.begin(), relative.end(), '/', kSep);
+        file = g_updates + kSep + "files" + kSep + relative;
     }
-    const std::string body = file.empty() ? std::string() : ReadWhole(file);
-    if (file.empty() || body.empty()) {
+    const std::string bytes = file.empty() ? std::string() : ReadWhole(file);
+    if (file.empty() || bytes.empty()) {
         Answer(player, 404, "");
         return;
     }
-    Answer(player, 200, body);
-    Log("atualização: %s -> %s (%zu bytes)", path.c_str(), player.address.c_str(), body.size());
+    Answer(player, 200, bytes);
+    Log("atualização: %s -> %s (%zu bytes)", path.c_str(), player.address.c_str(), bytes.size());
 }
+
+// ---- Tables ----
 
 std::vector<std::unique_ptr<Player>> g_players;
 // game -> who sits at each slot
@@ -314,42 +510,55 @@ void Handle(Player& player, uint8_t type, const uint8_t* body, size_t size) {
     for (int i = 0; i < RangaNet::kMaxPlayers; ++i) if (table[i] != nullptr && table[i] != &player) Send(*table[i], relayed);
 }
 
+bool StartsHttp(const std::vector<uint8_t>& in) {
+    return in.size() >= 4 && (std::memcmp(in.data(), "GET ", 4) == 0 || std::memcmp(in.data(), "POST", 4) == 0);
+}
+
 }
 
 int main(int argc, char** argv) {
     int port = RangaNet::kDefaultPort;
-    // Only this PC by default: the playit agent reaches it here, and Windows asks nothing about its firewall. --lan
-    // opens it to the local network too.
     bool lan = false;
     for (int i = 1; i + 1 < argc; ++i) {
         if (std::strcmp(argv[i], "--port") == 0) port = std::atoi(argv[++i]);
         else if (std::strcmp(argv[i], "--log") == 0) g_log = std::fopen(argv[++i], "a");
         else if (std::strcmp(argv[i], "--atualizacao") == 0) g_updates = argv[++i];
-        else if (std::strcmp(argv[i], "--perfis") == 0) g_profilesFolder = argv[++i];
+        else if (std::strcmp(argv[i], "--perfis") == 0) g_dataFolder = argv[++i];
+        else if (std::strcmp(argv[i], "--grupo") == 0) g_group = argv[++i];
     }
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--lan") == 0) lan = true;
     }
-    if (!g_profilesFolder.empty()) {
-        CreateDirectoryA(g_profilesFolder.c_str(), nullptr);
+    if (!g_dataFolder.empty()) {
+        MakeFolder(g_dataFolder);
         LoadProfiles();
+        LoadChat();
     }
+#ifdef _WIN32
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return 1;
-    SOCKET listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+#else
+    // A friend whose line drops while an answer is going is no reason for the server to end.
+    signal(SIGPIPE, SIG_IGN);
+#endif
+    Socket listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+#ifdef _WIN32
     BOOL exclusive = TRUE;
     setsockopt(listener, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, reinterpret_cast<const char*>(&exclusive), sizeof(exclusive));
+#else
+    int reuse = 1;
+    setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+#endif
     sockaddr_in any{};
     any.sin_family = AF_INET;
-    any.sin_port = htons(static_cast<u_short>(port));
+    any.sin_port = htons(static_cast<uint16_t>(port));
     any.sin_addr.s_addr = htonl(lan ? INADDR_ANY : INADDR_LOOPBACK);
     if (bind(listener, reinterpret_cast<sockaddr*>(&any), sizeof(any)) != 0 || listen(listener, 16) != 0) {
-        Log("a porta %d está em uso (erro %d)", port, WSAGetLastError());
+        Log("a porta %d está em uso (erro %d)", port, LastError());
         return 2;
     }
-    u_long nonblocking = 1;
-    ioctlsocket(listener, FIONBIO, &nonblocking);
-    Log("sala do Ranga (jogos clássicos) aberta na porta TCP %d", port);
+    NonBlocking(listener);
+    Log("sala do Ranga (jogos clássicos) aberta na porta TCP %d%s%s", port, lan ? ", para todas as redes" : "", g_group.empty() ? "" : ", com código do grupo");
 
     std::vector<uint8_t> buffer(256 * 1024);
     for (;;) {
@@ -357,26 +566,32 @@ int main(int argc, char** argv) {
         FD_ZERO(&reads);
         FD_ZERO(&writes);
         FD_SET(listener, &reads);
+        Socket highest = listener;
         for (auto& player : g_players) {
             FD_SET(player->socket, &reads);
             if (player->outAt < player->out.size()) FD_SET(player->socket, &writes);
+            highest = std::max(highest, player->socket);
         }
         timeval wait{1, 0};
-        if (select(0, &reads, &writes, nullptr, &wait) == SOCKET_ERROR) {
-            Log("select falhou (erro %d)", WSAGetLastError());
-            Sleep(100);
+        if (select(static_cast<int>(highest + 1), &reads, &writes, nullptr, &wait) < 0) {
+            Log("select falhou (erro %d)", LastError());
+            Pause(100);
             continue;
         }
         if (FD_ISSET(listener, &reads)) {
             sockaddr_in from{};
-            int fromSize = sizeof(from);
-            SOCKET client = accept(listener, reinterpret_cast<sockaddr*>(&from), &fromSize);
+            socklen_t fromSize = sizeof(from);
+            Socket client = accept(listener, reinterpret_cast<sockaddr*>(&from), &fromSize);
             // select takes at most FD_SETSIZE sockets; past that a newcomer is turned away.
-            if (client != INVALID_SOCKET && g_players.size() + 1 >= FD_SETSIZE) {
-                closesocket(client);
+            if (client != INVALID_SOCKET && (g_players.size() + 1 >= FD_SETSIZE
+#ifndef _WIN32
+                                             || client >= FD_SETSIZE
+#endif
+                                             )) {
+                CloseSocket(client);
             } else if (client != INVALID_SOCKET) {
-                ioctlsocket(client, FIONBIO, &nonblocking);
-                BOOL noDelay = TRUE;
+                NonBlocking(client);
+                int noDelay = 1;
                 setsockopt(client, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&noDelay), sizeof(noDelay));
                 auto player = std::make_unique<Player>();
                 player->socket = client;
@@ -389,13 +604,13 @@ int main(int argc, char** argv) {
         for (auto& player : g_players) {
             if (player->closing) continue;
             if (FD_ISSET(player->socket, &reads)) {
-                const int got = recv(player->socket, reinterpret_cast<char*>(buffer.data()), static_cast<int>(buffer.size()), 0);
+                const int got = static_cast<int>(recv(player->socket, reinterpret_cast<char*>(buffer.data()), static_cast<int>(buffer.size()), 0));
                 if (got <= 0) {
-                    if (got == 0 || WSAGetLastError() != WSAEWOULDBLOCK) player->closing = true;
+                    if (got == 0 || !WouldBlock()) player->closing = true;
                 } else {
                     player->in.insert(player->in.end(), buffer.begin(), buffer.begin() + got);
-                    // A Ranga asking for an update (HTTP) instead of sitting at a table.
-                    if (player->slot < 0 && (player->http || (player->in.size() >= 4 && (std::memcmp(player->in.data(), "GET ", 4) == 0 || std::memcmp(player->in.data(), "POST", 4) == 0)))) {
+                    // A Ranga asking over HTTP instead of sitting at a table.
+                    if (player->slot < 0 && (player->http || StartsHttp(player->in))) {
                         player->http = true;
                         ServeHttp(*player);
                         continue;
@@ -409,10 +624,10 @@ int main(int argc, char** argv) {
         }
         for (auto& player : g_players) {
             while (player->outAt < player->out.size()) {
-                const int sent = send(player->socket, reinterpret_cast<const char*>(player->out.data() + player->outAt),
-                                      static_cast<int>(std::min<size_t>(player->out.size() - player->outAt, 1u << 20)), 0);
+                const int sent = static_cast<int>(send(player->socket, reinterpret_cast<const char*>(player->out.data() + player->outAt),
+                                                       static_cast<int>(std::min<size_t>(player->out.size() - player->outAt, 1u << 20)), 0));
                 if (sent <= 0) {
-                    if (WSAGetLastError() != WSAEWOULDBLOCK) player->closing = true;
+                    if (!WouldBlock()) player->closing = true;
                     break;
                 }
                 player->outAt += static_cast<size_t>(sent);
@@ -431,8 +646,9 @@ int main(int argc, char** argv) {
             Player& player = *g_players[i];
             if (!player.closing) { ++i; continue; }
             Unseat(player);
-            if (player.outAt < player.out.size()) send(player.socket, reinterpret_cast<const char*>(player.out.data() + player.outAt), static_cast<int>(player.out.size() - player.outAt), 0);
-            closesocket(player.socket);
+            if (player.outAt < player.out.size())
+                send(player.socket, reinterpret_cast<const char*>(player.out.data() + player.outAt), static_cast<int>(player.out.size() - player.outAt), 0);
+            CloseSocket(player.socket);
             g_players.erase(g_players.begin() + static_cast<std::ptrdiff_t>(i));
         }
     }

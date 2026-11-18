@@ -38,7 +38,7 @@ std::string UrlEncode(const std::string& text) {
 }
 
 HttpResult HttpRequest(const std::string& method, const std::string& url, const std::string& body, const std::string& contentType,
-                       const std::string& userAgent, int timeoutMs) {
+                       const std::string& userAgent, int timeoutMs, const std::string& extraHeaders) {
     HttpResult result;
     std::string full = url;
     if (full.rfind("http://", 0) != 0 && full.rfind("https://", 0) != 0) full = "http://" + full;
@@ -63,7 +63,8 @@ HttpResult HttpRequest(const std::string& method, const std::string& url, const 
     if (HINTERNET connection = WinHttpConnect(session, host, parts.nPort, 0)) {
         if (HINTERNET request = WinHttpOpenRequest(connection, Widen(method).c_str(), target.c_str(), nullptr, WINHTTP_NO_REFERER,
                                                    WINHTTP_DEFAULT_ACCEPT_TYPES, secure ? WINHTTP_FLAG_SECURE : 0)) {
-            const std::wstring headers = contentType.empty() ? L"" : L"Content-Type: " + Widen(contentType) + L"\r\n";
+            std::wstring headers = contentType.empty() ? L"" : L"Content-Type: " + Widen(contentType) + L"\r\n";
+            headers += Widen(extraHeaders);
             if (WinHttpSendRequest(request, headers.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : headers.c_str(), static_cast<DWORD>(-1L),
                                    body.empty() ? WINHTTP_NO_REQUEST_DATA : const_cast<char*>(body.data()), static_cast<DWORD>(body.size()),
                                    static_cast<DWORD>(body.size()), 0) &&

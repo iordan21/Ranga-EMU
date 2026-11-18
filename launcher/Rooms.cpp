@@ -238,6 +238,10 @@ std::wstring StartExtra(const std::wstring& root, Extra extra) {
     std::wstring command = L"\"" + ExtraExe(root, extra) + L"\" --port " + std::to_wstring(port);
     if (extra == Extra::Classics) {
         command += L" --log \"" + log + L"\" --atualizacao \"" + root + L"\\salas\\atualizacao\" --perfis \"" + root + L"\\salas\\perfis\"";
+        // The group's code, when the friends set one (letters and digits only, see PlayerProfile.hpp GroupCode).
+        std::wstring group;
+        for (const wchar_t c : ReadIni(root + L"\\engines.ini", L"Ranga", L"grupo", L"")) if (iswalnum(c) || c == L'-' || c == L'_') group += c;
+        if (!group.empty()) command += L" --grupo " + group;
     } else {
         // Azahar's room: like Eden's, its ban list is read only when the file starts with its own header.
         const std::wstring bans = Folder(root) + L"\\sala-3ds-banidos.txt";

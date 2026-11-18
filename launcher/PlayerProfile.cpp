@@ -8,6 +8,7 @@
 #include <bcrypt.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <ctime>
 
@@ -581,6 +582,66 @@ bool RetroAchievementsLogin(const std::string& user, const std::string& password
     }
     if (userOut.empty()) userOut = user;
     return true;
+}
+
+namespace {
+std::atomic<unsigned long long> g_centralDownUntil{0};
+
+std::string OnlyCodeCharacters(const std::string& text) {
+    std::string out;
+    for (const char c : text) if (std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_') out += c;
+    return out.substr(0, 64);
+}
+
+std::string OnlyAddressCharacters(const std::string& text) {
+    std::string out;
+    for (const char c : text) if (std::isalnum(static_cast<unsigned char>(c)) || c == '.' || c == ':' || c == '-' || c == '/') out += c;
+    while (!out.empty() && out.back() == '/') out.pop_back();
+    return out.substr(0, 128);
+}
+
+// The friends' central on Cloudflare (launcher/net/cloudflare), made on 18/11/2026; engines.ini [Ranga] central
+// overrides it, and "nenhuma" leaves only the hosting PC's room.
+constexpr const char* kDefaultCentral = "https://ranga-central.nadroi-dev.workers.dev";
+}
+
+std::string CentralServer(const std::wstring& root) {
+    const std::string chosen = OnlyAddressCharacters(Utf8(ReadIni(root + L"\\engines.ini", L"Ranga", L"central", L"")));
+    if (chosen == "nenhuma") return "";
+    return chosen.empty() ? kDefaultCentral : chosen;
+}
+
+void SetCentralServer(const std::wstring& root, const std::string& address) {
+    const std::wstring ini = root + L"\\engines.ini";
+    EnsureUnicodeIni(ini);
+    const std::string clean = OnlyAddressCharacters(address);
+    WritePrivateProfileStringW(L"Ranga", L"central", clean.empty() ? nullptr : Wide(clean).c_str(), ini.c_str());
+    g_centralDownUntil = 0;
+}
+
+std::string GroupCode(const std::wstring& root) { return OnlyCodeCharacters(Utf8(ReadIni(root + L"\\engines.ini", L"Ranga", L"grupo", L""))); }
+
+void SetGroupCode(const std::wstring& root, const std::string& code) {
+    const std::wstring ini = root + L"\\engines.ini";
+    EnsureUnicodeIni(ini);
+    const std::string clean = OnlyCodeCharacters(code);
+    WritePrivateProfileStringW(L"Ranga", L"grupo", clean.empty() ? nullptr : Wide(clean).c_str(), ini.c_str());
+}
+
+SocialAnswer SocialRequest(const std::wstring& root, const std::string& method, const std::string& path, const std::string& body, int timeoutMs) {
+    const std::string code = GroupCode(root);
+    const std::string headers = code.empty() ? "" : "X-Ranga-Grupo: " + code + "\r\n";
+    const std::string type = method == "POST" ? "text/plain; charset=utf-8" : "";
+    const std::string central = CentralServer(root);
+    if (!central.empty() && GetTickCount64() >= g_centralDownUntil) {
+        HttpResult answer = HttpRequest(method, central + path, body, type, "RangaEmu", std::min(timeoutMs, 5000), headers);
+        if (answer.status != 0) return {answer, central};
+        // Down: the hosting PC's room for the next three minutes, without waiting on the central one each time.
+        g_centralDownUntil = GetTickCount64() + 180000;
+    }
+    const std::string fallback = ProfilesServer(root);
+    if (fallback == central) return {HttpResult{}, central};
+    return {HttpRequest(method, fallback + path, body, type, "RangaEmu", timeoutMs, headers), fallback};
 }
 
 std::string ProfilesServer(const std::wstring& root) {

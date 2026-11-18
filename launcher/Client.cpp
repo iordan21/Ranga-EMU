@@ -1574,7 +1574,8 @@ struct Client {
         }
         FocusLast(barFocus == first + 1, scale);
         ImGui::SameLine(0, 10 * scale);
-        if (ImGui::Button("Perfil", ImVec2(narrow, height)) || barPress == first + 2) OpenProfile();
+        const std::string profileLabel = chatUnread > 0 ? "Perfil (" + std::to_string(chatUnread) + ")###perfil" : "Perfil###perfil";
+        if (ImGui::Button(profileLabel.c_str(), ImVec2(narrow, height)) || barPress == first + 2) OpenProfile();
         FocusLast(barFocus == first + 2, scale);
     }
 
@@ -3294,8 +3295,27 @@ struct Client {
     // The friends' cards, as the room handed them over the last time (SyncProfiles, in the background).
     std::mutex friendsLock;
     std::vector<PlayerCard> friends;
-    std::string friendsProblem;
+    std::string friendsProblem, friendsServer;
     long long friendsAt = 0;
+    // Servidor dos amigos, as typed on the Amigos tab.
+    std::array<char, 128> centralField{}, groupField{};
+    // The friends' chat: what the server has (the last 500), fetched in the background; unread counts what came from
+    // the others while the Chat tab was not open.
+    struct ChatMessage {
+        long long number = 0, when = 0;
+        std::string id, name, text;
+    };
+    std::mutex chatLock;
+    std::vector<ChatMessage> chat;
+    long long chatLast = 0, chatSeen = -1;
+    std::string chatProblem, chatServer;
+    std::thread chatThread;
+    std::atomic<bool> chatBusy{false};
+    ULONGLONG chatAt = 0;
+    int chatUnread = 0;
+    size_t chatShown = 0;
+    bool chatTabOpen = false, chatScroll = false;
+    std::array<char, 501> chatInput{};
     std::thread profileThread;
     std::atomic<bool> profileBusy{false};
     ULONGLONG profileSyncedAt = 0;
@@ -3327,11 +3347,12 @@ struct Client {
 
     void StopProfileThreads() {
         if (profileThread.joinable()) profileThread.join();
+        if (chatThread.joinable()) chatThread.join();
         // The friends see this Ranga closed at once, not five minutes later.
         if (profileLoaded && profileSyncedAt != 0) {
             PlayerCard card = profile.Card("", "");
             card.closed = true;
-            HttpRequest("POST", ProfilesServer(library.Root()) + "/ranga/perfil", "segredo\t" + profile.secret + "\n" + WriteCard(card), "text/plain; charset=utf-8", "RangaEmu", 2000);
+            SocialRequest(library.Root(), "POST", "/ranga/perfil", "segredo\t" + profile.secret + "\n" + WriteCard(card), 2000);
         }
         if (badgeThread.joinable()) badgeThread.join();
         if (raThread.joinable()) raThread.join();
@@ -3449,17 +3470,23 @@ struct Client {
         sentRevision = profile.Revision();
         sentPlaying = playing;
         const std::string body = "segredo\t" + profile.secret + "\n" + WriteCard(profile.Card(playingTitle, playingSystem));
-        const std::string server = ProfilesServer(library.Root());
+        const std::wstring root = library.Root();
         profileBusy = true;
-        profileThread = std::thread([this, body, server] {
-            const HttpResult sent = HttpRequest("POST", server + "/ranga/perfil", body, "text/plain; charset=utf-8", "RangaEmu", 8000);
-            const HttpResult got = sent.status == 0 ? HttpResult{} : HttpRequest("GET", server + "/ranga/perfis", "", "", "RangaEmu", 8000);
+        profileThread = std::thread([this, body, root] {
+            const SocialAnswer posted = SocialRequest(root, "POST", "/ranga/perfil", body, 8000);
+            const HttpResult& sent = posted.result;
+            const SocialAnswer fetched = sent.status == 0 ? SocialAnswer{} : SocialRequest(root, "GET", "/ranga/perfis", "", 8000);
+            const HttpResult& got = fetched.result;
+            const std::string server = posted.server;
             {
                 std::lock_guard guard(friendsLock);
+                friendsServer = fetched.server.empty() ? server : fetched.server;
                 if (got.status == 200) {
                     friends = ReadCards(got.body);
                     friendsAt = static_cast<long long>(std::time(nullptr));
                     friendsProblem.clear();
+                } else if (sent.status == 401 || got.status == 401) {
+                    friendsProblem = "O servidor dos amigos pede o código do grupo. Digite em Servidor dos amigos, aqui embaixo.";
                 } else if (sent.status == 0) {
                     friendsProblem = "A sala dos amigos não respondeu (" + server + "). O PC que hospeda precisa estar ligado, com o playit e a sala dos clássicos.";
                 } else {
@@ -3591,6 +3618,8 @@ struct Client {
     }
 
     void OpenProfile() {
+        std::snprintf(centralField.data(), centralField.size(), "%s", CentralServer(library.Root()).c_str());
+        std::snprintf(groupField.data(), groupField.size(), "%s", GroupCode(library.Root()).c_str());
         profileOpen = true;
         enginesPage = false;
         profileViewing.clear();
@@ -3732,6 +3761,11 @@ struct Client {
                 ImGui::BeginChild("##played", ImVec2(0, 0), ImGuiChildFlags_NavFlattened);
                 ProfileGames(scale);
                 ImGui::EndChild();
+                ImGui::EndTabItem();
+            }
+            const std::string chatLabel = chatUnread > 0 ? "Chat (" + std::to_string(chatUnread) + ")###chat" : "Chat###chat";
+            if (own && ImGui::BeginTabItem(chatLabel.c_str())) {
+                ProfileChat(scale);
                 ImGui::EndTabItem();
             }
             if (own && ImGui::BeginTabItem("Amigos")) {
@@ -3917,6 +3951,162 @@ struct Client {
         }
     }
 
+    // Fetches the chat (every three seconds while its tab is open, every thirty otherwise), sending say first.
+    void PollChat(const std::string& say = "") {
+        if (!profileLoaded || chatBusy) return;
+        const ULONGLONG now = GetTickCount64();
+        if (say.empty() && chatAt != 0 && now - chatAt < (chatTabOpen ? 3000u : 30000u)) return;
+        if (chatThread.joinable()) chatThread.join();
+        chatAt = now;
+        chatBusy = true;
+        long long after;
+        std::string before;
+        {
+            std::lock_guard guard(chatLock);
+            after = chatLast;
+            before = chatServer;
+        }
+        chatThread = std::thread([this, say, after, before, root = library.Root(), secret = profile.secret, id = profile.id] {
+            std::string problem;
+            if (!say.empty()) {
+                const int sent = SocialRequest(root, "POST", "/ranga/chat", "segredo\t" + secret + "\nid\t" + id + "\ntexto\t" + say + "\n", 8000).result.status;
+                if (sent == 429) problem = "Calma: uma mensagem por segundo.";
+                else if (sent == 403) problem = "O servidor ainda não conhece o seu perfil. Espere alguns segundos e mande de novo.";
+                else if (sent == 401) problem = "Falta o código do grupo (aba Amigos, Servidor dos amigos).";
+                else if (sent != 200) problem = "A mensagem não foi enviada: o servidor dos amigos não respondeu.";
+            }
+            SocialAnswer got = SocialRequest(root, "GET", "/ranga/chat?desde=" + std::to_string(after), "", 8000);
+            // Another server (the central one came back, or went down) numbers its messages its own way: all again.
+            const bool restart = got.result.status == 200 && after != 0 && got.server != before;
+            if (restart) got = SocialRequest(root, "GET", "/ranga/chat?desde=0", "", 8000);
+            std::vector<ChatMessage> fresh;
+            for (size_t at = 0; got.result.status == 200 && at < got.result.body.size();) {
+                size_t end = got.result.body.find('\n', at);
+                if (end == std::string::npos) end = got.result.body.size();
+                const std::string line = got.result.body.substr(at, end - at);
+                at = end + 1;
+                std::vector<std::string> parts;
+                for (size_t from = 0;;) {
+                    const size_t tab = line.find('\t', from);
+                    parts.push_back(line.substr(from, tab == std::string::npos ? std::string::npos : tab - from));
+                    if (tab == std::string::npos) break;
+                    from = tab + 1;
+                }
+                if (parts.size() == 6 && parts[0] == "m") fresh.push_back({std::atoll(parts[1].c_str()), std::atoll(parts[2].c_str()), parts[3], parts[4], parts[5]});
+            }
+            std::lock_guard guard(chatLock);
+            if (got.result.status == 200) {
+                if (restart) {
+                    chat.clear();
+                    chatLast = 0;
+                }
+                chatServer = got.server;
+                for (auto& message : fresh) {
+                    if (message.number <= chatLast) continue;
+                    chatLast = message.number;
+                    chat.push_back(std::move(message));
+                }
+                if (chat.size() > 500) chat.erase(chat.begin(), chat.begin() + static_cast<std::ptrdiff_t>(chat.size() - 500));
+            } else if (problem.empty()) {
+                problem = got.result.status == 401 ? "Falta o código do grupo (aba Amigos, Servidor dos amigos)." : got.result.status == 0 ? "O servidor dos amigos não respondeu." : "";
+            }
+            chatProblem = problem;
+            chatBusy = false;
+        });
+    }
+
+    // New messages from the others: a notice and the count on Perfil and Chat while the chat is not being read.
+    void NoticeChat() {
+        std::vector<ChatMessage> fresh;
+        {
+            std::lock_guard guard(chatLock);
+            if (chatSeen < 0) {
+                // The history already there when Ranga opened is not news.
+                if (chatServer.empty() || chatBusy) return;
+                chatSeen = chatLast;
+                return;
+            }
+            for (const auto& message : chat) if (message.number > chatSeen && message.id != profile.id) fresh.push_back(message);
+            if (chatLast > chatSeen && chatTabOpen) {
+                chatSeen = chatLast;
+                chatUnread = 0;
+                return;
+            }
+            chatSeen = std::max(chatSeen, chatLast);
+        }
+        for (const auto& message : fresh) {
+            ++chatUnread;
+            AddToast("Chat  ·  " + message.name, message.text, "");
+        }
+    }
+
+    void ProfileChat(float scale) {
+        chatTabOpen = true;
+        std::vector<ChatMessage> list;
+        std::string problem;
+        {
+            std::lock_guard guard(chatLock);
+            list = chat;
+            problem = chatProblem;
+        }
+        if (list.size() != chatShown) {
+            chatShown = list.size();
+            chatScroll = true;
+        }
+        ImGui::Dummy(ImVec2(0, 6 * scale));
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, Color(kSidebar));
+        ImGui::BeginChild("##chatLog", ImVec2(0, -54 * scale), ImGuiChildFlags_None, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+        ImGui::Dummy(ImVec2(0, 4 * scale));
+        if (list.empty()) ImGui::TextDisabled("  Nenhuma mensagem ainda. Mande a primeira!");
+        for (const auto& message : list) {
+            ImGui::SetCursorPosX(12 * scale);
+            ImGui::BeginGroup();
+            ImGui::PushFont(semibold, 15);
+            ImGui::PushStyleColor(ImGuiCol_Text, Color(message.id == profile.id ? kGreen : kAccentHover));
+            ImGui::TextUnformatted(message.name.c_str());
+            ImGui::PopStyleColor();
+            ImGui::PopFont();
+            ImGui::SameLine();
+            const time_t at = static_cast<time_t>(message.when);
+            tm local{};
+            localtime_s(&local, &at);
+            ImGui::TextDisabled("%02d/%02d %02d:%02d", local.tm_mday, local.tm_mon + 1, local.tm_hour, local.tm_min);
+            ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x + ImGui::GetCursorPosX() - 12 * scale);
+            ImGui::TextWrapped("%s", message.text.c_str());
+            ImGui::PopTextWrapPos();
+            ImGui::EndGroup();
+            ImGui::Dummy(ImVec2(0, 4 * scale));
+        }
+        if (chatScroll) {
+            ImGui::SetScrollHereY(1.0f);
+            chatScroll = false;
+        }
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+        ImGui::Dummy(ImVec2(0, 4 * scale));
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 130 * scale);
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, Color(kSelected));
+        const bool enter = ImGui::InputTextWithHint("##chatInput", "Escreva uma mensagem...", chatInput.data(), chatInput.size(), ImGuiInputTextFlags_EnterReturnsTrue);
+        ImGui::PopStyleColor();
+        ImGui::SameLine();
+        ImGui::BeginDisabled(chatBusy);
+        const bool send = ImGui::Button(chatBusy ? "Enviando..." : "Enviar", ImVec2(120 * scale, 0)) || enter;
+        ImGui::EndDisabled();
+        if (send && !chatBusy) {
+            const std::string text = chatInput.data();
+            if (text.find_first_not_of(' ') != std::string::npos) {
+                PollChat(text);
+                chatInput.fill('\0');
+            }
+            ImGui::SetKeyboardFocusHere(-1);
+        }
+        if (!problem.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
+            ImGui::TextUnformatted(problem.c_str());
+            ImGui::PopStyleColor();
+        }
+    }
+
     void ProfileFriends(float scale) {
         ImDrawList* draw = ImGui::GetWindowDrawList();
         std::vector<PlayerCard> list;
@@ -3947,9 +4137,40 @@ struct Client {
             ImGui::PopTextWrapPos();
             ImGui::PopStyleColor();
         } else if (at != 0) {
-            ImGui::TextDisabled("Atualizado %s, pela sala em %s", FormatAgo(at).c_str(), ProfilesServer(library.Root()).c_str());
+            std::string server;
+            {
+                std::lock_guard guard(friendsLock);
+                server = friendsServer;
+            }
+            const std::string by = server == CentralServer(library.Root()) ? "pela central " + server : "pela sala em " + server;
+            ImGui::TextDisabled("Atualizado %s, %s", FormatAgo(at).c_str(), by.c_str());
         }
         ImGui::Dummy(ImVec2(0, 6 * scale));
+        if (ImGui::CollapsingHeader("Servidor dos amigos")) {
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextDisabled("Central: o servidor sempre ligado dos amigos (vazio: a do Ranga, na Cloudflare). Quando ela não responde, o Ranga "
+                                "usa a sala do PC que hospeda, pelo playit. \"nenhuma\": só a sala do PC. O código do grupo é o mesmo para todos.");
+            ImGui::PopTextWrapPos();
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, Color(kSelected));
+            ImGui::SetNextItemWidth(320 * scale);
+            ImGui::InputTextWithHint("##central", "https://ranga-central.nadroi-dev.workers.dev", centralField.data(), centralField.size());
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(200 * scale);
+            ImGui::InputTextWithHint("##group", "código do grupo", groupField.data(), groupField.size());
+            ImGui::PopStyleColor();
+            ImGui::SameLine();
+            if (ImGui::Button("Salvar servidor")) {
+                SetCentralServer(library.Root(), centralField.data());
+                SetGroupCode(library.Root(), groupField.data());
+                OpenProfile();
+                {
+                    std::lock_guard guard(chatLock);
+                    chatAt = 0;
+                }
+                AddToast("Servidor dos amigos", "Salvo. Conferindo agora...", "");
+            }
+            ImGui::Dummy(ImVec2(0, 6 * scale));
+        }
         if (list.empty()) {
             ImGui::PushTextWrapPos(0);
             ImGui::TextDisabled("Nenhum amigo apareceu ainda. O perfil de cada um aparece aqui quando o Ranga dele abre com a sala do PC que hospeda no ar.");
@@ -4158,6 +4379,9 @@ struct Client {
         ProcessEnded();
         TakeRaLogin();
         SyncProfiles(false);
+        NoticeChat();
+        PollChat();
+        chatTabOpen = false;
         for (const auto& titleId : covers.TakeDone()) {
             for (const auto& game : library.Games()) if (game.titleId == titleId) ForgetArt(game);
         }

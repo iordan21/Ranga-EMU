@@ -6,6 +6,8 @@
 // from all of it. Everything lives in perfil\ beside the program; only the card (PlayerCard) leaves the PC, to the
 // hosting PC's room, where friends see it. The RetroAchievements token never leaves.
 
+#include "Http.hpp"
+
 #include <cstdint>
 #include <map>
 #include <set>
@@ -131,6 +133,21 @@ bool RetroAchievementsLogin(const std::string& user, const std::string& password
 
 // Where the profiles are kept: engines.ini [Ranga] perfis, else this PC's room when it hosts, else the update's source.
 std::string ProfilesServer(const std::wstring& root);
+
+// The friends' central server (engines.ini [Ranga] central): one always on, such as Oracle Cloud's, tried first; when it
+// does not answer, ProfilesServer takes over for a few minutes. Empty: only ProfilesServer.
+std::string CentralServer(const std::wstring& root);
+void SetCentralServer(const std::wstring& root, const std::string& address);
+// The group's code (engines.ini [Ranga] grupo): letters and digits; a server started with --grupo answers only with it.
+std::string GroupCode(const std::wstring& root);
+void SetGroupCode(const std::wstring& root, const std::string& code);
+
+struct SocialAnswer {
+    HttpResult result;
+    std::string server; // the one that answered (or the last one tried)
+};
+// A request to the friends' server (profiles, chat): the central one first, then the hosting PC's room.
+SocialAnswer SocialRequest(const std::wstring& root, const std::string& method, const std::string& path, const std::string& body, int timeoutMs);
 
 // The user agent RetroAchievements is told; it names Ranga and the rcheevos version.
 inline constexpr const char* kRaUserAgent = "RangaEmu/2026.11 rcheevos/12.5.0";

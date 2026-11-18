@@ -16,7 +16,8 @@ struct HttpResult {
 // url is "http(s)://host[:port]/path", or "host:port" plus a path starting with "/" (Ranga's room, plain HTTP).
 // body empty and method GET for a plain download; contentType goes with a body.
 HttpResult HttpRequest(const std::string& method, const std::string& url, const std::string& body = "",
-                       const std::string& contentType = "", const std::string& userAgent = "RangaEmu", int timeoutMs = 15000);
+                       const std::string& contentType = "", const std::string& userAgent = "RangaEmu", int timeoutMs = 15000,
+                       const std::string& headers = "");
 
 // Percent-encoding for a query string or a form field.
 std::string UrlEncode(const std::string& text);
