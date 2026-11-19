@@ -61,9 +61,11 @@ struct PlayerCard {
     int xp = 0, games = 0, consoles = 0, achievements = 0, raPoints = 0;
     std::string playing, playingSystem;
     bool closed = false; // its Ranga said it was closing
+    std::string account;  // Nome#1234, as the central names the account
     std::vector<PlayedGame> recent;
     std::vector<ShowcaseItem> showcase;
-    std::string avatar; // kAvatarSide x kAvatarSide RGBA, or empty
+    // The versions of the photo and cover the central has for this player (Media.hpp "RANI"); empty: none.
+    std::string photoVersion, coverVersion;
 };
 
 inline constexpr int kAvatarSide = 128;
@@ -79,8 +81,17 @@ public:
     const std::wstring& Root() const { return root; }
 
     std::string id, secret, name, phrase;
-    std::string avatar;
+    // The photo and cover ("RANI", Media.hpp) in perfil\\foto.rani and capa.rani, and what the central got last.
+    std::string photo, cover, photoSent, coverSent;
+    // Their LocalHash, worked out when they change (never on every frame: they can be close to 1 MB).
+    std::string photoHash, coverHash;
     std::string raUser, raToken;
+    // The Ranga account (the central on Cloudflare): its id, Nome#1234, and this PC's session key. Empty: not signed in.
+    std::string accountId, accountName, session;
+    void SetAccount(const std::string& id, const std::string& nameAndTag, const std::string& key);
+    void ClearAccount();
+    // The name shown: the account's (before the #) once signed in, else the one typed in Editar perfil.
+    std::string ShownName() const;
     std::map<std::wstring, PlayedGame> games;
     std::vector<RaGame> raGames;
     std::vector<RangaAchievement> achievements;
@@ -95,7 +106,10 @@ public:
 
     void SetName(const std::string& text);
     void SetPhrase(const std::string& text);
-    void SetAvatar(const std::string& rgba); // kAvatarSide square, or empty to remove
+    void SetPhoto(const std::string& rani);  // empty removes it
+    void SetCover(const std::string& rani);
+    // The central has this photo or cover now (its local hash, LocalHash).
+    void MarkSent(bool coverToo, const std::string& hash);
     void SetRetroAchievements(const std::string& user, const std::string& token);
 
     int64_t TotalSeconds() const;
@@ -126,28 +140,49 @@ std::string WriteCard(const PlayerCard& card);
 std::vector<PlayerCard> ReadCards(const std::string& text);
 
 std::string Base64(const std::string& bytes);
+// A short fingerprint of bytes (FNV-1a 64, hex), to tell whether the photo or cover changed since it was sent.
+std::string LocalHash(const std::string& bytes);
 std::string Unbase64(const std::string& text);
 
 // Signs in to RetroAchievements with the password (it is not kept): the token comes back, or why not in error.
 bool RetroAchievementsLogin(const std::string& user, const std::string& password, std::string& token, std::string& userOut, std::string& error);
 
-// Where the profiles are kept: engines.ini [Ranga] perfis, else this PC's room when it hosts, else the update's source.
-std::string ProfilesServer(const std::wstring& root);
-
-// The friends' central server (engines.ini [Ranga] central): one always on, such as Oracle Cloud's, tried first; when it
-// does not answer, ProfilesServer takes over for a few minutes. Empty: only ProfilesServer.
+// The friends' central (engines.ini [Ranga] central): the Cloudflare one unless another is chosen; "nenhuma" turns it
+// off.
 std::string CentralServer(const std::wstring& root);
 void SetCentralServer(const std::wstring& root, const std::string& address);
-// The group's code (engines.ini [Ranga] grupo): letters and digits; a server started with --grupo answers only with it.
-std::string GroupCode(const std::wstring& root);
-void SetGroupCode(const std::wstring& root, const std::string& code);
 
-struct SocialAnswer {
-    HttpResult result;
-    std::string server; // the one that answered (or the last one tried)
+// ---- The Ranga account, on the central (launcher/net/cloudflare) ----
+
+struct AccountAnswer {
+    bool ok = false;
+    int status = 0;
+    std::string error, id, name, session, recovery;
+    int tag = 0;
 };
-// A request to the friends' server (profiles, chat): the central one first, then the hosting PC's room.
-SocialAnswer SocialRequest(const std::wstring& root, const std::string& method, const std::string& path, const std::string& body, int timeoutMs);
+// This PC, for the central's "3 accounts per PC": SHA-256 of Windows' MachineGuid (it stays until Windows is
+// installed again) with Ranga's own prefix, in hex. Never the identifier itself, and the central hashes it again with
+// a secret of its own. Empty when Windows does not say.
+std::string PcFingerprint();
+// The proof of work for creating an account: a number that, after "challenge:", gives a SHA-256 starting with `bits`
+// zero bits (a few seconds on a common PC). Empty if it was not found.
+std::string SolveChallenge(const std::string& challenge, int bits);
+// The owner of the Ranga: the key in salas\\chave-dono.txt (only on the owner's PC), and a call with it.
+std::string OwnerKey(const std::wstring& root);
+HttpResult OwnerCall(const std::wstring& root, const std::string& method, const std::string& path, const std::string& body);
+// POST to /conta/criar, /conta/entrar or /conta/recuperar with "campo<TAB>valor" lines.
+AccountAnswer AccountRequest(const std::wstring& root, const std::string& path, const std::string& body);
+// Any other call to the central, signed in with session.
+HttpResult CentralCall(const std::wstring& root, const std::string& method, const std::string& path, const std::string& body, const std::string& session,
+                       int timeoutMs);
+// The value of "key<TAB>value" in a reply.
+std::string ReplyField(const std::string& text, const std::string& key);
+// GET /amigos: friends (with their cards), requests received and sent, as id and Nome#1234.
+struct FriendsList {
+    std::vector<PlayerCard> friends;
+    std::vector<std::pair<std::string, std::string>> incoming, outgoing, blocked;
+};
+FriendsList ReadFriends(const std::string& text);
 
 // The user agent RetroAchievements is told; it names Ranga and the rcheevos version.
 inline constexpr const char* kRaUserAgent = "RangaEmu/2026.11 rcheevos/12.5.0";

@@ -12,6 +12,7 @@
 #include "Http.hpp"
 #include "PlayerProfile.hpp"
 #include "Lobby.hpp"
+#include "Media.hpp"
 
 #include <d3d11.h>
 #include <shellapi.h>
@@ -538,33 +539,6 @@ Texture UploadTexture(const unsigned char* pixels, int width, int height) {
     return texture;
 }
 
-// A photo for the profile: the middle square of the picture, shrunk to kAvatarSide by averaging; empty when the
-// file is no PNG or JPEG.
-std::string MakeAvatar(const std::wstring& path) {
-    const std::string bytes = ReadBytes(path);
-    if (bytes.empty()) return {};
-    int width = 0, height = 0, channels = 0;
-    unsigned char* pixels = stbi_load_from_memory(reinterpret_cast<const stbi_uc*>(bytes.data()), static_cast<int>(bytes.size()), &width, &height, &channels, 4);
-    if (pixels == nullptr) return {};
-    const int side = std::min(width, height), left = (width - side) / 2, top = (height - side) / 2, out = kAvatarSide;
-    std::string avatar(static_cast<size_t>(out) * out * 4, '\0');
-    for (int y = 0; y < out; ++y) {
-        const int y0 = top + y * side / out, y1 = std::max(y0 + 1, top + (y + 1) * side / out);
-        for (int x = 0; x < out; ++x) {
-            const int x0 = left + x * side / out, x1 = std::max(x0 + 1, left + (x + 1) * side / out);
-            unsigned long long sum[4] = {};
-            for (int sy = y0; sy < y1; ++sy) {
-                const unsigned char* row = pixels + (static_cast<size_t>(sy) * width + x0) * 4;
-                for (int sx = 0; sx < x1 - x0; ++sx) for (int c = 0; c < 4; ++c) sum[c] += row[sx * 4 + c];
-            }
-            const unsigned long long count = static_cast<unsigned long long>(y1 - y0) * (x1 - x0);
-            for (int c = 0; c < 4; ++c) avatar[(static_cast<size_t>(y) * out + x) * 4 + c] = static_cast<char>(sum[c] / count);
-        }
-    }
-    stbi_image_free(pixels);
-    return avatar;
-}
-
 // One of Ranga's own achievements: a rounded square in a color of its own with a star; grey while locked.
 void DrawMedal(ImDrawList* draw, ImVec2 min, float size, const std::string& id, bool lit) {
     static const unsigned colors[] = {0xe5484d, 0xf5a524, 0x46a758, 0x3e8ed0, 0x8e4ec6, 0xd6409f};
@@ -698,6 +672,27 @@ struct Client {
     // Home is the row of consoles; Console the grid of one console's games; Game the chosen game.
     enum class Page { Home, Console, Game };
     Page page = Page::Home;
+    // Smooth motion: values that glide toward where they should be (Smooth), a page that comes in when it changes,
+    // and whether anything still moves (so the window keeps drawing until it settles).
+    std::map<std::string, float> glides;
+    bool moving = false, movedLastFrame = false;
+    // An animated photo or cover was drawn (this frame / the one before): it needs ~10 frames a second, not 60.
+    bool animating = false, animatedLastFrame = false;
+    std::string shownPage;
+    double pageChangedAt = -10;
+
+    float Smooth(const std::string& key, float target, float speed = 14.0f) {
+        float& value = glides.try_emplace(key, target).first->second;
+        value += (target - value) * std::min(1.0f, ImGui::GetIO().DeltaTime * speed);
+        if (std::fabs(target - value) < 0.002f) value = target;
+        else moving = true;
+        return value;
+    }
+
+    static float EaseOut(float t) {
+        t = std::clamp(t, 0.0f, 1.0f);
+        return 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);
+    }
     std::wstring console = L"PS5";
     int gridFocus = 0;
     bool gridMoved = false;
@@ -1903,10 +1898,18 @@ struct Client {
         if (at - homeTarget > view) homeTarget = at - view;
         homeScroll += (homeTarget - homeScroll) * std::min(1.0f, ImGui::GetIO().DeltaTime * 14);
         if (std::fabs(homeTarget - homeScroll) < 0.5f) homeScroll = homeTarget;
+        // How grown each card is (the chosen one toward the big size) and where each starts, once a frame.
+        std::vector<float> grows(shelves.size()), offsets(shelves.size());
+        float run = 0;
+        for (size_t i = 0; i < shelves.size(); ++i) {
+            grows[i] = Smooth("console:" + Utf8(shelves[i].id), static_cast<int>(i) == focus ? 1.0f : 0.0f);
+            offsets[i] = run;
+            run += tile + (big - tile) * grows[i] + gap;
+        }
         for (size_t i = 0; i < shelves.size(); ++i) {
             const bool chosen = static_cast<int>(i) == focus;
-            const float x = origin.x + left + i * (tile + gap) - homeScroll + (static_cast<int>(i) > focus ? big - tile : 0);
-            const float side = chosen ? big : tile;
+            const float x = origin.x + left - homeScroll + offsets[i];
+            const float side = tile + (big - tile) * grows[i];
             if (x > origin.x + size.x || x + side < origin.x) continue;
             const ImVec2 min(x, rowY), max(x + side, rowY + side);
             ConsoleCard(draw, semibold, LookFor(shelves[i].id), min, max, scale, chosen || shelves[i].count > 0 ? 1.0f : 0.45f, chosen);
@@ -1986,7 +1989,7 @@ struct Client {
             }
         }
         const char* hint = "Setas ou direcional: escolher    Enter, X ou A: abrir    Esc, O ou B: voltar";
-        draw->AddText(nullptr, ImGui::GetFontSize() * 0.9f, ImVec2(origin.x + left, origin.y + size.y - 30 * scale), Packed(kDim), hint);
+        if (gamepads.Connected()) draw->AddText(nullptr, ImGui::GetFontSize() * 0.9f, ImVec2(origin.x + left, origin.y + size.y - 30 * scale), Packed(kDim), hint);
     }
 
     void ConsolePage(float scale, const Nav& input) {
@@ -2080,7 +2083,9 @@ struct Client {
                 gridMoved = false;
             }
             ImGui::PopID();
-            const ImVec2 min = ImGui::GetItemRectMin(), max(min.x + tile, min.y + tile);
+            const ImVec2 base = ImGui::GetItemRectMin();
+            const float lift = Smooth("grid:" + Utf8(game.titleId), hovered || (k == gridFocus && barFocus < 0) ? 1.0f : 0.0f, 18.0f) * 5 * scale;
+            const ImVec2 min(base.x - lift, base.y - lift), max(base.x + tile + lift, base.y + tile + lift);
             if (!ImGui::IsRectVisible(min, ImVec2(max.x, max.y + label))) continue;
             GameArt(grid, game, min, max, scale);
             if (k == gridFocus && barFocus < 0) Focus(grid, min, max, scale, 10 * scale);
@@ -3548,26 +3553,41 @@ struct Client {
     std::string playingTitle, playingSystem;
     struct Toast {
         std::string title, text, badge;
-        double until = 0;
+        double until = 0, start = 0;
     };
     std::vector<Toast> toasts;
-    // The friends' cards, as the room handed them over the last time (SyncProfiles, in the background).
+    // The friends (the central's /amigos, PlayerProfile.hpp ReadFriends): their cards, the requests received and sent,
+    // and what went wrong. Fetched in the background with this player's card (SyncProfiles).
     std::mutex friendsLock;
     std::vector<PlayerCard> friends;
-    std::string friendsProblem, friendsServer;
+    std::vector<std::pair<std::string, std::string>> friendsIncoming, friendsOutgoing, friendsBlocked;
+    std::string friendsProblem;
     long long friendsAt = 0;
-    // Servidor dos amigos, as typed on the Amigos tab.
-    std::array<char, 128> centralField{}, groupField{};
-    // The friends' chat: what the server has (the last 500), fetched in the background; unread counts what came from
-    // the others while the Chat tab was not open.
-    struct ChatMessage {
+    std::atomic<bool> sessionExpired{false};
+    // The friend requests already shown (a new one gets a notice).
+    std::set<std::string> incomingSeen;
+    bool incomingPrimed = false;
+    std::array<char, 160> centralField{};
+    std::array<char, 64> friendAddField{};
+    // One friend action at a time (ask, accept, refuse, cancel, remove), in the background.
+    std::thread actionThread;
+    std::atomic<bool> actionBusy{false};
+    std::mutex actionLock;
+    std::string actionResult, friendAction;
+    bool actionDone = false;
+    // The conversations: every message to or from this account, fetched in the background; read up to which message
+    // with each friend, and the friend whose conversation is open.
+    struct DirectMessage {
         long long number = 0, when = 0;
-        std::string id, name, text;
+        std::string from, to, text;
     };
     std::mutex chatLock;
-    std::vector<ChatMessage> chat;
-    long long chatLast = 0, chatSeen = -1;
-    std::string chatProblem, chatServer;
+    std::vector<DirectMessage> chat;
+    long long chatLast = 0, chatNoticed = 0;
+    std::atomic<bool> chatFetched{false};
+    bool chatPrimed = false, openChatTab = false;
+    std::map<std::string, long long> chatSeen, chatSeenSaved;
+    std::string chatProblem, chatPeer;
     std::thread chatThread;
     std::atomic<bool> chatBusy{false};
     ULONGLONG chatAt = 0;
@@ -3575,6 +3595,32 @@ struct Client {
     size_t chatShown = 0;
     bool chatTabOpen = false, chatScroll = false;
     std::array<char, 501> chatInput{};
+    // Entrar ou criar conta: the window, what is typed, and the answer from the central.
+    bool accountOpen = false;
+    int accountMode = 0; // 0 entrar, 1 criar, 2 recuperar
+    std::array<char, 64> accName{}, accCode{};
+    std::array<char, 129> accPass{}, accPass2{};
+    std::thread accountThread;
+    std::atomic<bool> accountBusy{false};
+    std::mutex accountLock;
+    AccountAnswer accountAnswer;
+    bool accountDone = false;
+    std::string accountProblem, accountRecovery;
+    std::atomic<int> accountStage{0}; // 1 while the PC solves the proof of work
+    // Dono do Ranga (only with salas\\chave-dono.txt): the accounts found, and banning or unbanning one.
+    struct OwnerRow {
+        std::string id, name, reason;
+        long long created = 0, seen = 0;
+        bool banned = false;
+    };
+    bool ownerHere = false;
+    std::array<char, 64> ownerSearch{};
+    std::array<char, 128> ownerReason{};
+    std::mutex ownerLock;
+    std::vector<OwnerRow> ownerRows;
+    std::string ownerProblem;
+    std::thread ownerThread;
+    std::atomic<bool> ownerBusy{false};
     std::thread profileThread;
     std::atomic<bool> profileBusy{false};
     ULONGLONG profileSyncedAt = 0;
@@ -3582,9 +3628,53 @@ struct Client {
     std::string sentPlaying;
     // Pictures: this player's photo, the friends' (by id), and RetroAchievements' badges, downloaded once to
     // perfil\insignias.
-    Texture avatarTexture;
-    std::string avatarShown;
-    std::map<std::string, std::pair<std::string, Texture>> friendAvatars;
+    // Photos and covers, animated ("RANI", Media.hpp): one texture per frame. This player's come from the profile's
+    // bytes; the friends' from the central, kept in perfil\\amigos by version.
+    struct AnimTexture {
+        std::vector<Texture> frames;
+        std::vector<int> ends; // when each frame ends, in ms from the start
+        int total = 1;
+        void Clear() {
+            for (auto& frame : frames) if (frame.view != nullptr) frame.view->Release();
+            frames.clear();
+            ends.clear();
+            total = 1;
+        }
+        const Texture* Now() const {
+            if (frames.empty()) return nullptr;
+            const int at = static_cast<int>(GetTickCount64() % static_cast<ULONGLONG>(total));
+            for (size_t i = 0; i < frames.size(); ++i) if (at < ends[i]) return &frames[i];
+            return &frames.back();
+        }
+    };
+    struct CachedMedia {
+        std::string version;
+        AnimTexture anim;
+        double usedAt = 0; // last frame it was drawn; friends' media nobody looks at for a while leaves the video memory
+    };
+    // Friends' media decoded by the media thread, waiting for the window thread to turn them into textures.
+    struct DecodedMedia {
+        std::string key, version;
+        Media media;
+    };
+    std::vector<DecodedMedia> mediaReady;
+    std::map<std::string, CachedMedia> mediaCache;
+    AnimTexture ownPhoto, ownCover;
+    std::string ownPhotoHash = "-", ownCoverHash = "-";
+    std::mutex mediaLock;
+    std::vector<std::array<std::string, 3>> mediaQueue; // account, kind, version
+    std::set<std::string> mediaAsked;
+    std::thread mediaThread;
+    std::atomic<bool> mediaBusy{false};
+    // Editar perfil: a picture, GIF or video turned into a photo or cover in the background, and the central's word
+    // that it has the latest ones.
+    std::thread importThread;
+    std::atomic<bool> importBusy{false};
+    std::mutex importLock;
+    std::string importResult, importError;
+    bool importCover = false, importDone = false;
+    std::string sentPhotoHash, sentCoverHash;
+    bool sentMediaDone = false;
     std::map<std::string, Texture> badgeTextures;
     std::set<std::string> badgeMissing, badgeAsked;
     std::mutex badgeLock;
@@ -3606,18 +3696,22 @@ struct Client {
 
     void StopProfileThreads() {
         if (lobbyThread.joinable()) lobbyThread.join();
+        if (mediaThread.joinable()) mediaThread.join();
+        if (importThread.joinable()) importThread.join();
+        if (ownerThread.joinable()) ownerThread.join();
         if (profileThread.joinable()) profileThread.join();
         if (chatThread.joinable()) chatThread.join();
+        if (actionThread.joinable()) actionThread.join();
+        if (accountThread.joinable()) accountThread.join();
         // The friends see this Ranga closed at once, not five minutes later.
-        if (profileLoaded && profileSyncedAt != 0) {
+        if (profileLoaded && profileSyncedAt != 0 && !profile.session.empty()) {
             PlayerCard card = profile.Card("", "");
             card.closed = true;
-            SocialRequest(library.Root(), "POST", "/ranga/perfil", "segredo\t" + profile.secret + "\n" + WriteCard(card), 2000);
+            CentralCall(library.Root(), "POST", "/perfil", WriteCard(card), profile.session, 2000);
         }
         if (badgeThread.joinable()) badgeThread.join();
         if (raThread.joinable()) raThread.join();
     }
-
     int LibraryCount() { return static_cast<int>(library.Games().size()); }
 
     void InitProfile() {
@@ -3642,7 +3736,7 @@ struct Client {
     }
 
     void AddToast(const std::string& title, const std::string& text, const std::string& badge) {
-        toasts.push_back({title, text, badge, ImGui::GetTime() + 7.0});
+        toasts.push_back({title, text, badge, ImGui::GetTime() + 7.0, ImGui::GetTime()});
     }
 
     // Whether the game was set to play online when it started (any of the online choices on its page).
@@ -3714,10 +3808,11 @@ struct Client {
         });
     }
 
-    // Sends this player's card to the room and takes everyone's back: at once when something changed (a game opened
-    // or closed, the profile was edited), otherwise every two minutes, so "jogando agora" and "visto" stay true.
+    // Sends this player's card to the central and takes the friends back: at once when something changed (a game opened
+    // or closed, the profile was edited), otherwise every two minutes, so "jogando agora" and "visto" stay true. Only
+    // with an account.
     void SyncProfiles(bool force) {
-        if (!profileLoaded || profileBusy) return;
+        if (!profileLoaded || profileBusy || profile.session.empty()) return;
         const ULONGLONG now = GetTickCount64();
         const std::string playing = playingTitle.empty() ? "" : playingTitle + "\t" + playingSystem;
         const bool changed = profile.Revision() != sentRevision || playing != sentPlaying;
@@ -3729,35 +3824,240 @@ struct Client {
         profileSyncedAt = now;
         sentRevision = profile.Revision();
         sentPlaying = playing;
-        const std::string body = "segredo\t" + profile.secret + "\n" + WriteCard(profile.Card(playingTitle, playingSystem));
+        const std::string body = WriteCard(profile.Card(playingTitle, playingSystem));
         const std::wstring root = library.Root();
+        const std::string session = profile.session;
+        // The photo and cover go only when they changed since the central got them (empty removes them there).
+        const std::string photoHash = profile.photoHash, coverHash = profile.coverHash;
+        const std::string photo = photoHash != profile.photoSent ? profile.photo : "", cover = coverHash != profile.coverSent ? profile.cover : "";
+        const bool sendPhoto = photoHash != profile.photoSent, sendCover = coverHash != profile.coverSent;
         profileBusy = true;
-        profileThread = std::thread([this, body, root] {
-            const SocialAnswer posted = SocialRequest(root, "POST", "/ranga/perfil", body, 8000);
-            const HttpResult& sent = posted.result;
-            const SocialAnswer fetched = sent.status == 0 ? SocialAnswer{} : SocialRequest(root, "GET", "/ranga/perfis", "", 8000);
-            const HttpResult& got = fetched.result;
-            const std::string server = posted.server;
+        profileThread = std::thread([this, body, root, session, photo, cover, sendPhoto, sendCover, photoHash, coverHash] {
+            bool photoOk = !sendPhoto, coverOk = !sendCover;
+            if (sendPhoto) photoOk = CentralCall(root, "POST", "/midia", "tipo\tfoto\ndados\t" + Base64(photo) + "\n", session, 30000).status == 200;
+            if (sendCover) coverOk = CentralCall(root, "POST", "/midia", "tipo\tcapa\ndados\t" + Base64(cover) + "\n", session, 30000).status == 200;
+            if ((sendPhoto && photoOk) || (sendCover && coverOk)) {
+                std::lock_guard guard(importLock);
+                if (sendPhoto && photoOk) sentPhotoHash = photoHash;
+                if (sendCover && coverOk) sentCoverHash = coverHash;
+                sentMediaDone = true;
+            }
+            const HttpResult sent = CentralCall(root, "POST", "/perfil", body, session, 8000);
+            const HttpResult got = sent.status == 200 ? CentralCall(root, "GET", "/amigos", "", session, 8000) : HttpResult{};
             {
                 std::lock_guard guard(friendsLock);
-                friendsServer = fetched.server.empty() ? server : fetched.server;
                 if (got.status == 200) {
-                    friends = ReadCards(got.body);
+                    FriendsList list = ReadFriends(got.body);
+                    friends = std::move(list.friends);
+                    friendsIncoming = std::move(list.incoming);
+                    friendsOutgoing = std::move(list.outgoing);
+                    friendsBlocked = std::move(list.blocked);
                     friendsAt = static_cast<long long>(std::time(nullptr));
                     friendsProblem.clear();
                 } else if (sent.status == 401 || got.status == 401) {
-                    friendsProblem = "O servidor dos amigos pede o código do grupo. Digite em Servidor dos amigos, aqui embaixo.";
-                } else if (sent.status == 0) {
-                    friendsProblem = "A sala dos amigos não respondeu (" + server + "). O PC que hospeda precisa estar ligado, com o playit e a sala dos clássicos.";
+                    friendsProblem = "A sessão acabou: entre na sua conta de novo.";
+                    sessionExpired = true;
+                } else if (sent.status == 0 || got.status == 0) {
+                    friendsProblem = "O servidor do Ranga não respondeu. Confira a internet.";
                 } else {
-                    friendsProblem = "A sala respondeu com erro " + std::to_string(got.status) + ". O servidor da sala pode ser de uma versão antiga do Ranga.";
+                    friendsProblem = "O servidor do Ranga respondeu com erro " + std::to_string(sent.status != 200 ? sent.status : got.status) + ".";
                 }
-                if (sent.status == 403) friendsProblem = "A sala recusou este perfil: outro Ranga já usa o mesmo código.";
             }
             profileBusy = false;
         });
     }
 
+    // Sign-in, sign-up and recovery answers, friend actions done, an expired session and new friend requests.
+    void ProcessAccount() {
+        {
+            std::lock_guard guard(importLock);
+            if (importDone) {
+                importDone = false;
+                if (!importError.empty()) {
+                    Notify(Wide(importError));
+                } else if (importCover) {
+                    profile.SetCover(importResult);
+                } else {
+                    profile.SetPhoto(importResult);
+                    for (const auto& title : profile.Evaluate(LibraryCount())) AddToast("Conquista desbloqueada", title, "");
+                }
+                importResult.clear();
+                profileSyncedAt = 0;
+            }
+            if (sentMediaDone) {
+                sentMediaDone = false;
+                if (!sentPhotoHash.empty()) profile.MarkSent(false, sentPhotoHash);
+                if (!sentCoverHash.empty()) profile.MarkSent(true, sentCoverHash);
+                sentPhotoHash.clear();
+                sentCoverHash.clear();
+            }
+        }
+        if (sessionExpired.exchange(false)) {
+            profile.ClearAccount();
+            AddToast("Conta do Ranga", "A sessão acabou. Entre de novo.", "");
+        }
+        {
+            std::lock_guard guard(accountLock);
+            if (accountDone) {
+                accountDone = false;
+                if (!accountAnswer.ok) {
+                    accountProblem = accountAnswer.error;
+                } else {
+                    const std::string nameTag = accountAnswer.name + "#" + std::to_string(accountAnswer.tag);
+                    profile.SetAccount(accountAnswer.id, nameTag, accountAnswer.session);
+                    accountRecovery = accountAnswer.recovery;
+                    if (accountRecovery.empty()) accountOpen = false;
+                    AddToast("Conta do Ranga", "Entrou como " + nameTag, "");
+                    ResetSocial();
+                }
+            }
+        }
+        {
+            std::lock_guard guard(actionLock);
+            if (actionDone) {
+                actionDone = false;
+                friendAction = actionResult;
+                profileSyncedAt = 0; // the friends again, at once
+            }
+        }
+        std::vector<std::string> fresh;
+        {
+            std::lock_guard guard(friendsLock);
+            if (friendsAt != 0) {
+                for (const auto& [id, name] : friendsIncoming) {
+                    if (incomingSeen.insert(id).second && incomingPrimed) fresh.push_back(name);
+                }
+                incomingPrimed = true;
+            }
+        }
+        for (const auto& name : fresh) AddToast("Pedido de amizade", name, "");
+    }
+
+    // A different account (or none): nothing of the last one's friends or conversations stays.
+    void ResetSocial() {
+        {
+            std::lock_guard guard(friendsLock);
+            friends.clear();
+            friendsIncoming.clear();
+            friendsOutgoing.clear();
+            friendsBlocked.clear();
+            friendsProblem.clear();
+            friendsAt = 0;
+            incomingSeen.clear();
+            incomingPrimed = false;
+        }
+        {
+            std::lock_guard guard(chatLock);
+            chat.clear();
+            chatLast = chatNoticed = 0;
+            chatSeen.clear();
+            chatSeenSaved.clear();
+            chatPeer.clear();
+            chatProblem.clear();
+            chatPrimed = false;
+            chatUnread = 0;
+        }
+        chatFetched = false;
+        chatAt = 0;
+        profileSyncedAt = 0;
+    }
+
+    static std::string NoTabs(std::string text) {
+        for (char& c : text) if (c == '\t' || c == '\n' || c == '\r') c = ' ';
+        return text;
+    }
+
+    void StartAccount() {
+        if (accountBusy) return;
+        if (accountThread.joinable()) accountThread.join();
+        const std::string name = NoTabs(accName.data()), password = NoTabs(accPass.data()), again = NoTabs(accPass2.data()), code = NoTabs(accCode.data());
+        std::string path, body;
+        accountProblem.clear();
+        if (accountMode == 1 && password != again) {
+            accountProblem = "As duas senhas não são iguais.";
+            return;
+        }
+        if (accountMode == 0) path = "/conta/entrar", body = "nome\t" + name + "\nsenha\t" + password + "\n";
+        else if (accountMode == 1) path = "/conta/criar", body = "nome\t" + name + "\nsenha\t" + password + "\npc\t" + PcFingerprint() + "\n";
+        else path = "/conta/recuperar", body = "nome\t" + name + "\nrecuperacao\t" + code + "\nsenha\t" + password + "\n";
+        // The password is used once and not kept, not even in the fields.
+        accPass.fill('\0');
+        accPass2.fill('\0');
+        accountBusy = true;
+        accountThread = std::thread([this, path, body, root = library.Root()] {
+            std::string full = body;
+            AccountAnswer answer;
+            bool ready = true;
+            if (path == "/conta/criar") {
+                // The central's challenge, solved here: a few seconds for one account, a lot for a thousand.
+                accountStage = 1;
+                const HttpResult got = CentralCall(root, "GET", "/conta/desafio", "", "", 10000);
+                const std::string challenge = ReplyField(got.body, "desafio");
+                const int bits = std::atoi(ReplyField(got.body, "bits").c_str());
+                const std::string solved = got.status == 200 && !challenge.empty() && bits > 0 && bits < 32 ? SolveChallenge(challenge, bits) : "";
+                if (solved.empty()) {
+                    ready = false;
+                    answer.error = got.status == 0 ? "O servidor do Ranga não respondeu. Confira a internet." : "A verificação do PC não deu certo. Tente de novo.";
+                } else {
+                    full += "desafio\t" + challenge + "\nresposta\t" + solved + "\n";
+                }
+                accountStage = 0;
+            }
+            if (ready) answer = AccountRequest(root, path, full);
+            std::lock_guard guard(accountLock);
+            accountAnswer = std::move(answer);
+            accountDone = true;
+            accountBusy = false;
+        });
+    }
+
+    void OpenAccount(int mode) {
+        accountOpen = true;
+        accountMode = mode;
+        accountProblem.clear();
+        accountRecovery.clear();
+        accPass.fill('\0');
+        accPass2.fill('\0');
+        accCode.fill('\0');
+    }
+
+    void SignOut() {
+        // The session is closed on the central too, in the background; here it goes at once.
+        std::thread([root = library.Root(), session = profile.session] { CentralCall(root, "POST", "/conta/sair", "", session, 8000); }).detach();
+        profile.ClearAccount();
+        ResetSocial();
+    }
+
+    // Ask, accept, refuse, cancel or remove: one at a time, the friends fetched again when it is done.
+    void FriendAction(const std::string& path, const std::string& body) {
+        if (actionBusy || profile.session.empty()) return;
+        if (actionThread.joinable()) actionThread.join();
+        actionBusy = true;
+        friendAction.clear();
+        actionThread = std::thread([this, path, body, root = library.Root(), session = profile.session] {
+            const HttpResult got = CentralCall(root, "POST", path, body, session, 10000);
+            std::string result;
+            if (got.status == 200) {
+                if (path == "/amigos/pedir") result = ReplyField(got.body, "estado") == "amigos" ? "Vocês agora são amigos!" : "Pedido enviado. Quando aceitarem, aparece aqui.";
+            } else if (got.status == 0) {
+                result = "O servidor do Ranga não respondeu. Confira a internet.";
+            } else {
+                result = ReplyField(got.body, "erro");
+                if (result.empty()) result = "O servidor do Ranga respondeu com erro " + std::to_string(got.status) + ".";
+                if (got.status == 401) sessionExpired = true;
+            }
+            std::lock_guard guard(actionLock);
+            actionResult = result;
+            actionDone = true;
+            actionBusy = false;
+        });
+    }
+
+    std::string FriendName(const std::string& id) {
+        std::lock_guard guard(friendsLock);
+        for (const auto& card : friends) if (card.id == id) return card.name;
+        return "Amigo";
+    }
     static bool BadgeName(const std::string& name) {
         if (name.empty() || name.size() > 40) return false;
         for (const char c : name) if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_') return false;
@@ -3819,25 +4119,160 @@ struct Client {
         });
     }
 
-    const Texture* AvatarOf(const PlayerCard& card) {
-        if (card.avatar.empty()) return nullptr;
-        const auto make = [](Texture& texture, const std::string& pixels) {
-            if (texture.view != nullptr) texture.view->Release();
-            texture = UploadTexture(reinterpret_cast<const unsigned char*>(pixels.data()), kAvatarSide, kAvatarSide);
-        };
-        if (card.id == profile.id) {
-            if (avatarShown != card.avatar) {
-                make(avatarTexture, card.avatar);
-                avatarShown = card.avatar;
+    static AnimTexture MakeAnim(const std::string& rani) {
+        Media media;
+        if (!DecodeMedia(rani, media)) return {};
+        return UploadAnim(media);
+    }
+
+    static AnimTexture UploadAnim(const Media& media) {
+        AnimTexture anim;
+        int at = 0;
+        for (const auto& frame : media.frames) {
+            anim.frames.push_back(UploadTexture(frame.rgba.data(), media.width, media.height));
+            at += frame.delayMs;
+            anim.ends.push_back(at);
+        }
+        anim.total = std::max(at, 1);
+        return anim;
+    }
+
+    // The photo or cover of a card, as frames: this player's from the profile, a friend's from perfil\\amigos (fetched
+    // from the central when the version changed; the old one shows meanwhile).
+    const AnimTexture* MediaOf(const PlayerCard& card, bool cover) {
+        if (card.id == profile.id || (!profile.accountId.empty() && card.id == profile.accountId)) {
+            const std::string& bytes = cover ? profile.cover : profile.photo;
+            std::string& shown = cover ? ownCoverHash : ownPhotoHash;
+            AnimTexture& anim = cover ? ownCover : ownPhoto;
+            const std::string& hash = cover ? profile.coverHash : profile.photoHash;
+            if (shown != hash) {
+                anim.Clear();
+                if (!bytes.empty()) anim = MakeAnim(bytes);
+                shown = hash;
             }
-            return avatarTexture.view != nullptr ? &avatarTexture : nullptr;
+            if (anim.frames.size() > 1) animating = true;
+            return anim.frames.empty() ? nullptr : &anim;
         }
-        auto& [pixels, texture] = friendAvatars[card.id];
-        if (pixels != card.avatar) {
-            make(texture, card.avatar);
-            pixels = card.avatar;
+        const std::string& version = cover ? card.coverVersion : card.photoVersion;
+        if (version.empty() || card.id.empty()) return nullptr;
+        const char* kind = cover ? "capa" : "foto";
+        CachedMedia& cached = mediaCache[card.id + "|" + kind];
+        cached.usedAt = ImGui::GetTime();
+        // A new version is read (or fetched) and decoded by the media thread; the old one shows meanwhile.
+        if (cached.version != version && mediaAsked.insert(card.id + "|" + kind + "|" + version).second) {
+            {
+                std::lock_guard guard(mediaLock);
+                mediaQueue.push_back({card.id, kind, version});
+            }
+            StartMediaDownloads();
         }
-        return texture.view != nullptr ? &texture : nullptr;
+        if (cached.anim.frames.size() > 1) animating = true;
+        return cached.anim.frames.empty() ? nullptr : &cached.anim;
+    }
+
+    // Once a frame: decoded media become textures, and friends' media not drawn for a minute are let go (a cover
+    // is ~20 MB of video memory). They come back from perfil\\amigos when shown again.
+    void TendMedia() {
+        std::vector<DecodedMedia> ready;
+        {
+            std::lock_guard guard(mediaLock);
+            ready.swap(mediaReady);
+        }
+        for (auto& item : ready) {
+            CachedMedia& cached = mediaCache[item.key];
+            cached.anim.Clear();
+            cached.anim = UploadAnim(item.media);
+            cached.version = item.version;
+            cached.usedAt = ImGui::GetTime();
+        }
+        const double now = ImGui::GetTime();
+        for (auto it = mediaCache.begin(); it != mediaCache.end();) {
+            if (now - it->second.usedAt > 60) {
+                it->second.anim.Clear();
+                mediaAsked.erase(it->first + "|" + it->second.version);
+                it = mediaCache.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
+    void StartMediaDownloads() {
+        if (mediaBusy || profile.session.empty()) return;
+        if (mediaThread.joinable()) mediaThread.join();
+        mediaBusy = true;
+        mediaThread = std::thread([this, root = library.Root(), session = profile.session] {
+            const std::wstring folder = root + L"\\perfil\\amigos";
+            MakeFolders(folder);
+            for (;;) {
+                std::array<std::string, 3> item;
+                {
+                    std::lock_guard guard(mediaLock);
+                    if (mediaQueue.empty()) break;
+                    item = mediaQueue.back();
+                    mediaQueue.pop_back();
+                }
+                const std::wstring file = folder + L"\\" + Wide(item[0]) + L"-" + Wide(item[1]) + L"-" + Wide(item[2]) + L".rani";
+                std::string bytes = ReadBytes(file);
+                if (bytes.compare(0, 4, "RANI") != 0) {
+                    const HttpResult got = CentralCall(root, "GET", "/midia?conta=" + item[0] + "&tipo=" + item[1], "", session, 30000);
+                    if (got.status != 200) continue;
+                    bytes = Unbase64(got.body);
+                    if (bytes.compare(0, 4, "RANI") != 0) continue;
+                    HANDLE out = CreateFileW(file.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+                    if (out != INVALID_HANDLE_VALUE) {
+                        DWORD put = 0;
+                        WriteFile(out, bytes.data(), static_cast<DWORD>(bytes.size()), &put, nullptr);
+                        CloseHandle(out);
+                    }
+                }
+                DecodedMedia decoded{item[0] + "|" + item[1], item[2], {}};
+                if (!DecodeMedia(bytes, decoded.media)) continue;
+                std::lock_guard guard(mediaLock);
+                mediaReady.push_back(std::move(decoded));
+            }
+            mediaBusy = false;
+        });
+    }
+
+    // The cover across a box (cut to its shape), darkened toward the bottom so text over it reads; nothing when there
+    // is none.
+    bool DrawCover(ImDrawList* draw, ImVec2 min, ImVec2 max, const PlayerCard& card, float rounding, float shade) {
+        const AnimTexture* anim = MediaOf(card, true);
+        const Texture* frame = anim != nullptr ? anim->Now() : nullptr;
+        if (frame == nullptr) return false;
+        const float boxAspect = (max.x - min.x) / std::max(1.0f, max.y - min.y), imageAspect = static_cast<float>(frame->width) / frame->height;
+        ImVec2 uv0(0, 0), uv1(1, 1);
+        if (imageAspect > boxAspect) {
+            const float visible = boxAspect / imageAspect;
+            uv0.x = (1 - visible) / 2;
+            uv1.x = uv0.x + visible;
+        } else {
+            const float visible = imageAspect / boxAspect;
+            uv0.y = (1 - visible) / 2;
+            uv1.y = uv0.y + visible;
+        }
+        draw->AddImageRounded(frame->Ref(), min, max, uv0, uv1, IM_COL32_WHITE, rounding);
+        draw->AddRectFilledMultiColor(min, max, Packed(kBackground, shade * 0.35f), Packed(kBackground, shade * 0.35f), Packed(kBackground, shade), Packed(kBackground, shade));
+        return true;
+    }
+
+    // Turns a picture, GIF or video into the photo or the cover, in the background (a video takes a second or two).
+    void ImportProfileMedia(const std::wstring& path, bool cover) {
+        if (importBusy) return;
+        if (importThread.joinable()) importThread.join();
+        importBusy = true;
+        importThread = std::thread([this, path, cover] {
+            Media media;
+            std::string error, bytes;
+            if (ImportMedia(path, cover ? kCoverWidth : kPhotoSide, cover ? kCoverHeight : kPhotoSide, media, error)) bytes = EncodeMedia(media);
+            std::lock_guard guard(importLock);
+            importResult = bytes;
+            importError = bytes.empty() && error.empty() ? "Não deu para converter esse arquivo." : error;
+            importCover = cover;
+            importDone = true;
+            importBusy = false;
+        });
     }
 
     // The photo in a square with a ring of the level's color; no photo is the name's first letter.
@@ -3845,7 +4280,8 @@ struct Client {
         const ImVec2 max(min.x + side, min.y + side);
         const float ring = std::max(2.0f, 3 * scale * side / (128 * scale));
         draw->AddRectFilled(ImVec2(min.x - ring, min.y - ring), ImVec2(max.x + ring, max.y + ring), Packed(LevelColor(LevelFor(card.xp).level)), 8 * scale);
-        if (const Texture* photo = AvatarOf(card)) {
+        const AnimTexture* anim = MediaOf(card, false);
+        if (const Texture* photo = anim != nullptr ? anim->Now() : nullptr) {
             draw->AddImageRounded(photo->Ref(), min, max, ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, 6 * scale);
             return;
         }
@@ -3879,7 +4315,7 @@ struct Client {
 
     void OpenProfile() {
         std::snprintf(centralField.data(), centralField.size(), "%s", CentralServer(library.Root()).c_str());
-        std::snprintf(groupField.data(), groupField.size(), "%s", GroupCode(library.Root()).c_str());
+        ownerHere = !OwnerKey(library.Root()).empty();
         profileOpen = true;
         enginesPage = false;
         profileViewing.clear();
@@ -3892,7 +4328,6 @@ struct Client {
         std::snprintf(editPhrase.data(), editPhrase.size(), "%s", profile.phrase.c_str());
         if (raUserField[0] == '\0') std::snprintf(raUserField.data(), raUserField.size(), "%s", profile.raUser.c_str());
     }
-
     void SectionTitle(const char* text, float scale) {
         ImGui::Dummy(ImVec2(0, 10 * scale));
         ImGui::PushFont(semibold, 20);
@@ -3924,6 +4359,7 @@ struct Client {
         const ImVec2 origin = ImGui::GetWindowPos(), size = ImGui::GetWindowSize();
         const float left = 40 * scale, headerHeight = 220 * scale;
         draw->AddRectFilled(origin, ImVec2(origin.x + size.x, origin.y + headerHeight), Packed(kSidebar));
+        DrawCover(draw, origin, ImVec2(origin.x + size.x, origin.y + headerHeight), card, 0, 0.92f);
         ImGui::SetCursorPos(ImVec2(20 * scale, 18 * scale));
         if (ImGui::Button(own ? "<  Voltar" : "<  Meu perfil", ImVec2(0, 34 * scale))) {
             pending = [this, own] {
@@ -3941,6 +4377,11 @@ struct Client {
         ImGui::PushFont(semibold, 32);
         ImGui::TextUnformatted(card.name.c_str());
         ImGui::PopFont();
+        if (!card.account.empty()) {
+            ImGui::SameLine();
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 12 * scale);
+            ImGui::TextDisabled("%s", card.account.substr(card.account.rfind('#')).c_str());
+        }
         if (!card.phrase.empty()) {
             ImGui::SetCursorPosX(textX);
             ImGui::PushTextWrapPos(size.x - 260 * scale);
@@ -3976,7 +4417,7 @@ struct Client {
         ImGui::Text("Nível %d", level.level);
         ImGui::PopFont();
         ImGui::PushStyleColor(ImGuiCol_PlotHistogram, Color(LevelColor(level.level)));
-        ImGui::ProgressBar(static_cast<float>(level.into) / static_cast<float>(level.size), ImVec2(110 * scale, 6 * scale), "");
+        ImGui::ProgressBar(Smooth("xp:" + card.id, static_cast<float>(level.into) / static_cast<float>(level.size), 5.0f), ImVec2(110 * scale, 6 * scale), "");
         ImGui::PopStyleColor();
         ImGui::TextDisabled("%d / %d XP", level.into, level.size);
         ImGui::EndGroup();
@@ -3984,6 +4425,42 @@ struct Client {
         if (own) {
             ImGui::SetCursorScreenPos(ImVec2(origin.x + size.x - left - 190 * scale, origin.y + 150 * scale));
             if (ImGui::Button("Editar perfil", ImVec2(190 * scale, 36 * scale))) OpenProfileEditor();
+            if (profile.session.empty()) {
+                ImGui::SetCursorScreenPos(ImVec2(origin.x + size.x - left - 400 * scale, origin.y + 150 * scale));
+                ImGui::PushStyleColor(ImGuiCol_Button, Color(kAccent));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Color(kAccentHover));
+                if (ImGui::Button("Entrar ou criar conta", ImVec2(200 * scale, 36 * scale))) OpenAccount(1);
+                ImGui::PopStyleColor(2);
+            }
+        } else {
+            ImGui::SetCursorScreenPos(ImVec2(origin.x + size.x - left - 286 * scale, origin.y + 150 * scale));
+            ImGui::PushStyleColor(ImGuiCol_Button, Color(kAccent));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Color(kAccentHover));
+            if (ImGui::Button("Conversar", ImVec2(110 * scale, 36 * scale))) {
+                pending = [this, id = card.id] {
+                    chatPeer = id;
+                    profileViewing.clear();
+                    openChatTab = true;
+                };
+            }
+            ImGui::PopStyleColor(2);
+            ImGui::SameLine();
+            if (ImGui::Button("Desfazer", ImVec2(72 * scale, 36 * scale))) {
+                const std::string id = card.id, who = card.name;
+                Confirm(L"Desfazer a amizade com " + Wide(who) + L"? Vocês param de ver o perfil e de conversar.", [this, id] {
+                    FriendAction("/amigos/remover", "conta\t" + id + "\n");
+                    profileViewing.clear();
+                });
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Desfazer a amizade");
+            ImGui::SameLine();
+            if (ImGui::Button("Bloquear", ImVec2(80 * scale, 36 * scale))) {
+                const std::string id = card.id, who = card.name;
+                Confirm(L"Bloquear " + Wide(who) + L"? A amizade acaba e essa pessoa não consegue mais te pedir amizade nem falar com você.", [this, id] {
+                    FriendAction("/bloquear", "conta\t" + id + "\n");
+                    profileViewing.clear();
+                });
+            }
         }
 
         // The numbers under the header.
@@ -4024,7 +4501,9 @@ struct Client {
                 ImGui::EndTabItem();
             }
             const std::string chatLabel = chatUnread > 0 ? "Chat (" + std::to_string(chatUnread) + ")###chat" : "Chat###chat";
-            if (own && ImGui::BeginTabItem(chatLabel.c_str())) {
+            const ImGuiTabItemFlags chatFlags = openChatTab ? ImGuiTabItemFlags_SetSelected : 0;
+            openChatTab = false;
+            if (own && ImGui::BeginTabItem(chatLabel.c_str(), nullptr, chatFlags)) {
                 ProfileChat(scale);
                 ImGui::EndTabItem();
             }
@@ -4211,39 +4690,34 @@ struct Client {
         }
     }
 
-    // Fetches the chat (every three seconds while its tab is open, every thirty otherwise), sending say first.
-    void PollChat(const std::string& say = "") {
-        if (!profileLoaded || chatBusy) return;
+    // Fetches the conversations (every three seconds while the Chat tab is open, every thirty otherwise), sending say
+    // to the friend `to` first.
+    void PollChat(const std::string& to = "", const std::string& say = "") {
+        if (!profileLoaded || chatBusy || profile.session.empty()) return;
         const ULONGLONG now = GetTickCount64();
         if (say.empty() && chatAt != 0 && now - chatAt < (chatTabOpen ? 3000u : 30000u)) return;
         if (chatThread.joinable()) chatThread.join();
         chatAt = now;
         chatBusy = true;
         long long after;
-        std::string before;
         {
             std::lock_guard guard(chatLock);
             after = chatLast;
-            before = chatServer;
         }
-        chatThread = std::thread([this, say, after, before, root = library.Root(), secret = profile.secret, id = profile.id] {
+        chatThread = std::thread([this, to, say, after, root = library.Root(), session = profile.session] {
             std::string problem;
             if (!say.empty()) {
-                const int sent = SocialRequest(root, "POST", "/ranga/chat", "segredo\t" + secret + "\nid\t" + id + "\ntexto\t" + say + "\n", 8000).result.status;
-                if (sent == 429) problem = "Calma: uma mensagem por segundo.";
-                else if (sent == 403) problem = "O servidor ainda não conhece o seu perfil. Espere alguns segundos e mande de novo.";
-                else if (sent == 401) problem = "Falta o código do grupo (aba Amigos, Servidor dos amigos).";
-                else if (sent != 200) problem = "A mensagem não foi enviada: o servidor dos amigos não respondeu.";
+                const HttpResult sent = CentralCall(root, "POST", "/mensagem", "para\t" + to + "\ntexto\t" + NoTabs(say) + "\n", session, 8000);
+                if (sent.status == 0) problem = "A mensagem não foi: o servidor do Ranga não respondeu.";
+                else if (sent.status != 200) problem = ReplyField(sent.body, "erro");
+                if (sent.status == 401) sessionExpired = true;
             }
-            SocialAnswer got = SocialRequest(root, "GET", "/ranga/chat?desde=" + std::to_string(after), "", 8000);
-            // Another server (the central one came back, or went down) numbers its messages its own way: all again.
-            const bool restart = got.result.status == 200 && after != 0 && got.server != before;
-            if (restart) got = SocialRequest(root, "GET", "/ranga/chat?desde=0", "", 8000);
-            std::vector<ChatMessage> fresh;
-            for (size_t at = 0; got.result.status == 200 && at < got.result.body.size();) {
-                size_t end = got.result.body.find('\n', at);
-                if (end == std::string::npos) end = got.result.body.size();
-                const std::string line = got.result.body.substr(at, end - at);
+            const HttpResult got = CentralCall(root, "GET", "/mensagens?desde=" + std::to_string(after), "", session, 8000);
+            std::vector<DirectMessage> fresh;
+            for (size_t at = 0; got.status == 200 && at < got.body.size();) {
+                size_t end = got.body.find('\n', at);
+                if (end == std::string::npos) end = got.body.size();
+                const std::string line = got.body.substr(at, end - at);
                 at = end + 1;
                 std::vector<std::string> parts;
                 for (size_t from = 0;;) {
@@ -4255,75 +4729,158 @@ struct Client {
                 if (parts.size() == 6 && parts[0] == "m") fresh.push_back({std::atoll(parts[1].c_str()), std::atoll(parts[2].c_str()), parts[3], parts[4], parts[5]});
             }
             std::lock_guard guard(chatLock);
-            if (got.result.status == 200) {
-                if (restart) {
-                    chat.clear();
-                    chatLast = 0;
-                }
-                chatServer = got.server;
+            if (got.status == 200) {
                 for (auto& message : fresh) {
                     if (message.number <= chatLast) continue;
                     chatLast = message.number;
                     chat.push_back(std::move(message));
                 }
-                if (chat.size() > 500) chat.erase(chat.begin(), chat.begin() + static_cast<std::ptrdiff_t>(chat.size() - 500));
-            } else if (problem.empty()) {
-                problem = got.result.status == 401 ? "Falta o código do grupo (aba Amigos, Servidor dos amigos)." : got.result.status == 0 ? "O servidor dos amigos não respondeu." : "";
+                if (chat.size() > 2000) chat.erase(chat.begin(), chat.begin() + static_cast<std::ptrdiff_t>(chat.size() - 2000));
+                chatFetched = true;
+            } else if (problem.empty() && got.status == 0) {
+                problem = "O servidor do Ranga não respondeu.";
             }
             chatProblem = problem;
             chatBusy = false;
         });
     }
 
-    // New messages from the others: a notice and the count on Perfil and Chat while the chat is not being read.
+    // Where this account's "read up to" per friend is kept on this PC, so messages that came while Ranga was closed
+    // still show as new.
+    std::wstring ChatSeenFile() const { return library.Root() + L"\\perfil\\conversas-" + Wide(profile.accountId) + L".txt"; }
+
+    void SaveChatSeen() {
+        std::string text;
+        for (const auto& [id, number] : chatSeen) text += id + "\t" + std::to_string(number) + "\n";
+        HANDLE file = CreateFileW(ChatSeenFile().c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (file == INVALID_HANDLE_VALUE) return;
+        DWORD put = 0;
+        WriteFile(file, text.data(), static_cast<DWORD>(text.size()), &put, nullptr);
+        CloseHandle(file);
+    }
+
+    // New messages from friends: a notice (unless that conversation is open) and the unread counts.
     void NoticeChat() {
-        std::vector<ChatMessage> fresh;
+        std::vector<DirectMessage> fresh;
+        int waiting = 0;
         {
             std::lock_guard guard(chatLock);
-            if (chatSeen < 0) {
-                // The history already there when Ranga opened is not news.
-                if (chatServer.empty() || chatBusy) return;
-                chatSeen = chatLast;
-                return;
+            if (!chatPrimed) {
+                if (!chatFetched) return;
+                // Read up to where this PC last saw; the first time on this PC, what is already there is not news.
+                const std::string saved = ReadBytes(ChatSeenFile());
+                if (saved.empty()) {
+                    for (const auto& message : chat) if (message.from != profile.accountId) chatSeen[message.from] = std::max(chatSeen[message.from], message.number);
+                } else {
+                    for (size_t at = 0; at < saved.size();) {
+                        size_t end = saved.find('\n', at);
+                        if (end == std::string::npos) end = saved.size();
+                        const std::string line = saved.substr(at, end - at);
+                        at = end + 1;
+                        const size_t tab = line.find('\t');
+                        if (tab != std::string::npos) chatSeen[line.substr(0, tab)] = std::atoll(line.c_str() + tab + 1);
+                    }
+                    for (const auto& message : chat) waiting += message.from != profile.accountId && message.number > chatSeen[message.from];
+                }
+                chatNoticed = chatLast;
+                chatPrimed = true;
             }
-            for (const auto& message : chat) if (message.number > chatSeen && message.id != profile.id) fresh.push_back(message);
-            if (chatLast > chatSeen && chatTabOpen) {
-                chatSeen = chatLast;
-                chatUnread = 0;
-                return;
+            for (const auto& message : chat) {
+                if (message.number <= chatNoticed || message.from == profile.accountId) continue;
+                if (chatTabOpen && message.from == chatPeer) chatSeen[message.from] = message.number;
+                else fresh.push_back(message);
             }
-            chatSeen = std::max(chatSeen, chatLast);
+            chatNoticed = chatLast;
+            chatUnread = 0;
+            for (const auto& message : chat) chatUnread += message.from != profile.accountId && message.number > chatSeen[message.from];
+            // Read here or in the open conversation since the last save.
+            if (chatPrimed && chatSeen != chatSeenSaved) {
+                SaveChatSeen();
+                chatSeenSaved = chatSeen;
+            }
         }
-        for (const auto& message : fresh) {
-            ++chatUnread;
-            AddToast("Chat  ·  " + message.name, message.text, "");
-        }
+        if (waiting > 0) AddToast("Enquanto o Ranga estava fechado", waiting == 1 ? "1 mensagem nova" : std::to_string(waiting) + " mensagens novas", "");
+        for (const auto& message : fresh) AddToast("Mensagem de " + FriendName(message.from), message.text, "");
+    }
+
+    // The way in, shown where an account is needed.
+    void AccountPrompt(float scale) {
+        ImGui::Dummy(ImVec2(0, 10 * scale));
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextUnformatted("Para ter amigos e conversar, crie sua conta do Ranga (ou entre, se já tiver).");
+        ImGui::TextDisabled("Só nome e senha, sem e-mail. Seus amigos te acham pelo seu Nome#1234 e só eles veem o seu perfil.");
+        ImGui::PopTextWrapPos();
+        ImGui::Dummy(ImVec2(0, 6 * scale));
+        ImGui::PushStyleColor(ImGuiCol_Button, Color(kAccent));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Color(kAccentHover));
+        if (ImGui::Button("Criar conta", ImVec2(170 * scale, 36 * scale))) OpenAccount(1);
+        ImGui::PopStyleColor(2);
+        ImGui::SameLine();
+        if (ImGui::Button("Entrar", ImVec2(130 * scale, 36 * scale))) OpenAccount(0);
     }
 
     void ProfileChat(float scale) {
         chatTabOpen = true;
-        std::vector<ChatMessage> list;
+        if (profile.session.empty()) {
+            AccountPrompt(scale);
+            return;
+        }
+        std::vector<PlayerCard> list;
+        {
+            std::lock_guard guard(friendsLock);
+            list = friends;
+        }
+        if (list.empty()) {
+            ImGui::Dummy(ImVec2(0, 10 * scale));
+            ImGui::TextDisabled("Adicione amigos na aba Amigos para conversar.");
+            return;
+        }
+        std::vector<DirectMessage> messages;
+        std::map<std::string, int> unread;
         std::string problem;
         {
             std::lock_guard guard(chatLock);
-            list = chat;
+            if (std::none_of(list.begin(), list.end(), [&](const PlayerCard& c) { return c.id == chatPeer; })) chatPeer = list.front().id;
+            for (const auto& message : chat) {
+                if (message.from != profile.accountId) unread[message.from] += message.number > chatSeen[message.from];
+                if (message.from == chatPeer || message.to == chatPeer) messages.push_back(message);
+            }
+            // Open is read.
+            for (const auto& message : messages) if (message.from == chatPeer) chatSeen[chatPeer] = std::max(chatSeen[chatPeer], message.number);
+            unread[chatPeer] = 0;
             problem = chatProblem;
         }
-        if (list.size() != chatShown) {
-            chatShown = list.size();
+        if (messages.size() != chatShown) {
+            chatShown = messages.size();
             chatScroll = true;
         }
+        const long long now = static_cast<long long>(std::time(nullptr));
         ImGui::Dummy(ImVec2(0, 6 * scale));
+        // The friends on the left, the conversation on the right.
+        ImGui::BeginChild("##chatFriends", ImVec2(240 * scale, -54 * scale), ImGuiChildFlags_None);
+        for (const auto& card : list) {
+            const bool online = !card.closed && now - card.seen < 300;
+            std::string label = card.name;
+            if (unread[card.id] > 0) label += "  (" + std::to_string(unread[card.id]) + ")";
+            ImGui::PushID(card.id.c_str());
+            ImGui::PushStyleColor(ImGuiCol_Text, Color(online ? kGreen : kText));
+            if (ImGui::Selectable(label.c_str(), card.id == chatPeer, 0, ImVec2(0, 28 * scale))) chatPeer = card.id;
+            ImGui::PopStyleColor();
+            ImGui::PopID();
+        }
+        ImGui::EndChild();
+        ImGui::SameLine();
         ImGui::PushStyleColor(ImGuiCol_ChildBg, Color(kSidebar));
         ImGui::BeginChild("##chatLog", ImVec2(0, -54 * scale), ImGuiChildFlags_None, ImGuiWindowFlags_AlwaysVerticalScrollbar);
         ImGui::Dummy(ImVec2(0, 4 * scale));
-        if (list.empty()) ImGui::TextDisabled("  Nenhuma mensagem ainda. Mande a primeira!");
-        for (const auto& message : list) {
+        if (messages.empty()) ImGui::TextDisabled("  Nenhuma mensagem ainda com %s. Mande a primeira!", FriendName(chatPeer).c_str());
+        for (const auto& message : messages) {
+            const bool mine = message.from == profile.accountId;
             ImGui::SetCursorPosX(12 * scale);
             ImGui::BeginGroup();
             ImGui::PushFont(semibold, 15);
-            ImGui::PushStyleColor(ImGuiCol_Text, Color(message.id == profile.id ? kGreen : kAccentHover));
-            ImGui::TextUnformatted(message.name.c_str());
+            ImGui::PushStyleColor(ImGuiCol_Text, Color(mine ? kGreen : kAccentHover));
+            ImGui::TextUnformatted(mine ? profile.ShownName().c_str() : FriendName(message.from).c_str());
             ImGui::PopStyleColor();
             ImGui::PopFont();
             ImGui::SameLine();
@@ -4346,7 +4903,8 @@ struct Client {
         ImGui::Dummy(ImVec2(0, 4 * scale));
         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 130 * scale);
         ImGui::PushStyleColor(ImGuiCol_FrameBg, Color(kSelected));
-        const bool enter = ImGui::InputTextWithHint("##chatInput", "Escreva uma mensagem...", chatInput.data(), chatInput.size(), ImGuiInputTextFlags_EnterReturnsTrue);
+        const std::string hint = "Mensagem para " + FriendName(chatPeer) + "...";
+        const bool enter = ImGui::InputTextWithHint("##chatInput", hint.c_str(), chatInput.data(), chatInput.size(), ImGuiInputTextFlags_EnterReturnsTrue);
         ImGui::PopStyleColor();
         ImGui::SameLine();
         ImGui::BeginDisabled(chatBusy);
@@ -4355,7 +4913,7 @@ struct Client {
         if (send && !chatBusy) {
             const std::string text = chatInput.data();
             if (text.find_first_not_of(' ') != std::string::npos) {
-                PollChat(text);
+                PollChat(chatPeer, text);
                 chatInput.fill('\0');
             }
             ImGui::SetKeyboardFocusHere(-1);
@@ -4369,12 +4927,19 @@ struct Client {
 
     void ProfileFriends(float scale) {
         ImDrawList* draw = ImGui::GetWindowDrawList();
+        if (profile.session.empty()) {
+            AccountPrompt(scale);
+            return;
+        }
         std::vector<PlayerCard> list;
+        std::vector<std::pair<std::string, std::string>> incoming, outgoing;
         std::string problem;
         long long at = 0;
         {
             std::lock_guard guard(friendsLock);
-            for (const auto& card : friends) if (card.id != profile.id) list.push_back(card);
+            list = friends;
+            incoming = friendsIncoming;
+            outgoing = friendsOutgoing;
             problem = friendsProblem;
             at = friendsAt;
         }
@@ -4385,57 +4950,91 @@ struct Client {
             return a.seen > b.seen;
         });
         ImGui::Dummy(ImVec2(0, 8 * scale));
-        ImGui::BeginDisabled(profileBusy);
-        if (ImGui::Button(profileBusy ? "Atualizando..." : "Atualizar agora")) SyncProfiles(true);
-        ImGui::EndDisabled();
-        ImGui::SameLine();
+        // This player's Nome#1234, for friends to type.
         ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled("Sua conta:");
+        ImGui::SameLine();
+        ImGui::PushFont(semibold, 18);
+        ImGui::TextUnformatted(profile.accountName.c_str());
+        ImGui::PopFont();
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Copiar")) {
+            ImGui::SetClipboardText(profile.accountName.c_str());
+            AddToast("Conta do Ranga", "Copiado: " + profile.accountName, "");
+        }
+        ImGui::SameLine(0, 20 * scale);
+        ImGui::BeginDisabled(profileBusy);
+        if (ImGui::SmallButton(profileBusy ? "Atualizando..." : "Atualizar")) SyncProfiles(true);
+        ImGui::EndDisabled();
         if (!problem.empty()) {
+            ImGui::SameLine();
             ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
-            ImGui::PushTextWrapPos(0);
-            ImGui::TextWrapped("%s", problem.c_str());
-            ImGui::PopTextWrapPos();
+            ImGui::TextUnformatted(problem.c_str());
             ImGui::PopStyleColor();
         } else if (at != 0) {
-            std::string server;
-            {
-                std::lock_guard guard(friendsLock);
-                server = friendsServer;
-            }
-            const std::string by = server == CentralServer(library.Root()) ? "pela central " + server : "pela sala em " + server;
-            ImGui::TextDisabled("Atualizado %s, %s", FormatAgo(at).c_str(), by.c_str());
+            ImGui::SameLine();
+            ImGui::TextDisabled("atualizado %s", FormatAgo(at).c_str());
         }
+
+        // Adding someone by Nome#1234.
         ImGui::Dummy(ImVec2(0, 6 * scale));
-        if (ImGui::CollapsingHeader("Servidor dos amigos")) {
-            ImGui::PushTextWrapPos(0);
-            ImGui::TextDisabled("Central: o servidor sempre ligado dos amigos (vazio: a do Ranga, na Cloudflare). Quando ela não responde, o Ranga "
-                                "usa a sala do PC que hospeda, pelo playit. \"nenhuma\": só a sala do PC. O código do grupo é o mesmo para todos.");
-            ImGui::PopTextWrapPos();
-            ImGui::PushStyleColor(ImGuiCol_FrameBg, Color(kSelected));
-            ImGui::SetNextItemWidth(320 * scale);
-            ImGui::InputTextWithHint("##central", "https://ranga-central.nadroi-dev.workers.dev", centralField.data(), centralField.size());
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(200 * scale);
-            ImGui::InputTextWithHint("##group", "código do grupo", groupField.data(), groupField.size());
-            ImGui::PopStyleColor();
-            ImGui::SameLine();
-            if (ImGui::Button("Salvar servidor")) {
-                SetCentralServer(library.Root(), centralField.data());
-                SetGroupCode(library.Root(), groupField.data());
-                OpenProfile();
-                {
-                    std::lock_guard guard(chatLock);
-                    chatAt = 0;
-                }
-                AddToast("Servidor dos amigos", "Salvo. Conferindo agora...", "");
-            }
-            ImGui::Dummy(ImVec2(0, 6 * scale));
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, Color(kSelected));
+        ImGui::SetNextItemWidth(260 * scale);
+        const bool enter = ImGui::InputTextWithHint("##friendAdd", "Nome#1234 do amigo", friendAddField.data(), friendAddField.size(), ImGuiInputTextFlags_EnterReturnsTrue);
+        ImGui::PopStyleColor();
+        ImGui::SameLine();
+        ImGui::BeginDisabled(actionBusy || friendAddField[0] == '\0');
+        if (ImGui::Button("Pedir amizade") || (enter && friendAddField[0] != '\0')) {
+            FriendAction("/amigos/pedir", "nome\t" + NoTabs(friendAddField.data()) + "\n");
+            friendAddField.fill('\0');
         }
+        ImGui::EndDisabled();
+        if (!friendAction.empty()) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("%s", friendAction.c_str());
+        }
+
+        // Requests.
+        if (!incoming.empty()) {
+            SectionTitle("Pedidos de amizade", scale);
+            for (const auto& [id, name] : incoming) {
+                ImGui::PushID(id.c_str());
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextUnformatted(name.c_str());
+                ImGui::SameLine(300 * scale);
+                ImGui::BeginDisabled(actionBusy);
+                ImGui::PushStyleColor(ImGuiCol_Button, Color(kAccent));
+                if (ImGui::Button("Aceitar")) FriendAction("/amigos/responder", "conta\t" + id + "\naceitar\t1\n");
+                ImGui::PopStyleColor();
+                ImGui::SameLine();
+                if (ImGui::Button("Recusar")) FriendAction("/amigos/responder", "conta\t" + id + "\naceitar\t0\n");
+                ImGui::SameLine();
+                if (ImGui::Button("Bloquear")) FriendAction("/bloquear", "conta\t" + id + "\n");
+                ImGui::EndDisabled();
+                ImGui::PopID();
+            }
+        }
+        if (!outgoing.empty()) {
+            SectionTitle("Esperando resposta", scale);
+            for (const auto& [id, name] : outgoing) {
+                ImGui::PushID(id.c_str());
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextDisabled("%s", name.c_str());
+                ImGui::SameLine(300 * scale);
+                ImGui::BeginDisabled(actionBusy);
+                if (ImGui::Button("Cancelar pedido")) FriendAction("/amigos/remover", "conta\t" + id + "\n");
+                ImGui::EndDisabled();
+                ImGui::PopID();
+            }
+        }
+
+        char heading[64];
+        std::snprintf(heading, sizeof(heading), "Amigos   (%d)", static_cast<int>(list.size()));
+        SectionTitle(heading, scale);
         if (list.empty()) {
             ImGui::PushTextWrapPos(0);
-            ImGui::TextDisabled("Nenhum amigo apareceu ainda. O perfil de cada um aparece aqui quando o Ranga dele abre com a sala do PC que hospeda no ar.");
+            ImGui::TextDisabled("Nenhum amigo ainda. Passe o seu Nome#1234 para eles, ou peça a amizade pelo deles aqui em cima.");
             ImGui::PopTextWrapPos();
-            return;
         }
         const float cardWidth = 300 * scale, cardHeight = 96 * scale, gap = 14 * scale;
         const int columns = std::max(1, static_cast<int>((ImGui::GetContentRegionAvail().x + gap) / (cardWidth + gap)));
@@ -4448,6 +5047,7 @@ struct Client {
             const bool hovered = ImGui::IsItemHovered() || ImGui::IsItemFocused();
             ImGui::PopID();
             draw->AddRectFilled(min, max, Packed(hovered ? kHover : kSurface), 10 * scale);
+            DrawCover(draw, min, max, card, 10 * scale, hovered ? 0.7f : 0.88f);
             const float side = 64 * scale;
             DrawAvatar(draw, ImVec2(min.x + 16 * scale, min.y + 16 * scale), side, card, scale * 0.6f);
             const float x = min.x + 16 * scale + side + 16 * scale;
@@ -4460,8 +5060,254 @@ struct Client {
             draw->AddText(nullptr, ImGui::GetFontSize() * 0.92f, ImVec2(x, min.y + 62 * scale), Packed(online ? kGreen : kDim), status.c_str(), nullptr, 0, &clip);
             if (clicked) pending = [this, id = card.id] { profileViewing = id; };
         }
+
+        std::vector<std::pair<std::string, std::string>> blockedList;
+        {
+            std::lock_guard guard(friendsLock);
+            blockedList = friendsBlocked;
+        }
+        if (!blockedList.empty()) {
+            SectionTitle("Bloqueados", scale);
+            ImGui::TextDisabled("Não te pedem amizade nem conversam com você. Para eles, você não existe.");
+            for (const auto& [id, name] : blockedList) {
+                ImGui::PushID(id.c_str());
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextDisabled("%s", name.c_str());
+                ImGui::SameLine(300 * scale);
+                ImGui::BeginDisabled(actionBusy);
+                if (ImGui::Button("Desbloquear")) FriendAction("/desbloquear", "conta\t" + id + "\n");
+                ImGui::EndDisabled();
+                ImGui::PopID();
+            }
+        }
+        ImGui::Dummy(ImVec2(0, 12 * scale));
+        OwnerPanel(scale);
+        if (ImGui::CollapsingHeader("Servidor (avançado)")) {
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextDisabled("Onde ficam as contas, os amigos e as conversas. Vazio: o do Ranga, na Cloudflare.");
+            ImGui::PopTextWrapPos();
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, Color(kSelected));
+            ImGui::SetNextItemWidth(380 * scale);
+            ImGui::InputTextWithHint("##central", "https://ranga-central.nadroi-dev.workers.dev", centralField.data(), centralField.size());
+            ImGui::PopStyleColor();
+            ImGui::SameLine();
+            if (ImGui::Button("Salvar servidor")) {
+                SetCentralServer(library.Root(), centralField.data());
+                profileSyncedAt = 0;
+            }
+        }
     }
 
+    // Fetches the accounts (search: part of a name), after banning or unbanning one when id is given.
+    void OwnerFetch(const std::string& path = "", const std::string& id = "", const std::string& reason = "") {
+        if (ownerBusy) return;
+        if (ownerThread.joinable()) ownerThread.join();
+        ownerBusy = true;
+        ownerThread = std::thread([this, path, id, reason, search = std::string(ownerSearch.data()), root = library.Root()] {
+            std::string problem;
+            if (!path.empty()) {
+                const HttpResult done = OwnerCall(root, "POST", path, "conta\t" + id + "\nmotivo\t" + NoTabs(reason) + "\n");
+                if (done.status != 200) problem = done.status == 0 ? "O servidor do Ranga não respondeu." : ReplyField(done.body, "erro");
+            }
+            const HttpResult got = OwnerCall(root, "GET", "/dono/contas?busca=" + UrlEncode(search), "");
+            std::vector<OwnerRow> rows;
+            for (size_t at = 0; got.status == 200 && at < got.body.size();) {
+                size_t end = got.body.find('\n', at);
+                if (end == std::string::npos) end = got.body.size();
+                const std::string line = got.body.substr(at, end - at);
+                at = end + 1;
+                std::vector<std::string> parts;
+                for (size_t from = 0;;) {
+                    const size_t tab = line.find('\t', from);
+                    parts.push_back(line.substr(from, tab == std::string::npos ? std::string::npos : tab - from));
+                    if (tab == std::string::npos) break;
+                    from = tab + 1;
+                }
+                if (parts.size() >= 7 && parts[0] == "c") rows.push_back({parts[1], parts[2], parts[6], std::atoll(parts[3].c_str()), std::atoll(parts[4].c_str()), parts[5] == "1"});
+            }
+            if (got.status != 200 && problem.empty()) problem = got.status == 0 ? "O servidor do Ranga não respondeu." : got.status == 403 ? "A chave de dono não confere." : "Erro " + std::to_string(got.status) + ".";
+            std::lock_guard guard(ownerLock);
+            if (got.status == 200) ownerRows = std::move(rows);
+            ownerProblem = problem;
+            ownerBusy = false;
+        });
+    }
+
+    // Only on the owner's PC: every account, and banning one.
+    void OwnerPanel(float scale) {
+        if (!ownerHere || !ImGui::CollapsingHeader("Dono do Ranga")) return;
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("Só aparece neste PC (salas\\chave-dono.txt; nunca vai na atualização). Banir fecha as sessões da conta, desfaz as "
+                            "amizades dela e impede o PC dela de criar outra conta. Desbanir desfaz.");
+        ImGui::PopTextWrapPos();
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, Color(kSelected));
+        ImGui::SetNextItemWidth(240 * scale);
+        const bool enter = ImGui::InputTextWithHint("##ownerSearch", "buscar pelo nome (vazio: todas)", ownerSearch.data(), ownerSearch.size(), ImGuiInputTextFlags_EnterReturnsTrue);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(260 * scale);
+        ImGui::InputTextWithHint("##ownerReason", "motivo do banimento", ownerReason.data(), ownerReason.size());
+        ImGui::PopStyleColor();
+        ImGui::SameLine();
+        ImGui::BeginDisabled(ownerBusy);
+        if (ImGui::Button(ownerBusy ? "Buscando..." : "Buscar") || enter) OwnerFetch();
+        ImGui::EndDisabled();
+        std::vector<OwnerRow> rows;
+        std::string problem;
+        {
+            std::lock_guard guard(ownerLock);
+            rows = ownerRows;
+            problem = ownerProblem;
+        }
+        if (!problem.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
+            ImGui::TextUnformatted(problem.c_str());
+            ImGui::PopStyleColor();
+        }
+        if (rows.empty()) {
+            ImGui::TextDisabled("Clique em Buscar para ver as contas.");
+            return;
+        }
+        if (ImGui::BeginTable("##ownerTable", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY, ImVec2(0, 260 * scale))) {
+            ImGui::TableSetupScrollFreeze(0, 1);
+            ImGui::TableSetupColumn("Conta", ImGuiTableColumnFlags_WidthStretch, 2.0f);
+            ImGui::TableSetupColumn("Criada", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+            ImGui::TableSetupColumn("Visto", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+            ImGui::TableSetupColumn("Estado", ImGuiTableColumnFlags_WidthStretch, 2.0f);
+            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+            ImGui::TableHeadersRow();
+            for (const auto& row : rows) {
+                ImGui::PushID(row.id.c_str());
+                ImGui::TableNextRow(ImGuiTableRowFlags_None, 28 * scale);
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(row.name.c_str());
+                ImGui::TableNextColumn();
+                ImGui::TextDisabled("%s", FormatDate(row.created).c_str());
+                ImGui::TableNextColumn();
+                ImGui::TextDisabled("%s", row.seen > 0 ? FormatAgo(row.seen).c_str() : "nunca");
+                ImGui::TableNextColumn();
+                if (row.banned) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, Color(kRed));
+                    ImGui::Text("banida%s%s", row.reason.empty() ? "" : ": ", row.reason.c_str());
+                    ImGui::PopStyleColor();
+                } else {
+                    ImGui::TextDisabled("ativa");
+                }
+                ImGui::TableNextColumn();
+                ImGui::BeginDisabled(ownerBusy);
+                if (row.banned) {
+                    if (ImGui::SmallButton("Desbanir")) OwnerFetch("/dono/desbanir", row.id);
+                } else if (ImGui::SmallButton("Banir")) {
+                    const std::string id = row.id, reason = ownerReason.data();
+                    Confirm(L"Banir " + Wide(row.name) + L"? A conta sai do Ranga e o PC dela não cria outra.", [this, id, reason] { OwnerFetch("/dono/banir", id, reason); });
+                }
+                ImGui::EndDisabled();
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
+    }
+
+    void AccountWindow(float scale) {
+        if (!accountOpen) return;
+        if (!ImGui::IsPopupOpen("##account")) ImGui::OpenPopup("##account");
+        const ImGuiViewport* viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(viewport->GetCenter(), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowSize(ImVec2(std::min(560 * scale, viewport->WorkSize.x - 40 * scale), 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(26 * scale, 22 * scale));
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, Color(kSelected));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, Color(kSelected));
+        ImGui::PushStyleColor(ImGuiCol_Button, Color(kSelected));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Color(0x34353c));
+        if (ImGui::BeginPopupModal("##account", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize)) {
+            if (!accountRecovery.empty()) {
+                // Right after creating the account (or recovering it): the code, once.
+                ImGui::PushFont(semibold, 22);
+                ImGui::TextUnformatted("Conta criada!");
+                ImGui::PopFont();
+                ImGui::Text("Sua conta: %s", profile.accountName.c_str());
+                ImGui::Dummy(ImVec2(0, 6 * scale));
+                ImGui::PushTextWrapPos(0);
+                ImGui::TextUnformatted("Guarde este código de recuperação. Ele é o único jeito de voltar para a conta se você esquecer a senha, e ele não aparece de novo:");
+                ImGui::PopTextWrapPos();
+                ImGui::Dummy(ImVec2(0, 4 * scale));
+                ImGui::PushFont(semibold, 26);
+                ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
+                ImGui::TextUnformatted(accountRecovery.c_str());
+                ImGui::PopStyleColor();
+                ImGui::PopFont();
+                ImGui::Dummy(ImVec2(0, 6 * scale));
+                if (ImGui::Button("Copiar código", ImVec2(160 * scale, 36 * scale))) ImGui::SetClipboardText(accountRecovery.c_str());
+                ImGui::SameLine();
+                ImGui::PushStyleColor(ImGuiCol_Button, Color(kAccent));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Color(kAccentHover));
+                if (ImGui::Button("Já guardei", ImVec2(140 * scale, 36 * scale))) {
+                    accountRecovery.clear();
+                    accountOpen = false;
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::PopStyleColor(2);
+                ImGui::EndPopup();
+                ImGui::PopStyleColor(4);
+                ImGui::PopStyleVar();
+                return;
+            }
+            ImGui::PushFont(semibold, 22);
+            ImGui::TextUnformatted("Conta do Ranga");
+            ImGui::PopFont();
+            ImGui::Dummy(ImVec2(0, 4 * scale));
+            if (ImGui::RadioButton("Entrar##modo", accountMode == 0)) accountMode = 0, accountProblem.clear();
+            ImGui::SameLine();
+            if (ImGui::RadioButton("Criar conta##modo", accountMode == 1)) accountMode = 1, accountProblem.clear();
+            ImGui::SameLine();
+            if (ImGui::RadioButton("Esqueci a senha##modo", accountMode == 2)) accountMode = 2, accountProblem.clear();
+            ImGui::Dummy(ImVec2(0, 6 * scale));
+            ImGui::TextDisabled(accountMode == 1 ? "Nome (3 a 20 letras ou números)" : "Sua conta (Nome#1234)");
+            ImGui::SetNextItemWidth(-1);
+            ImGui::InputText("##accName", accName.data(), accName.size());
+            if (accountMode == 2) {
+                ImGui::TextDisabled("Código de recuperação");
+                ImGui::SetNextItemWidth(-1);
+                ImGui::InputText("##accCode", accCode.data(), accCode.size(), ImGuiInputTextFlags_CharsUppercase);
+            }
+            ImGui::TextDisabled(accountMode == 2 ? "Senha nova" : "Senha");
+            ImGui::SetNextItemWidth(-1);
+            bool enter = ImGui::InputText("##accPass", accPass.data(), accPass.size(), ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue);
+            if (accountMode == 1) {
+                ImGui::TextDisabled("Repita a senha");
+                ImGui::SetNextItemWidth(-1);
+                enter = ImGui::InputText("##accPass2", accPass2.data(), accPass2.size(), ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue) || enter;
+            }
+            ImGui::PushTextWrapPos(0);
+            if (accountMode == 1) ImGui::TextDisabled("Sem e-mail. A tag (#1234) o Ranga sorteia. Ao criar, aparece um código de recuperação: guarde.");
+            else if (accountMode == 2) ImGui::TextDisabled("O código que apareceu quando você criou a conta. Depois de usar, ele muda: o novo aparece na hora.");
+            ImGui::PopTextWrapPos();
+            if (!accountProblem.empty()) {
+                ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
+                ImGui::PushTextWrapPos(0);
+                ImGui::TextWrapped("%s", accountProblem.c_str());
+                ImGui::PopTextWrapPos();
+                ImGui::PopStyleColor();
+            }
+            ImGui::Dummy(ImVec2(0, 8 * scale));
+            ImGui::BeginDisabled(accountBusy);
+            ImGui::PushStyleColor(ImGuiCol_Button, Color(kAccent));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Color(kAccentHover));
+            const char* action = accountBusy ? (accountStage == 1 ? "Verificando o PC..." : "Esperando o servidor...") : accountMode == 0 ? "Entrar" : accountMode == 1 ? "Criar conta" : "Trocar a senha";
+            if (ImGui::Button(action, ImVec2(200 * scale, 36 * scale)) || (enter && !accountBusy)) StartAccount();
+            ImGui::PopStyleColor(2);
+            ImGui::EndDisabled();
+            ImGui::SameLine();
+            if (ImGui::Button("Fechar", ImVec2(120 * scale, 36 * scale)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+                accountOpen = false;
+                accPass.fill('\0');
+                accPass2.fill('\0');
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+        ImGui::PopStyleColor(4);
+        ImGui::PopStyleVar();
+    }
     void ProfileEditor(float scale) {
         if (!profileEdit) return;
         if (!ImGui::IsPopupOpen("##profileEdit")) ImGui::OpenPopup("##profileEdit");
@@ -4484,32 +5330,56 @@ struct Client {
             ImGui::Dummy(ImVec2(102 * scale, 102 * scale));
             ImGui::SameLine(0, 20 * scale);
             ImGui::BeginGroup();
-            ImGui::TextDisabled("Foto (PNG ou JPG; fica o quadrado do meio)");
-            if (ImGui::Button("Escolher foto...")) {
+            ImGui::TextDisabled("Foto e capa: imagem, GIF ou vídeo (até 5 s, sem som)");
+            const std::vector<std::pair<std::wstring, std::wstring>> kinds = {
+                {L"Imagens, GIFs e vídeos", L"*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.mp4;*.mov;*.wmv;*.avi;*.m4v;*.mkv;*.webm"}};
+            const auto choose = [this, kinds](bool cover) {
                 profileEdit = false;
                 ImGui::CloseCurrentPopup();
-                pending = [this] {
-                    Browse(L"Escolher foto do perfil", L"", false, {{L"Imagens (png, jpg)", L"*.png;*.jpg;*.jpeg"}}, [this](const std::wstring& path) {
-                        const std::string pixels = MakeAvatar(path);
-                        if (pixels.empty()) {
-                            Notify(L"Não deu para ler essa imagem. Escolha um arquivo PNG ou JPG.");
-                        } else {
-                            profile.SetAvatar(pixels);
-                            for (const auto& title : profile.Evaluate(LibraryCount())) AddToast("Conquista desbloqueada", title, "");
-                        }
+                pending = [this, kinds, cover] {
+                    Browse(cover ? L"Escolher a capa do perfil" : L"Escolher a foto do perfil", L"", false, kinds, [this, cover](const std::wstring& path) {
+                        ImportProfileMedia(path, cover);
                         OpenProfileEditor();
                     });
                 };
-            }
-            if (!profile.avatar.empty()) {
+            };
+            ImGui::BeginDisabled(importBusy);
+            if (ImGui::Button("Escolher foto...")) choose(false);
+            if (!profile.photo.empty()) {
                 ImGui::SameLine();
-                if (ImGui::Button("Tirar foto")) profile.SetAvatar("");
+                if (ImGui::Button("Tirar foto")) profile.SetPhoto("");
             }
+            if (ImGui::Button("Escolher capa...")) choose(true);
+            if (!profile.cover.empty()) {
+                ImGui::SameLine();
+                if (ImGui::Button("Tirar capa")) profile.SetCover("");
+            }
+            ImGui::EndDisabled();
+            if (importBusy) ImGui::TextDisabled("Convertendo...");
             ImGui::EndGroup();
+            // The cover as it will look, under the photo.
+            const ImVec2 coverAt = ImGui::GetCursorScreenPos();
+            const float coverWidth = ImGui::GetContentRegionAvail().x;
+            if (!profile.cover.empty()) {
+                DrawCover(ImGui::GetWindowDrawList(), coverAt, ImVec2(coverAt.x + coverWidth, coverAt.y + coverWidth / 5), card, 8 * scale, 0.0f);
+                ImGui::Dummy(ImVec2(coverWidth, coverWidth / 5));
+            }
             ImGui::Dummy(ImVec2(0, 6 * scale));
-            ImGui::TextDisabled("Nome");
-            ImGui::SetNextItemWidth(-1);
-            ImGui::InputText("##editName", editName.data(), 41);
+            if (profile.accountName.empty()) {
+                ImGui::TextDisabled("Nome");
+                ImGui::SetNextItemWidth(-1);
+                ImGui::InputText("##editName", editName.data(), 41);
+            } else {
+                ImGui::TextDisabled("Conta");
+                ImGui::AlignTextToFramePadding();
+                ImGui::Text("%s", profile.accountName.c_str());
+                ImGui::SameLine();
+                if (ImGui::Button("Sair da conta")) {
+                    SignOut();
+                    profileEdit = false;
+                    ImGui::CloseCurrentPopup();
+                }
+            }
             ImGui::TextDisabled("Frase");
             ImGui::SetNextItemWidth(-1);
             ImGui::InputText("##editPhrase", editPhrase.data(), 121);
@@ -4560,7 +5430,7 @@ struct Client {
             ImGui::PushStyleColor(ImGuiCol_Button, Color(kAccent));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Color(kAccentHover));
             if (ImGui::Button("Salvar", ImVec2(130 * scale, 36 * scale))) {
-                if (editName[0] != '\0' && profile.name != editName.data()) profile.SetName(editName.data());
+                if (profile.accountName.empty() && editName[0] != '\0' && profile.name != editName.data()) profile.SetName(editName.data());
                 if (profile.phrase != editPhrase.data()) profile.SetPhrase(editPhrase.data());
                 profileEdit = false;
                 ImGui::CloseCurrentPopup();
@@ -4586,8 +5456,10 @@ struct Client {
         for (size_t i = 0; i < toasts.size() && i < 4; ++i) {
             const Toast& toast = toasts[i];
             const float height = 74 * scale, width = 360 * scale;
-            ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + 16 * scale, bottom), ImGuiCond_Always, ImVec2(0, 1));
+            const float in = EaseOut(static_cast<float>((now - toast.start) / 0.28)), out = std::clamp(static_cast<float>((toast.until - now) / 0.4), 0.0f, 1.0f);
+            ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + 16 * scale - (1.0f - in) * (width + 24 * scale), bottom), ImGuiCond_Always, ImVec2(0, 1));
             ImGui::SetNextWindowSize(ImVec2(width, height));
+            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, std::min(in, out));
             ImGui::PushStyleColor(ImGuiCol_WindowBg, Color(kSurface));
             ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 10 * scale);
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12 * scale, 12 * scale));
@@ -4605,14 +5477,20 @@ struct Client {
             ImGui::PopFont();
             ImGui::EndGroup();
             ImGui::End();
-            ImGui::PopStyleVar(2);
+            ImGui::PopStyleVar(3);
             ImGui::PopStyleColor();
             bottom -= height + 10 * scale;
         }
     }
 
-    bool NeedsFrames() const {
-        return (gamepads.Connected() && GetForegroundWindow() == window) || std::fabs(homeTarget - homeScroll) > 0.0f || !toasts.empty();
+    // How long the window may sleep before the next frame: 16 ms while something moves, 40 ms while only an animated
+    // photo or cover plays (their frames last 100 ms), 250 ms when nothing changes on its own.
+    DWORD FrameWait() const {
+        if ((gamepads.Connected() && GetForegroundWindow() == window) || std::fabs(homeTarget - homeScroll) > 0.0f || !toasts.empty() || movedLastFrame ||
+            ImGui::GetTime() - pageChangedAt < 0.4) {
+            return 16;
+        }
+        return animatedLastFrame ? 40 : 250;
     }
 
     // The client gets out of the way while a game runs and comes back when it ends.
@@ -4635,9 +5513,15 @@ struct Client {
             pending = nullptr;
             action();
         }
+        movedLastFrame = moving;
+        moving = false;
+        animatedLastFrame = animating;
+        animating = false;
         if (!profileLoaded) InitProfile();
+        TendMedia();
         ProcessEnded();
         TakeRaLogin();
+        ProcessAccount();
         SyncProfiles(false);
         NoticeChat();
         PollChat();
@@ -4685,8 +5569,17 @@ struct Client {
         }
 
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
-        ImGui::SetNextWindowPos(viewport->WorkPos);
+        const Game* shownGame = page == Page::Game ? Current() : nullptr;
+        const std::string pageKey = std::to_string(profileOpen) + std::to_string(enginesPage) + std::to_string(static_cast<int>(page)) + profileViewing +
+                                    (shownGame != nullptr ? Utf8(shownGame->titleId) : "") + (page == Page::Console ? Utf8(console) : "");
+        if (pageKey != shownPage) {
+            shownPage = pageKey;
+            pageChangedAt = ImGui::GetTime();
+        }
+        const float appear = EaseOut(static_cast<float>((ImGui::GetTime() - pageChangedAt) / 0.22));
+        ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x, viewport->WorkPos.y + (1.0f - appear) * 18 * scale));
         ImGui::SetNextWindowSize(viewport->WorkSize);
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.2f + 0.8f * appear);
         ImGui::Begin("##root", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus);
         if (profileOpen) {
             ProfilePage(scale, nav);
@@ -4704,7 +5597,9 @@ struct Client {
         BrowserWindow(scale);
         NoticeWindow(scale);
         ProfileEditor(scale);
+        AccountWindow(scale);
         ImGui::End();
+        ImGui::PopStyleVar();
         UpdateBar(scale);
         Toasts(scale);
     }
@@ -4894,7 +5789,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
         MSG message;
         // Idle frames wait for input, so the client costs nothing while a game runs; a busy runner keeps it ticking for status.
         // A controller is read, not told by a message, and the console row slides: those need frames meanwhile.
-        if (!client.runner.Busy()) MsgWaitForMultipleObjects(0, nullptr, FALSE, client.NeedsFrames() ? 16 : 250, QS_ALLINPUT);
+        if (!client.runner.Busy()) MsgWaitForMultipleObjects(0, nullptr, FALSE, client.FrameWait(), QS_ALLINPUT);
         while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
             TranslateMessage(&message);
             DispatchMessageW(&message);

@@ -2,6 +2,7 @@
 #include "Common.hpp"
 #include "Http.hpp"
 #include "Library.hpp"
+#include "Media.hpp"
 #include "Rooms.hpp"
 #include "Update.hpp"
 
@@ -180,6 +181,11 @@ void PlayerProfile::Load(const std::wstring& rootFolder) {
         else if (key == "frase") phrase = value;
         else if (key == "ra_usuario") raUser = value;
         else if (key == "ra_token") raToken = value;
+        else if (key == "conta_id") accountId = value;
+        else if (key == "conta_nome") accountName = value;
+        else if (key == "sessao") session = value;
+        else if (key == "foto_enviada") photoSent = value;
+        else if (key == "capa_enviada") coverSent = value;
         else if (key == "maior_sessao") longest = Number(value);
         else if (key == "online") online = Number(value);
         else if (key == "madrugada") nightOwl = value == "1";
@@ -213,8 +219,21 @@ void PlayerProfile::Load(const std::wstring& rootFolder) {
         const auto parts = Split(line, '\t');
         if (parts.size() >= 2 && !parts[0].empty()) unlocked[parts[0]] = Number(parts[1]);
     }
-    const std::string pixels = ReadBytes(folder + L"\\avatar.rgba");
-    if (pixels.size() == static_cast<size_t>(kAvatarSide) * kAvatarSide * 4) avatar = pixels;
+    photo = ReadBytes(folder + L"\\foto.rani");
+    cover = ReadBytes(folder + L"\\capa.rani");
+    // The still photo of before (128 x 128 RGBA) becomes a one-frame photo.
+    if (photo.empty()) {
+        const std::string pixels = ReadBytes(folder + L"\\avatar.rgba");
+        if (pixels.size() == static_cast<size_t>(kAvatarSide) * kAvatarSide * 4) {
+            Media still;
+            still.width = still.height = kAvatarSide;
+            still.frames.push_back({std::vector<uint8_t>(pixels.begin(), pixels.end()), 100});
+            photo = EncodeMedia(still);
+            WriteWhole(folder + L"\\foto.rani", photo);
+        }
+    }
+    photoHash = photo.empty() ? "" : LocalHash(photo);
+    coverHash = cover.empty() ? "" : LocalHash(cover);
     for (const auto& definition : kDefinitions) {
         RangaAchievement achievement{definition.id, definition.title, definition.description, definition.goal};
         if (const auto found = unlocked.find(definition.id); found != unlocked.end()) achievement.unlocked = found->second;
@@ -231,6 +250,11 @@ void PlayerProfile::SaveMain() const {
     put("frase", phrase);
     put("ra_usuario", raUser);
     put("ra_token", raToken);
+    put("conta_id", accountId);
+    put("conta_nome", accountName);
+    put("sessao", session);
+    put("foto_enviada", photoSent);
+    put("capa_enviada", coverSent);
     put("maior_sessao", std::to_string(longest));
     put("online", std::to_string(online));
     put("madrugada", nightOwl ? "1" : "0");
@@ -374,7 +398,7 @@ std::vector<std::string> PlayerProfile::Evaluate(int libraryCount) {
             case Kind::Online: progress = static_cast<int>(online); break;
             case Kind::RaCount: progress = RaUnlocked(); break;
             case Kind::RaMastery: progress = mastered; break;
-            case Kind::Photo: progress = avatar.empty() ? 0 : 1; break;
+            case Kind::Photo: progress = photo.empty() ? 0 : 1; break;
         }
         RangaAchievement& achievement = achievements[i];
         achievement.progress = std::min(progress, achievement.goal);
@@ -403,11 +427,58 @@ void PlayerProfile::SetPhrase(const std::string& text) {
     ++revision;
 }
 
-void PlayerProfile::SetAvatar(const std::string& rgba) {
-    avatar = rgba.size() == static_cast<size_t>(kAvatarSide) * kAvatarSide * 4 ? rgba : std::string();
-    if (avatar.empty()) DeleteFileW((folder + L"\\avatar.rgba").c_str());
-    else WriteWhole(folder + L"\\avatar.rgba", avatar);
+void PlayerProfile::SetPhoto(const std::string& rani) {
+    photo = rani;
+    if (photo.empty()) {
+        DeleteFileW((folder + L"\\foto.rani").c_str());
+        DeleteFileW((folder + L"\\avatar.rgba").c_str());
+    } else {
+        WriteWhole(folder + L"\\foto.rani", photo);
+    }
+    photoHash = photo.empty() ? "" : LocalHash(photo);
     ++revision;
+}
+
+void PlayerProfile::SetAccount(const std::string& accountIdIn, const std::string& nameAndTag, const std::string& key) {
+    accountId = accountIdIn;
+    accountName = nameAndTag;
+    session = key;
+    SaveMain();
+    ++revision;
+}
+
+void PlayerProfile::ClearAccount() {
+    accountId.clear();
+    accountName.clear();
+    session.clear();
+    SaveMain();
+    ++revision;
+}
+
+std::string PlayerProfile::ShownName() const {
+    if (!accountName.empty()) return accountName.substr(0, accountName.rfind('#'));
+    return name;
+}
+
+void PlayerProfile::SetCover(const std::string& rani) {
+    cover = rani;
+    if (cover.empty()) DeleteFileW((folder + L"\\capa.rani").c_str());
+    else WriteWhole(folder + L"\\capa.rani", cover);
+    coverHash = cover.empty() ? "" : LocalHash(cover);
+    ++revision;
+}
+
+void PlayerProfile::MarkSent(bool coverToo, const std::string& hash) {
+    (coverToo ? coverSent : photoSent) = hash;
+    SaveMain();
+}
+
+std::string LocalHash(const std::string& bytes) {
+    uint64_t h = 1469598103934665603ull;
+    for (const unsigned char c : bytes) h = (h ^ c) * 1099511628211ull;
+    char text[17];
+    std::snprintf(text, sizeof(text), "%016llx", static_cast<unsigned long long>(h));
+    return text;
 }
 
 void PlayerProfile::SetRetroAchievements(const std::string& user, const std::string& token) {
@@ -418,8 +489,9 @@ void PlayerProfile::SetRetroAchievements(const std::string& user, const std::str
 
 PlayerCard PlayerProfile::Card(const std::string& playing, const std::string& playingSystem) const {
     PlayerCard card;
-    card.id = id;
-    card.name = name;
+    card.id = accountId.empty() ? id : accountId;
+    card.name = ShownName();
+    card.account = accountName;
     card.phrase = phrase;
     card.seconds = TotalSeconds();
     card.xp = Xp();
@@ -443,7 +515,8 @@ PlayerCard PlayerProfile::Card(const std::string& playing, const std::string& pl
     }
     std::sort(card.showcase.begin(), card.showcase.end(), [](const ShowcaseItem& a, const ShowcaseItem& b) { return a.when > b.when; });
     if (card.showcase.size() > 8) card.showcase.resize(8);
-    card.avatar = avatar;
+    card.photoVersion = photoHash;
+    card.coverVersion = coverHash;
     return card;
 }
 
@@ -468,7 +541,7 @@ std::string WriteCard(const PlayerCard& card) {
         put("vitrine\t" + std::string(item.ra ? "1" : "0") + "\t" + std::to_string(item.when) + "\t" + std::to_string(item.points) + "\t" + Clean(item.badge, 64) +
             "\t" + Clean(item.title) + "\t" + Clean(item.description, 300));
     }
-    if (!card.avatar.empty()) put("avatar\t" + Base64(card.avatar));
+
     return text;
 }
 
@@ -496,6 +569,7 @@ std::vector<PlayerCard> ReadCards(const std::string& text) {
         else if (key == "pontos_ra") card->raPoints = static_cast<int>(Number(at(1)));
         else if (key == "visto") card->seen = Number(at(1));
         else if (key == "fechou") card->closed = at(1) == "1";
+        else if (key == "conta") card->account = at(1);
         else if (key == "jogando") card->playing = at(1), card->playingSystem = at(2);
         else if (key == "recente" && parts.size() >= 5) {
             PlayedGame game;
@@ -506,9 +580,9 @@ std::vector<PlayerCard> ReadCards(const std::string& text) {
             if (card->recent.size() < 8) card->recent.push_back(game);
         } else if (key == "vitrine" && parts.size() >= 7) {
             if (card->showcase.size() < 8) card->showcase.push_back({parts[1] == "1", Number(parts[2]), static_cast<int>(Number(parts[3])), parts[4], parts[5], parts[6]});
-        } else if (key == "avatar") {
-            std::string pixels = Unbase64(at(1));
-            if (pixels.size() == static_cast<size_t>(kAvatarSide) * kAvatarSide * 4) card->avatar = std::move(pixels);
+        } else if (key == "midia" && parts.size() >= 3) {
+            if (parts[1] == "foto") card->photoVersion = parts[2];
+            else if (parts[1] == "capa") card->coverVersion = parts[2];
         }
     }
     cards.erase(std::remove_if(cards.begin(), cards.end(), [](const PlayerCard& c) { return c.id.empty(); }), cards.end());
@@ -585,14 +659,6 @@ bool RetroAchievementsLogin(const std::string& user, const std::string& password
 }
 
 namespace {
-std::atomic<unsigned long long> g_centralDownUntil{0};
-
-std::string OnlyCodeCharacters(const std::string& text) {
-    std::string out;
-    for (const char c : text) if (std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_') out += c;
-    return out.substr(0, 64);
-}
-
 std::string OnlyAddressCharacters(const std::string& text) {
     std::string out;
     for (const char c : text) if (std::isalnum(static_cast<unsigned char>(c)) || c == '.' || c == ':' || c == '-' || c == '/') out += c;
@@ -616,39 +682,153 @@ void SetCentralServer(const std::wstring& root, const std::string& address) {
     EnsureUnicodeIni(ini);
     const std::string clean = OnlyAddressCharacters(address);
     WritePrivateProfileStringW(L"Ranga", L"central", clean.empty() ? nullptr : Wide(clean).c_str(), ini.c_str());
-    g_centralDownUntil = 0;
 }
 
-std::string GroupCode(const std::wstring& root) { return OnlyCodeCharacters(Utf8(ReadIni(root + L"\\engines.ini", L"Ranga", L"grupo", L""))); }
-
-void SetGroupCode(const std::wstring& root, const std::string& code) {
-    const std::wstring ini = root + L"\\engines.ini";
-    EnsureUnicodeIni(ini);
-    const std::string clean = OnlyCodeCharacters(code);
-    WritePrivateProfileStringW(L"Ranga", L"grupo", clean.empty() ? nullptr : Wide(clean).c_str(), ini.c_str());
-}
-
-SocialAnswer SocialRequest(const std::wstring& root, const std::string& method, const std::string& path, const std::string& body, int timeoutMs) {
-    const std::string code = GroupCode(root);
-    const std::string headers = code.empty() ? "" : "X-Ranga-Grupo: " + code + "\r\n";
-    const std::string type = method == "POST" ? "text/plain; charset=utf-8" : "";
-    const std::string central = CentralServer(root);
-    if (!central.empty() && GetTickCount64() >= g_centralDownUntil) {
-        HttpResult answer = HttpRequest(method, central + path, body, type, "RangaEmu", std::min(timeoutMs, 5000), headers);
-        if (answer.status != 0) return {answer, central};
-        // Down: the hosting PC's room for the next three minutes, without waiting on the central one each time.
-        g_centralDownUntil = GetTickCount64() + 180000;
+std::string ReplyField(const std::string& text, const std::string& key) {
+    for (const std::string& line : Lines(text)) {
+        if (line.size() > key.size() && line.compare(0, key.size(), key) == 0 && line[key.size()] == '\t') return line.substr(key.size() + 1);
     }
-    const std::string fallback = ProfilesServer(root);
-    if (fallback == central) return {HttpResult{}, central};
-    return {HttpRequest(method, fallback + path, body, type, "RangaEmu", timeoutMs, headers), fallback};
+    return "";
 }
 
-std::string ProfilesServer(const std::wstring& root) {
-    const std::wstring chosen = ReadIni(root + L"\\engines.ini", L"Ranga", L"perfis", L"");
-    if (!chosen.empty()) return Utf8(chosen);
-    if (RoomServerEnabled(root)) return "127.0.0.1:" + std::to_string(ExtraPort(root, Extra::Classics));
-    return Utf8(UpdateSource(root));
+HttpResult CentralCall(const std::wstring& root, const std::string& method, const std::string& path, const std::string& body, const std::string& session,
+                       int timeoutMs) {
+    const std::string central = CentralServer(root);
+    if (central.empty()) return {};
+    const std::string headers = session.empty() ? "" : "Authorization: Bearer " + session + "\r\n";
+    return HttpRequest(method, central + path, body, method == "POST" ? "text/plain; charset=utf-8" : "", "RangaEmu", timeoutMs, headers);
 }
 
+std::string PcFingerprint() {
+    wchar_t guid[128] = {};
+    DWORD size = sizeof(guid);
+    if (RegGetValueW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\Microsoft\\Cryptography", L"MachineGuid", RRF_RT_REG_SZ, nullptr, guid, &size) != ERROR_SUCCESS)
+        return "";
+    const std::string text = "ranga-pc:" + Utf8(guid);
+    BCRYPT_ALG_HANDLE algorithm = nullptr;
+    BCRYPT_HASH_HANDLE hash = nullptr;
+    unsigned char digest[32] = {};
+    const bool ok = BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM, nullptr, 0) == 0 && BCryptCreateHash(algorithm, &hash, nullptr, 0, nullptr, 0, 0) == 0 &&
+                    BCryptHashData(hash, reinterpret_cast<PUCHAR>(const_cast<char*>(text.data())), static_cast<ULONG>(text.size()), 0) == 0 &&
+                    BCryptFinishHash(hash, digest, 32, 0) == 0;
+    if (hash != nullptr) BCryptDestroyHash(hash);
+    if (algorithm != nullptr) BCryptCloseAlgorithmProvider(algorithm, 0);
+    if (!ok) return "";
+    static const char* digits = "0123456789abcdef";
+    std::string out;
+    for (const unsigned char c : digest) {
+        out += digits[c >> 4];
+        out += digits[c & 15];
+    }
+    return out;
+}
+
+std::string SolveChallenge(const std::string& challenge, int bits) {
+    BCRYPT_ALG_HANDLE algorithm = nullptr;
+    BCRYPT_HASH_HANDLE hash = nullptr;
+    if (BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM, nullptr, BCRYPT_HASH_REUSABLE_FLAG) != 0) return "";
+    if (BCryptCreateHash(algorithm, &hash, nullptr, 0, nullptr, 0, BCRYPT_HASH_REUSABLE_FLAG) != 0) {
+        BCryptCloseAlgorithmProvider(algorithm, 0);
+        return "";
+    }
+    const std::string prefix = challenge + ":";
+    std::string found;
+    unsigned char digest[32];
+    char number[24];
+    // About 2^bits tries on average; a cap keeps a broken challenge from running forever.
+    for (unsigned long long tried = 0; tried < (1ull << (bits + 6)); ++tried) {
+        const int length = std::snprintf(number, sizeof(number), "%llu", tried);
+        BCryptHashData(hash, reinterpret_cast<PUCHAR>(const_cast<char*>(prefix.data())), static_cast<ULONG>(prefix.size()), 0);
+        BCryptHashData(hash, reinterpret_cast<PUCHAR>(number), static_cast<ULONG>(length), 0);
+        if (BCryptFinishHash(hash, digest, 32, 0) != 0) break;
+        int zeros = 0;
+        for (const unsigned char byte : digest) {
+            if (byte == 0) { zeros += 8; continue; }
+            for (int bit = 7; bit >= 0 && !(byte & (1 << bit)); --bit) ++zeros;
+            break;
+        }
+        if (zeros >= bits) {
+            found.assign(number, static_cast<size_t>(length));
+            break;
+        }
+    }
+    BCryptDestroyHash(hash);
+    BCryptCloseAlgorithmProvider(algorithm, 0);
+    return found;
+}
+
+std::string OwnerKey(const std::wstring& root) {
+    std::string key = ReadBytes(root + L"\\salas\\chave-dono.txt");
+    while (!key.empty() && (key.back() == '\n' || key.back() == '\r' || key.back() == ' ')) key.pop_back();
+    return key;
+}
+
+HttpResult OwnerCall(const std::wstring& root, const std::string& method, const std::string& path, const std::string& body) {
+    const std::string central = CentralServer(root), key = OwnerKey(root);
+    if (central.empty() || key.empty()) return {};
+    return HttpRequest(method, central + path, body, method == "POST" ? "text/plain; charset=utf-8" : "", "RangaEmu", 15000, "X-Ranga-Dono: " + key + "\r\n");
+}
+
+AccountAnswer AccountRequest(const std::wstring& root, const std::string& path, const std::string& body) {
+    AccountAnswer answer;
+    const HttpResult got = CentralCall(root, "POST", path, body, "", 20000);
+    answer.status = got.status;
+    if (got.status == 0) {
+        answer.error = "O servidor do Ranga não respondeu. Confira a internet.";
+        return answer;
+    }
+    answer.error = ReplyField(got.body, "erro");
+    if (got.status != 200) {
+        if (answer.error.empty()) answer.error = "O servidor do Ranga respondeu com erro " + std::to_string(got.status) + ".";
+        return answer;
+    }
+    answer.id = ReplyField(got.body, "conta");
+    answer.name = ReplyField(got.body, "nome");
+    answer.tag = static_cast<int>(Number(ReplyField(got.body, "tag")));
+    answer.session = ReplyField(got.body, "sessao");
+    answer.recovery = ReplyField(got.body, "recuperacao");
+    answer.ok = !answer.id.empty() && !answer.session.empty();
+    if (!answer.ok) answer.error = "A resposta do servidor veio incompleta.";
+    return answer;
+}
+
+FriendsList ReadFriends(const std::string& text) {
+    FriendsList list;
+    std::map<std::string, std::pair<std::string, int64_t>> friends; // id -> Nome#1234, seen
+    std::vector<std::string> order;
+    std::string cards;
+    bool inCard = false;
+    for (const std::string& line : Lines(text)) {
+        if (line == "ranga-perfil 1") inCard = true;
+        if (inCard) {
+            if (line == "fim_cartao") inCard = false;
+            else cards += line + "\n";
+            continue;
+        }
+        const auto parts = Split(line, '\t');
+        if (parts[0] == "amigo" && parts.size() >= 4) {
+            friends[parts[1]] = {parts[2], Number(parts[3])};
+            order.push_back(parts[1]);
+        } else if (parts[0] == "pedido_recebido" && parts.size() >= 3) {
+            list.incoming.push_back({parts[1], parts[2]});
+        } else if (parts[0] == "pedido_enviado" && parts.size() >= 3) {
+            list.outgoing.push_back({parts[1], parts[2]});
+        } else if (parts[0] == "bloqueado" && parts.size() >= 3) {
+            list.blocked.push_back({parts[1], parts[2]});
+        }
+    }
+    std::map<std::string, PlayerCard> byId;
+    for (PlayerCard& card : ReadCards(cards)) byId[card.id] = std::move(card);
+    for (const std::string& id : order) {
+        PlayerCard card;
+        if (const auto found = byId.find(id); found != byId.end()) card = found->second;
+        card.id = id;
+        card.account = friends[id].first;
+        // A friend who never opened the profile yet has no card: the account's name stands for it.
+        if (card.name.empty()) card.name = card.account.substr(0, card.account.rfind('#'));
+        if (card.seen == 0) card.seen = friends[id].second;
+        list.friends.push_back(std::move(card));
+    }
+    return list;
+}
 }
