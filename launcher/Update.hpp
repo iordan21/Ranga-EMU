@@ -64,6 +64,12 @@ struct IntegrityReport {
 };
 IntegrityReport CheckIntegrity(const std::wstring& root, const std::function<void(int, int)>& progress);
 
+// The hosting PC: a whole Ranga for a friend who has none (a new or formatted PC), as one zip in folder: the programs,
+// the cores and the emulators, with this PC's engines.ini minus what is only this PC's (server, group, backup,
+// quality). Never BIOS, firmware, keys, games, saves, the profile, the library or the signing and owner keys.
+// Uses Windows' own tar.exe; takes a minute or two (off the window's thread). made gets the zip's path.
+std::wstring MakeFriendPackage(const std::wstring& root, const std::wstring& folder, std::wstring& made);
+
 }
 
 #endif

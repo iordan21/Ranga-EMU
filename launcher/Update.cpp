@@ -310,6 +310,150 @@ UpdateInfo CheckUpdate(const std::wstring& root) {
     return info;
 }
 
+namespace {
+
+// What a friend's package leaves out, relative to Ranga's folder in lower case: whole folders, and single files.
+const std::vector<std::wstring> kPackageSkipFolders = {
+    L"pacote-amigo-temp", L"jogos", L"bios", L"backups", L"saves", L"perfil", L"covers", L"salas", L"tools", L"addons", L"reshade-shaders", L"logs",
+    L"atualizacao-baixada", L"emuladores\\_downloads", L"emuladores\\eden\\user\\keys", L"emuladores\\eden\\user\\nand",
+    L"emuladores\\eden\\user\\shader", L"emuladores\\eden\\user\\sdmc", L"emuladores\\rpcs3\\dev_flash", L"emuladores\\rpcs3\\dev_hdd0",
+    L"emuladores\\cemu\\cemu_2.6\\portable\\mlc01", L"emuladores\\xenia\\content", L"emuladores\\retroarch\\retroarch-win64\\saves",
+    L"emuladores\\retroarch\\retroarch-win64\\states", L"emuladores\\retroarch\\retroarch-win64\\system",
+    L"emuladores\\pcsx2\\memcards", L"emuladores\\pcsx2\\sstates", L"emuladores\\pcsx2\\bios", L"emuladores\\duckstation\\memcards",
+    L"emuladores\\duckstation\\bios", L"emuladores\\dolphin\\dolphin-x64\\user"};
+const std::vector<std::wstring> kPackageSkipFiles = {L"engines.ini", L"library.ini", L"salas.ini", L"emuladores\\xemu\\eeprom.bin"};
+
+bool PackageSkips(const std::wstring& rel, bool folder) {
+    const std::wstring low = Lower(rel);
+    if (folder) {
+        // Azahar's own user folder (this PC's 3DS system settings, logs) sits under a folder named by its version.
+        const std::wstring user = L"\\user";
+        if (low.rfind(L"emuladores\\azahar\\", 0) == 0 && low.size() > user.size() && low.compare(low.size() - user.size(), user.size(), user) == 0) return true;
+        return std::find(kPackageSkipFolders.begin(), kPackageSkipFolders.end(), low) != kPackageSkipFolders.end();
+    }
+    if (std::find(kPackageSkipFiles.begin(), kPackageSkipFiles.end(), low) != kPackageSkipFiles.end()) return true;
+    // Games, disc images, keys and logs, wherever they are; and the DLSS kit of this PC (NVIDIA's, not to hand out).
+    for (const wchar_t* end : {L".iso", L".chd", L".cue", L".nsp", L".xci", L".nsz", L".3ds", L".cia", L".wbfs", L".rvz", L".pkg", L".keys",
+                               L".log", L".old", L".bak", L".addon64", L".rani"}) {
+        const size_t n = wcslen(end);
+        if (low.size() > n && low.compare(low.size() - n, n, end) == 0) return true;
+    }
+    return low.rfind(L"nvngx", 0) == 0 || low.rfind(L"reshade", 0) == 0 || low.rfind(L"dlss5", 0) == 0 || low.rfind(L"renodx", 0) == 0;
+}
+
+// Puts every file that goes into the package under to, as a hard link (instant, no space) or a copy on another disk.
+bool PackageLink(const std::wstring& root, const std::wstring& rel, const std::wstring& to, int& count) {
+    WIN32_FIND_DATAW found;
+    HANDLE search = FindFirstFileW((root + (rel.empty() ? L"" : L"\\" + rel) + L"\\*").c_str(), &found);
+    if (search == INVALID_HANDLE_VALUE) return true;
+    do {
+        const std::wstring name = found.cFileName;
+        if (name == L"." || name == L".." || (found.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) continue;
+        const std::wstring path = rel.empty() ? name : rel + L"\\" + name;
+        const bool folder = (found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+        if (PackageSkips(path, folder)) continue;
+        const std::wstring from = root + L"\\" + path, target = to + L"\\" + path;
+        if (folder) {
+            CreateDirectoryW(target.c_str(), nullptr);
+            if (!PackageLink(root, path, to, count)) {
+                FindClose(search);
+                return false;
+            }
+        } else if (CreateHardLinkW(target.c_str(), from.c_str(), nullptr) || CopyFileW(from.c_str(), target.c_str(), FALSE)) {
+            ++count;
+        } else {
+            FindClose(search);
+            return false;
+        }
+    } while (FindNextFileW(search, &found));
+    FindClose(search);
+    return true;
+}
+
+}
+
+std::wstring MakeFriendPackage(const std::wstring& root, const std::wstring& folder, std::wstring& made) {
+    made.clear();
+    if (!IsDirectory(folder)) return L"A pasta escolhida não existe.";
+    if (Lower(folder + L"\\").rfind(Lower(root + L"\\"), 0) == 0) return L"Escolha uma pasta fora da pasta do Ranga.";
+    // The package is put together as staging\\Ranga (links to the real files), then zipped whole.
+    const std::wstring staging = root + L"\\pacote-amigo-temp", tree = staging + L"\\Ranga";
+    RemoveTree(staging);
+    CreateDirectoryW(staging.c_str(), nullptr);
+    CreateDirectoryW(tree.c_str(), nullptr);
+
+    // This PC's engines.ini without what only this PC has.
+    const std::wstring ini = tree + L"\\engines.ini";
+    if (!CopyFileW((root + L"\\engines.ini").c_str(), ini.c_str(), FALSE)) {
+        RemoveTree(staging);
+        return L"Não deu para preparar o engines.ini.";
+    }
+    for (const wchar_t* key : {L"servidor", L"grupo", L"backup", L"backup_quando", L"qualidade", L"raiz", L"perfis", L"central"})
+        WritePrivateProfileStringW(L"Ranga", key, nullptr, ini.c_str());
+    const std::string readme =
+        "RANGA EMU - instalação completa\r\n"
+        "===============================\r\n\r\n"
+        "1. Extraia este zip onde quiser (por exemplo em C:\\): ele cria a pasta Ranga.\r\n"
+        "2. Abra o RangaEmu.exe. Se o Windows avisar: \"Mais informações\" -> \"Executar assim mesmo\".\r\n"
+        "3. Adicione os seus jogos em \"+ Adicionar jogo\".\r\n\r\n"
+        "O que NÃO vem (é de cada um): jogos, BIOS, firmware e chaves dos consoles. Os consoles que pedem BIOS mostram\r\n"
+        "o que falta e onde colocar na página do console.\r\n\r\n"
+        "Depois disso o Ranga se atualiza sozinho com o PC de quem hospeda ligado, e Emuladores -> Arquivos do Ranga\r\n"
+        "confere e conserta os arquivos dele.\r\n";
+    FILE* note = nullptr;
+    if (_wfopen_s(&note, (tree + L"\\LEIA-ME.txt").c_str(), L"wb") == 0 && note != nullptr) {
+        std::fwrite(readme.data(), 1, readme.size(), note);
+        std::fclose(note);
+    }
+    int count = 0;
+    if (!PackageLink(root, L"", tree, count)) {
+        RemoveTree(staging);
+        return L"Não deu para juntar os arquivos do pacote (disco cheio?).";
+    }
+
+    std::time_t now = std::time(nullptr);
+    std::tm local{};
+    localtime_s(&local, &now);
+    wchar_t stamp[32];
+    wcsftime(stamp, 32, L"%Y-%m-%d", &local);
+    const std::wstring zip = folder + L"\\Ranga-completo-" + stamp + L".zip";
+    DeleteFileW(zip.c_str());
+    wchar_t system[MAX_PATH];
+    GetSystemDirectoryW(system, MAX_PATH);
+    std::wstring command = L"\"" + std::wstring(system) + L"\\tar.exe\" -a -c -f \"" + zip + L"\" --options zip:hdrcharset=UTF-8 -C \"" + staging + L"\" Ranga";
+    // What tar says goes to a file, so a failure can tell why.
+    SECURITY_ATTRIBUTES inherit{sizeof(inherit), nullptr, TRUE};
+    const std::wstring logPath = staging + L"\\tar.log";
+    HANDLE log = CreateFileW(logPath.c_str(), GENERIC_WRITE, FILE_SHARE_READ, &inherit, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    STARTUPINFOW startup{sizeof(startup)};
+    startup.dwFlags = STARTF_USESHOWWINDOW | STARTF_USESTDHANDLES;
+    startup.wShowWindow = SW_HIDE;
+    startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    startup.hStdOutput = log;
+    startup.hStdError = log;
+    PROCESS_INFORMATION process{};
+    const bool started = CreateProcessW(nullptr, command.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, root.c_str(), &startup, &process);
+    if (log != INVALID_HANDLE_VALUE) CloseHandle(log);
+    if (!started) {
+        RemoveTree(staging);
+        return L"Não deu para abrir o tar.exe do Windows.";
+    }
+    WaitForSingleObject(process.hProcess, INFINITE);
+    DWORD code = 1;
+    GetExitCodeProcess(process.hProcess, &code);
+    CloseHandle(process.hProcess);
+    CloseHandle(process.hThread);
+    std::string said = ReadBytes(logPath);
+    RemoveTree(staging);
+    if (code != 0 || !Exists(zip)) {
+        DeleteFileW(zip.c_str());
+        if (said.size() > 400) said = said.substr(said.size() - 400);
+        return L"O tar.exe não terminou o zip (código " + std::to_wstring(code) + L"): " + Wide(said);
+    }
+    made = zip;
+    return L"";
+}
+
 IntegrityReport CheckIntegrity(const std::wstring& root, const std::function<void(int, int)>& progress) {
     IntegrityReport report;
     report.host = CanPublishUpdate(root);

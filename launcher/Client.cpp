@@ -803,6 +803,7 @@ struct Client {
         if (updateThread.joinable()) updateThread.join();
         if (checkThread.joinable()) checkThread.join();
         if (backupThread.joinable()) backupThread.join();
+        if (packageThread.joinable()) packageThread.join();
         StopProfileThreads();
     }
 
@@ -818,6 +819,24 @@ struct Client {
     const bool autoUpdate = _wgetenv(L"RANGA_CLIENT_AUTO_UPDATE") != nullptr;
     std::array<char, 256> publishNotes{};
     std::wstring publishResult;
+    // The whole Ranga for a friend with none (MakeFriendPackage), made in the background.
+    std::thread packageThread;
+    std::atomic<bool> packageBusy{false};
+    std::wstring packageResult; // under updateLock
+
+    void StartFriendPackage(const std::wstring& folder) {
+        if (packageBusy) return;
+        if (packageThread.joinable()) packageThread.join();
+        packageBusy = true;
+        packageThread = std::thread([this, folder, root = library.Root()] {
+            std::wstring made;
+            const std::wstring error = MakeFriendPackage(root, folder, made);
+            std::wstring result = error.empty() ? L"Pacote pronto: " + made + L" (" + std::to_wstring(FileSize(made) / (1024 * 1024)) + L" MB)" : error;
+            std::lock_guard guard(updateLock);
+            packageResult = result;
+            packageBusy = false;
+        });
+    }
 
     // Emuladores > Arquivos do Ranga: the files checked against the signed list (CheckIntegrity), in the background.
     enum class CheckState { Idle, Checking, Done };
@@ -2940,6 +2959,24 @@ struct Client {
                 ImGui::SameLine();
                 ImGui::TextDisabled("%s", Utf8(publishResult).c_str());
             }
+            ImGui::SetCursorPosX(labelWidth);
+            ImGui::BeginDisabled(packageBusy);
+            if (ImGui::Button(packageBusy ? "Gerando o pacote..." : "Pacote completo para um amigo")) {
+                pending = [this] {
+                    Browse(L"Onde salvar o pacote do amigo", L"", true, {}, [this](const std::wstring& folder) { StartFriendPackage(folder); });
+                };
+            }
+            ImGui::EndDisabled();
+            if (packageBusy) moving = true;
+            ImGui::SetCursorPosX(labelWidth);
+            ImGui::PushTextWrapPos(0);
+            {
+                std::lock_guard guard(updateLock);
+                if (!packageResult.empty()) ImGui::TextDisabled("%s", Utf8(packageResult).c_str());
+                else ImGui::TextDisabled("Para quem não tem o Ranga (PC novo ou formatado): programas, núcleos e emuladores num zip. Sem BIOS, "
+                                         "firmware, chaves, jogos, saves, perfil ou as suas chaves de dono.");
+            }
+            ImGui::PopTextWrapPos();
         }
         ImGui::PopID();
     }
