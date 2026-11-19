@@ -14,6 +14,7 @@
 #include "PlayerProfile.hpp"
 #include "Lobby.hpp"
 #include "Media.hpp"
+#include "Backup.hpp"
 
 #include <d3d11.h>
 #include <shellapi.h>
@@ -801,6 +802,7 @@ struct Client {
     ~Client() {
         if (updateThread.joinable()) updateThread.join();
         if (checkThread.joinable()) checkThread.join();
+        if (backupThread.joinable()) backupThread.join();
         StopProfileThreads();
     }
 
@@ -823,6 +825,80 @@ struct Client {
     std::atomic<int> checkDone{0}, checkTotal{0};
     std::thread checkThread;
     IntegrityReport checkReport; // under updateLock
+
+    // Emuladores > Backup dos saves: a copy after each game (when something changed) and on the button.
+    std::thread backupThread;
+    std::atomic<bool> backupBusy{false};
+    std::mutex backupLock;
+    std::wstring backupResult; // under backupLock
+
+    void StartBackup(bool force) {
+        if (backupBusy || BackupFolder(library.Root()).empty()) return;
+        if (backupThread.joinable()) backupThread.join();
+        backupBusy = true;
+        backupThread = std::thread([this, force, root = library.Root()] {
+            std::wstring made;
+            int files = 0;
+            const std::wstring error = BackupNow(root, force, made, files);
+            std::wstring result;
+            if (!error.empty()) result = L"Não deu: " + error;
+            else if (!made.empty()) result = L"Cópia feita: " + std::to_wstring(files) + L" arquivos em " + made;
+            else result = L"Nada mudou desde a última cópia.";
+            {
+                std::lock_guard guard(backupLock);
+                backupResult = result;
+            }
+            backupBusy = false;
+        });
+    }
+
+    void BackupTab(float scale) {
+        ImGui::Dummy(ImVec2(0, 4 * scale));
+        ImGui::TextDisabled("Uma cópia dos seus saves numa pasta que você escolher (por exemplo a do Google Drive no PC, que sobe sozinha para a nuvem). "
+                            "Ela é feita sozinha quando você fecha um jogo, se algo mudou; ficam as últimas %d cópias, cada uma numa pasta com a data. "
+                            "Vão os saves dos jogos, os cartões de memória, os estados salvos e o seu perfil. Nunca jogos, BIOS, firmware ou chaves.",
+                            kBackupsKept);
+        ImGui::Dummy(ImVec2(0, 6 * scale));
+        const std::wstring folder = BackupFolder(library.Root());
+        ImGui::Text("Pasta do backup: %s", folder.empty() ? "nenhuma (backup desligado)" : Utf8(folder).c_str());
+        if (ImGui::Button(folder.empty() ? "Escolher a pasta" : "Trocar a pasta", ImVec2(0, 36 * scale))) {
+            pending = [this] {
+                Browse(L"Escolha a pasta do backup dos saves", L"", true, {}, [this](const std::wstring& chosen) {
+                    SetBackupFolder(library.Root(), chosen);
+                    StartBackup(true);
+                });
+            };
+        }
+        if (!folder.empty()) {
+            ImGui::SameLine();
+            ImGui::BeginDisabled(backupBusy);
+            ImGui::PushStyleColor(ImGuiCol_Button, Color(kAccent));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Color(kAccentHover));
+            ImGui::PushStyleColor(ImGuiCol_Text, Color(0xffffff));
+            if (ImGui::Button("Fazer cópia agora", ImVec2(0, 36 * scale))) pending = [this] { StartBackup(true); };
+            ImGui::PopStyleColor(3);
+            ImGui::EndDisabled();
+            ImGui::SameLine();
+            if (ImGui::Button("Abrir a pasta", ImVec2(0, 36 * scale))) {
+                const std::wstring copies = folder + L"\\Ranga-backup";
+                CreateDirectoryW(copies.c_str(), nullptr);
+                ShellExecuteW(nullptr, L"open", copies.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Desligar", ImVec2(0, 36 * scale))) SetBackupFolder(library.Root(), L"");
+            const long long last = LastBackup(library.Root());
+            ImGui::TextDisabled("Última cópia: %s", last == 0 ? "nenhuma ainda" : FormatDate(last).c_str());
+        }
+        if (backupBusy) {
+            ImGui::Text("Copiando...");
+            moving = true;
+        } else {
+            std::lock_guard guard(backupLock);
+            if (!backupResult.empty()) ImGui::TextWrapped("%s", Utf8(backupResult).c_str());
+        }
+        ImGui::Dummy(ImVec2(0, 6 * scale));
+        ImGui::TextDisabled("Para voltar um save: feche o Ranga, abra a cópia que quiser e copie a pasta de dentro dela por cima da do Ranga.");
+    }
 
     void StartIntegrityCheck() {
         if (checkState == CheckState::Checking) return;
@@ -3419,17 +3495,22 @@ struct Client {
         }
         if (ImGui::Button("Voltar")) enginesPage = false;
         ImGui::Dummy(ImVec2(0, 4 * scale));
-        bool filesTab = false;
+        bool filesTab = false, backupTab = false;
         if (ImGui::BeginTabBar("##enginesTabs")) {
             if (ImGui::BeginTabItem("Emuladores")) ImGui::EndTabItem();
             if (ImGui::BeginTabItem("Arquivos do Ranga")) {
                 filesTab = true;
                 ImGui::EndTabItem();
             }
+            if (ImGui::BeginTabItem("Backup dos saves")) {
+                backupTab = true;
+                ImGui::EndTabItem();
+            }
             ImGui::EndTabBar();
         }
-        if (filesTab) {
-            IntegrityTab(scale);
+        if (filesTab || backupTab) {
+            if (filesTab) IntegrityTab(scale);
+            else BackupTab(scale);
             ImGui::PopTextWrapPos();
             ImGui::EndGroup();
             ImGui::Dummy(ImVec2(0, 20 * scale));
@@ -3972,6 +4053,8 @@ struct Client {
         }
         ScanProfileRa();
         for (const auto& title : profile.Evaluate(LibraryCount())) AddToast("Conquista desbloqueada", title, "");
+        // A game was played: its saves go to the backup folder, when one is set and something changed.
+        StartBackup(false);
     }
 
     void TakeRaLogin() {
