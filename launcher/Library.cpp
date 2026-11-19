@@ -173,6 +173,8 @@ void Library::Load() {
         game.workspace = WorkspaceFor(root, game.system, game.title);
         if (taken[Lower(game.workspace)] > 1) game.workspace += L" [" + game.titleId + L"]";
     }
+    // Only now the name is cleaned for showing: the folders above keep coming from the name as it was stored.
+    for (auto& game : games) game.title = CleanTitle(game.title);
     std::sort(games.begin(), games.end(), [](const Game& a, const Game& b) { return _wcsicmp(a.title.c_str(), b.title.c_str()) < 0; });
 }
 

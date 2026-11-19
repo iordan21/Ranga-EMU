@@ -208,7 +208,7 @@ void PlayerProfile::Load(const std::wstring& rootFolder) {
         PlayedGame game;
         game.key = Wide(parts[0]);
         game.system = Wide(parts[1]);
-        game.title = Wide(parts[2]);
+        game.title = CleanTitle(Wide(parts[2]));
         game.seconds = Number(parts[3]);
         game.sessions = Number(parts[4]);
         game.first = Number(parts[5]);

@@ -47,6 +47,23 @@ std::wstring ApplyUpdate(const std::wstring& root, const UpdateInfo& info);
 // Removes what an update left behind (*.old, the download folder) once the new Ranga runs.
 void CleanUpdateLeftovers(const std::wstring& root);
 
+// Checking Ranga's files (the programs and the cores, what an update carries) against the signed list of the latest
+// version: which are missing and which differ (broken, or older than that version). Elsewhere the list comes from the
+// hosting PC and what is wrong can be fetched again (repair, through DownloadUpdate and ApplyUpdate). On the hosting PC
+// it is its own published copy: a difference there is usually a newer build not published yet, so nothing is repaired.
+// Emulators, BIOS, saves and games are not part of an update and are not checked. Reads every file: off the window's
+// thread; progress gets files done of total.
+struct IntegrityReport {
+    std::string version;   // the version the files were checked against
+    bool host = false;     // this PC publishes the updates
+    bool behind = false;   // this PC was on an older version (some differences are just the update)
+    int checked = 0;
+    std::vector<std::wstring> missing, different;
+    UpdateInfo repair;     // the missing and different files, to download again
+    std::wstring error;    // why nothing was checked
+};
+IntegrityReport CheckIntegrity(const std::wstring& root, const std::function<void(int, int)>& progress);
+
 }
 
 #endif

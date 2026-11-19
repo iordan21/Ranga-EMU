@@ -276,35 +276,41 @@ void ApplyTheme(float scale) {
 
 // Each console's card on the home screen: Ranga's own art, two colors and a drawn outline of its kind of machine, not
 // the makers' logos.
-enum class Glyph { Pad, Handheld, Cartridge, Disc, Arcade };
+// Pad, Handheld, Cartridge, Disc and Arcade are kinds; the rest are one console's own shape (still no logos): Slab a
+// flat ribbed box (PS2), Arch a box with a round top (PS3), Tablet a pad with a screen (Wii U), Remote a slim upright
+// remote (Wii), Cube a cube with a handle (GameCube), Chest a big box with a round gem on top (Xbox).
+enum class Glyph { Pad, Handheld, Cartridge, Disc, Arcade, Slab, Arch, Tablet, Remote, Cube, Chest };
 
 struct Look {
     const wchar_t* id;
     const char* tag;
     unsigned top, bottom;
     Glyph glyph;
+    const char* maker; // who made it ("" for arcade)
+    int year;          // first released, anywhere (0: none)
+    unsigned name;     // the full name's color on the home screen, light enough to read on the dark background
 };
 
 constexpr Look kLooks[] = {
-    {L"PS5", "PS5", 0x3a7bf0, 0x0b1d4a, Glyph::Pad}, {L"PS4", "PS4", 0x2459b8, 0x081633, Glyph::Pad},
-    {L"PS3", "PS3", 0x4a4e57, 0x0c0d10, Glyph::Pad}, {L"PS2", "PS2", 0x2b3f8f, 0x070b1f, Glyph::Pad},
-    {L"PS1", "PS1", 0x9097a3, 0x2a2c33, Glyph::Disc}, {L"PSP", "PSP", 0x585c66, 0x111216, Glyph::Handheld},
-    {L"SWITCH", "Switch", 0xe4002b, 0x4a0010, Glyph::Handheld}, {L"WIIU", "Wii U", 0x0aa6d6, 0x00303f, Glyph::Pad},
-    {L"WII", "Wii", 0xa9bfcf, 0x2e3a44, Glyph::Pad}, {L"GC", "GC", 0x7357c0, 0x1d1238, Glyph::Pad},
-    {L"3DS", "3DS", 0xd8303b, 0x3d070b, Glyph::Handheld}, {L"NDS", "DS", 0x878a93, 0x24262b, Glyph::Handheld},
-    {L"GBA", "GBA", 0x6550c8, 0x170f3d, Glyph::Handheld}, {L"GB", "GB", 0x93b31c, 0x1f3a0b, Glyph::Handheld},
-    {L"N64", "N64", 0x24a05a, 0x06281a, Glyph::Cartridge}, {L"SNES", "SNES", 0x7a6abd, 0x1e1838, Glyph::Cartridge},
-    {L"NES", "NES", 0xd21a38, 0x3b0610, Glyph::Cartridge}, {L"MD", "MD", 0x45474d, 0x0a0a0a, Glyph::Cartridge},
-    {L"SMS", "SMS", 0xd03434, 0x2d0808, Glyph::Cartridge}, {L"SEGACD", "Sega CD", 0x3a4aa0, 0x0a0f2b, Glyph::Disc},
-    {L"SATURN", "Saturn", 0x4a4e94, 0x101129, Glyph::Disc}, {L"DC", "DC", 0xf47a30, 0x4a1a03, Glyph::Disc},
-    {L"XBOX", "Xbox", 0x36a336, 0x0a2a0a, Glyph::Pad}, {L"X360", "360", 0x78cc56, 0x1b3a10, Glyph::Pad},
-    {L"PCE", "PCE", 0xf2962a, 0x46230a, Glyph::Cartridge}, {L"A2600", "2600", 0xa8784a, 0x2b1a0c, Glyph::Cartridge},
-    {L"ARCADE", "Arcade", 0xe0306e, 0x3a0620, Glyph::Arcade},
+    {L"PS5", "PS5", 0x3a7bf0, 0x0b1d4a, Glyph::Pad, "Sony", 2020, 0x5b93ff}, {L"PS4", "PS4", 0x2459b8, 0x081633, Glyph::Pad, "Sony", 2013, 0x4f86e8},
+    {L"PS3", "PS3", 0x4a4e57, 0x0c0d10, Glyph::Arch, "Sony", 2006, 0xc9cdd6}, {L"PS2", "PS2", 0x2b3f8f, 0x070b1f, Glyph::Slab, "Sony", 2000, 0x6e8cff},
+    {L"PS1", "PS1", 0x9097a3, 0x2a2c33, Glyph::Disc, "Sony", 1994, 0xc2c7d0}, {L"PSP", "PSP", 0x585c66, 0x111216, Glyph::Handheld, "Sony", 2004, 0xb0b5bf},
+    {L"SWITCH", "Switch", 0xe4002b, 0x4a0010, Glyph::Handheld, "Nintendo", 2017, 0xff4560}, {L"WIIU", "Wii U", 0x0aa6d6, 0x00303f, Glyph::Tablet, "Nintendo", 2012, 0x3cc6f2},
+    {L"WII", "Wii", 0xa9bfcf, 0x2e3a44, Glyph::Remote, "Nintendo", 2006, 0xdce8f2}, {L"GC", "GC", 0x7357c0, 0x1d1238, Glyph::Cube, "Nintendo", 2001, 0xa48cf0},
+    {L"3DS", "3DS", 0xd8303b, 0x3d070b, Glyph::Handheld, "Nintendo", 2011, 0xff5a64}, {L"NDS", "DS", 0x878a93, 0x24262b, Glyph::Handheld, "Nintendo", 2004, 0xc8ccd4},
+    {L"GBA", "GBA", 0x6550c8, 0x170f3d, Glyph::Handheld, "Nintendo", 2001, 0x9d88f0}, {L"GB", "GB", 0x93b31c, 0x1f3a0b, Glyph::Handheld, "Nintendo", 1989, 0xb2d43a},
+    {L"N64", "N64", 0x24a05a, 0x06281a, Glyph::Cartridge, "Nintendo", 1996, 0x45cc80}, {L"SNES", "SNES", 0x7a6abd, 0x1e1838, Glyph::Cartridge, "Nintendo", 1990, 0xa99bea},
+    {L"NES", "NES", 0xd21a38, 0x3b0610, Glyph::Cartridge, "Nintendo", 1983, 0xff5a6a}, {L"MD", "MD", 0x45474d, 0x0a0a0a, Glyph::Cartridge, "Sega", 1988, 0xd6d8de},
+    {L"SMS", "SMS", 0xd03434, 0x2d0808, Glyph::Cartridge, "Sega", 1985, 0xff6464}, {L"SEGACD", "Sega CD", 0x3a4aa0, 0x0a0f2b, Glyph::Disc, "Sega", 1991, 0x7d8ef0},
+    {L"SATURN", "Saturn", 0x4a4e94, 0x101129, Glyph::Disc, "Sega", 1994, 0x8a8ee6}, {L"DC", "DC", 0xf47a30, 0x4a1a03, Glyph::Disc, "Sega", 1998, 0xffa25c},
+    {L"XBOX", "Xbox", 0x36a336, 0x0a2a0a, Glyph::Chest, "Microsoft", 2001, 0x62d262}, {L"X360", "360", 0x78cc56, 0x1b3a10, Glyph::Pad, "Microsoft", 2005, 0x96e070},
+    {L"PCE", "PCE", 0xf2962a, 0x46230a, Glyph::Cartridge, "NEC", 1987, 0xffad4d}, {L"A2600", "2600", 0xa8784a, 0x2b1a0c, Glyph::Cartridge, "Atari", 1977, 0xd8a472},
+    {L"ARCADE", "Arcade", 0xe0306e, 0x3a0620, Glyph::Arcade, "", 0, 0xff5a96},
 };
 
 const Look& LookFor(const std::wstring& id) {
     for (const Look& look : kLooks) if (id == look.id) return look;
-    static const Look other{L"", "?", 0x55575e, 0x16171a, Glyph::Pad};
+    static const Look other{L"", "?", 0x55575e, 0x16171a, Glyph::Pad, "", 0, 0xe6e7ea};
     return other;
 }
 
@@ -376,6 +382,83 @@ void DrawGlyph(ImDrawList* draw, Glyph glyph, ImVec2 c, float s, ImU32 color, Im
             draw->AddCircleFilled(ImVec2(c.x - s * 0.1f, c.y + s * 0.11f), s * 0.04f, shade, 16);
             draw->AddCircleFilled(ImVec2(c.x + s * 0.06f, c.y + s * 0.18f), s * 0.03f, shade, 12);
             draw->AddCircleFilled(ImVec2(c.x + s * 0.15f, c.y + s * 0.18f), s * 0.03f, shade, 12);
+            break;
+        }
+        case Glyph::Slab: {
+            // Lying flat: ribs on the left half, the tray's line and two small buttons in front.
+            const ImVec2 min(c.x - s * 0.46f, c.y - s * 0.17f), max(c.x + s * 0.46f, c.y + s * 0.17f);
+            draw->AddRectFilled(min, max, color, s * 0.03f);
+            for (int i = 0; i < 5; ++i) {
+                const float x = min.x + s * (0.06f + i * 0.075f);
+                draw->AddRectFilled(ImVec2(x, min.y + s * 0.05f), ImVec2(x + s * 0.035f, max.y - s * 0.05f), shade, s * 0.01f);
+            }
+            draw->AddRectFilled(ImVec2(c.x, c.y - s * 0.05f), ImVec2(max.x - s * 0.06f, c.y - s * 0.02f), shade, s * 0.01f);
+            draw->AddRectFilled(ImVec2(max.x - s * 0.17f, c.y + s * 0.05f), ImVec2(max.x - s * 0.12f, c.y + s * 0.1f), shade, s * 0.01f);
+            draw->AddRectFilled(ImVec2(max.x - s * 0.1f, c.y + s * 0.05f), ImVec2(max.x - s * 0.05f, c.y + s * 0.1f), shade, s * 0.01f);
+            break;
+        }
+        case Glyph::Arch: {
+            // The round-topped box: the disc slot along the front and a light at the side.
+            const ImVec2 min(c.x - s * 0.46f, c.y - s * 0.24f), max(c.x + s * 0.46f, c.y + s * 0.2f);
+            draw->AddRectFilled(min, max, color, s * 0.2f, ImDrawFlags_RoundCornersTop);
+            draw->AddRectFilled(ImVec2(c.x - s * 0.24f, c.y + s * 0.02f), ImVec2(c.x + s * 0.24f, c.y + s * 0.05f), shade, s * 0.015f);
+            draw->AddCircleFilled(ImVec2(max.x - s * 0.09f, c.y + s * 0.035f), s * 0.025f, shade, 12);
+            draw->AddLine(ImVec2(min.x + s * 0.06f, max.y - s * 0.07f), ImVec2(max.x - s * 0.06f, max.y - s * 0.07f), shade, s * 0.012f);
+            break;
+        }
+        case Glyph::Tablet: {
+            // A wide pad with a screen in the middle, sticks and buttons at the sides.
+            const ImVec2 min(c.x - s * 0.47f, c.y - s * 0.26f), max(c.x + s * 0.47f, c.y + s * 0.26f);
+            draw->AddRectFilled(min, max, color, s * 0.12f);
+            draw->AddRectFilled(ImVec2(c.x - s * 0.24f, c.y - s * 0.18f), ImVec2(c.x + s * 0.24f, c.y + s * 0.16f), shade, s * 0.02f);
+            draw->AddCircleFilled(ImVec2(min.x + s * 0.12f, c.y - s * 0.1f), s * 0.05f, shade, 16);
+            const float arm = s * 0.035f, length = s * 0.11f;
+            const ImVec2 dpad(min.x + s * 0.12f, c.y + s * 0.09f);
+            draw->AddRectFilled(ImVec2(dpad.x - length / 2, dpad.y - arm / 2), ImVec2(dpad.x + length / 2, dpad.y + arm / 2), shade, arm * 0.3f);
+            draw->AddRectFilled(ImVec2(dpad.x - arm / 2, dpad.y - length / 2), ImVec2(dpad.x + arm / 2, dpad.y + length / 2), shade, arm * 0.3f);
+            draw->AddCircleFilled(ImVec2(max.x - s * 0.12f, c.y - s * 0.1f), s * 0.05f, shade, 16);
+            const ImVec2 face(max.x - s * 0.12f, c.y + s * 0.09f);
+            const float r = s * 0.022f, d = s * 0.045f;
+            for (const ImVec2 offset : {ImVec2(0, -d), ImVec2(0, d), ImVec2(-d, 0), ImVec2(d, 0)}) draw->AddCircleFilled(ImVec2(face.x + offset.x, face.y + offset.y), r, shade, 12);
+            break;
+        }
+        case Glyph::Remote: {
+            // Upright and slim: the cross near the top, the big button under it, two small ones low and the lights.
+            const ImVec2 min(c.x - s * 0.11f, c.y - s * 0.46f), max(c.x + s * 0.11f, c.y + s * 0.46f);
+            draw->AddRectFilled(min, max, color, s * 0.09f);
+            const float arm = s * 0.04f, length = s * 0.13f;
+            const ImVec2 dpad(c.x, min.y + s * 0.15f);
+            draw->AddRectFilled(ImVec2(dpad.x - length / 2, dpad.y - arm / 2), ImVec2(dpad.x + length / 2, dpad.y + arm / 2), shade, arm * 0.3f);
+            draw->AddRectFilled(ImVec2(dpad.x - arm / 2, dpad.y - length / 2), ImVec2(dpad.x + arm / 2, dpad.y + length / 2), shade, arm * 0.3f);
+            draw->AddCircleFilled(ImVec2(c.x, min.y + s * 0.34f), s * 0.055f, shade, 20);
+            draw->AddCircleFilled(ImVec2(c.x, c.y + s * 0.18f), s * 0.03f, shade, 12);
+            draw->AddCircleFilled(ImVec2(c.x, c.y + s * 0.27f), s * 0.03f, shade, 12);
+            for (int i = 0; i < 4; ++i) draw->AddCircleFilled(ImVec2(c.x - s * 0.06f + i * s * 0.04f, max.y - s * 0.06f), s * 0.012f, shade, 8);
+            break;
+        }
+        case Glyph::Cube: {
+            // A cube seen from a corner, with the handle at the back and the lid's round mark on top.
+            const float h = s * 0.4f, w = h * 0.866f;
+            const ImVec2 top(c.x, c.y - h * 0.9f), left(c.x - w, c.y - h * 0.4f), right(c.x + w, c.y - h * 0.4f), middle(c.x, c.y + h * 0.1f);
+            const ImVec2 bottomLeft(c.x - w, c.y + h * 0.55f), bottomRight(c.x + w, c.y + h * 0.55f), bottom(c.x, c.y + h * 1.05f);
+            draw->AddRect(ImVec2(c.x - w * 0.55f, top.y - h * 0.32f), ImVec2(c.x + w * 0.1f, top.y + h * 0.1f), color, s * 0.04f, 0, s * 0.05f);
+            const ImVec2 hull[] = {top, right, bottomRight, bottom, bottomLeft, left};
+            draw->AddConvexPolyFilled(hull, 6, color);
+            draw->AddLine(left, middle, shade, s * 0.025f);
+            draw->AddLine(right, middle, shade, s * 0.025f);
+            draw->AddLine(middle, bottom, shade, s * 0.025f);
+            draw->AddCircleFilled(ImVec2(c.x, c.y - h * 0.4f), s * 0.07f, shade, 24);
+            draw->AddCircleFilled(ImVec2(c.x, c.y - h * 0.4f), s * 0.035f, color, 16);
+            break;
+        }
+        case Glyph::Chest: {
+            // A big box with a round gem in the middle of its top and the tray's line below.
+            const ImVec2 min(c.x - s * 0.46f, c.y - s * 0.16f), max(c.x + s * 0.46f, c.y + s * 0.24f);
+            draw->AddRectFilled(min, max, color, s * 0.05f);
+            draw->AddRectFilled(ImVec2(c.x - s * 0.3f, c.y + s * 0.1f), ImVec2(c.x + s * 0.3f, c.y + s * 0.13f), shade, s * 0.01f);
+            draw->AddCircleFilled(ImVec2(c.x, min.y), s * 0.16f, color, 40);
+            draw->AddCircleFilled(ImVec2(c.x, min.y), s * 0.11f, shade, 40);
+            draw->AddCircleFilled(ImVec2(c.x, min.y), s * 0.06f, color, 24);
             break;
         }
     }
@@ -717,6 +800,7 @@ struct Client {
     }
     ~Client() {
         if (updateThread.joinable()) updateThread.join();
+        if (checkThread.joinable()) checkThread.join();
         StopProfileThreads();
     }
 
@@ -732,6 +816,104 @@ struct Client {
     const bool autoUpdate = _wgetenv(L"RANGA_CLIENT_AUTO_UPDATE") != nullptr;
     std::array<char, 256> publishNotes{};
     std::wstring publishResult;
+
+    // Emuladores > Arquivos do Ranga: the files checked against the signed list (CheckIntegrity), in the background.
+    enum class CheckState { Idle, Checking, Done };
+    std::atomic<CheckState> checkState{CheckState::Idle};
+    std::atomic<int> checkDone{0}, checkTotal{0};
+    std::thread checkThread;
+    IntegrityReport checkReport; // under updateLock
+
+    void StartIntegrityCheck() {
+        if (checkState == CheckState::Checking) return;
+        if (checkThread.joinable()) checkThread.join();
+        checkState = CheckState::Checking;
+        checkDone = 0;
+        checkTotal = 0;
+        checkThread = std::thread([this] {
+            IntegrityReport report = CheckIntegrity(library.Root(), [this](int done, int total) {
+                checkDone = done;
+                checkTotal = total;
+            });
+            std::lock_guard guard(updateLock);
+            checkReport = std::move(report);
+            checkState = CheckState::Done;
+        });
+    }
+
+    // Fetches the missing and broken files again, through the update's own download (the bar at the bottom shows it
+    // and reopens Ranga when they are in place).
+    void StartRepair() {
+        {
+            std::lock_guard guard(updateLock);
+            updateInfo = checkReport.repair;
+        }
+        updateHidden = false;
+        StartUpdateDownload();
+    }
+
+    void IntegrityTab(float scale) {
+        ImGui::Dummy(ImVec2(0, 4 * scale));
+        ImGui::TextDisabled("Confere o RangaEmu.exe, o ranga_retro.exe e os núcleos (cores) com a lista assinada da última versão: o que faltar ou estiver "
+                            "diferente (corrompido) pode ser baixado de novo. Emuladores, BIOS, saves e jogos não fazem parte da atualização e não entram aqui.");
+        ImGui::Dummy(ImVec2(0, 4 * scale));
+        const CheckState state = checkState;
+        ImGui::BeginDisabled(state == CheckState::Checking);
+        ImGui::PushStyleColor(ImGuiCol_Button, Color(kAccent));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Color(kAccentHover));
+        ImGui::PushStyleColor(ImGuiCol_Text, Color(0xffffff));
+        if (ImGui::Button(state == CheckState::Done ? "Verificar de novo" : "Verificar agora", ImVec2(190 * scale, 38 * scale))) pending = [this] { StartIntegrityCheck(); };
+        ImGui::PopStyleColor(3);
+        ImGui::EndDisabled();
+        ImGui::Dummy(ImVec2(0, 6 * scale));
+        if (state == CheckState::Checking) {
+            const int total = std::max(1, checkTotal.load());
+            ImGui::Text("Conferindo os arquivos... %d de %d", checkDone.load(), checkTotal.load());
+            ImGui::ProgressBar(static_cast<float>(checkDone) / static_cast<float>(total), ImVec2(420 * scale, 0), "");
+            moving = true; // keeps the window drawing while it counts
+            return;
+        }
+        if (state != CheckState::Done) return;
+        std::lock_guard guard(updateLock);
+        const IntegrityReport& report = checkReport;
+        if (!report.error.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
+            ImGui::TextWrapped("%s", Utf8(report.error).c_str());
+            ImGui::PopStyleColor();
+            return;
+        }
+        if (report.missing.empty() && report.different.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, Color(kGreen));
+            ImGui::Text("Tudo certo: %d arquivos conferidos com a versão %s.", report.checked, report.version.c_str());
+            ImGui::PopStyleColor();
+            return;
+        }
+        ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
+        ImGui::Text("%d de %d arquivos com problema (versão %s):", static_cast<int>(report.missing.size() + report.different.size()), report.checked,
+                    report.version.c_str());
+        ImGui::PopStyleColor();
+        for (const std::wstring& path : report.missing) ImGui::BulletText("%s  -  faltando", Utf8(path).c_str());
+        for (const std::wstring& path : report.different) ImGui::BulletText("%s  -  diferente (corrompido ou de outra versão)", Utf8(path).c_str());
+        ImGui::Dummy(ImVec2(0, 4 * scale));
+        if (report.host) {
+            ImGui::TextWrapped("Este PC é o que publica: aqui a comparação é com a versão publicada. Diferença costuma ser um Ranga mais novo que ainda "
+                               "não foi publicado; publique (sala dos clássicos) para igualar. Nada é baixado neste PC.");
+            return;
+        }
+        if (report.behind) ImGui::TextDisabled("Este PC estava numa versão mais velha: parte disso é só a atualização, que vem junto.");
+        const UpdateState update = updateState;
+        const bool busy = runner.Busy() || update == UpdateState::Downloading || update == UpdateState::Ready;
+        ImGui::BeginDisabled(busy);
+        ImGui::PushStyleColor(ImGuiCol_Button, Color(kAccent));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Color(kAccentHover));
+        ImGui::PushStyleColor(ImGuiCol_Text, Color(0xffffff));
+        const std::string label = "Baixar de novo (" + std::to_string(std::max<uint64_t>(1, report.repair.download / (1024 * 1024))) + " MB)";
+        if (ImGui::Button(label.c_str(), ImVec2(0, 38 * scale))) pending = [this] { StartRepair(); };
+        ImGui::PopStyleColor(3);
+        ImGui::EndDisabled();
+        if (runner.Busy()) ImGui::TextDisabled("Feche o jogo para consertar.");
+        else ImGui::TextDisabled("Só esses arquivos são baixados, e cada um é conferido antes de entrar no lugar. No fim o Ranga reabre já consertado.");
+    }
 
     void StartUpdateCheck() {
         updateState = UpdateState::Checking;
@@ -1927,11 +2109,17 @@ struct Client {
         float y = rowY + big + 30 * scale;
         ImGui::SetCursorScreenPos(ImVec2(origin.x + left, y));
         ImGui::BeginGroup();
+        const Look& look = LookFor(console);
         ImGui::PushFont(semibold, 40);
+        ImGui::PushStyleColor(ImGuiCol_Text, Color(look.name));
         ImGui::TextUnformatted(SystemName(console).c_str());
+        ImGui::PopStyleColor();
         ImGui::PopFont();
         const std::string count = shelf.count == 0 ? "Nenhum jogo ainda" : shelf.count == 1 ? "1 jogo" : std::to_string(shelf.count) + " jogos";
-        ImGui::TextDisabled("%s   ·   %s", count.c_str(), HowItRuns(console).c_str());
+        std::string made = look.maker;
+        if (look.year > 0) made += (made.empty() ? "" : " · ") + std::to_string(look.year);
+        if (made.empty()) ImGui::TextDisabled("%s   ·   %s", count.c_str(), HowItRuns(console).c_str());
+        else ImGui::TextDisabled("%s   ·   %s   ·   %s", made.c_str(), count.c_str(), HowItRuns(console).c_str());
         ImGui::Dummy(ImVec2(0, 6 * scale));
         ImGui::PushStyleColor(ImGuiCol_Button, Color(kAccent));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Color(kAccentHover));
@@ -3230,7 +3418,24 @@ struct Client {
             ShowRing();
         }
         if (ImGui::Button("Voltar")) enginesPage = false;
-        ImGui::SameLine();
+        ImGui::Dummy(ImVec2(0, 4 * scale));
+        bool filesTab = false;
+        if (ImGui::BeginTabBar("##enginesTabs")) {
+            if (ImGui::BeginTabItem("Emuladores")) ImGui::EndTabItem();
+            if (ImGui::BeginTabItem("Arquivos do Ranga")) {
+                filesTab = true;
+                ImGui::EndTabItem();
+            }
+            ImGui::EndTabBar();
+        }
+        if (filesTab) {
+            IntegrityTab(scale);
+            ImGui::PopTextWrapPos();
+            ImGui::EndGroup();
+            ImGui::Dummy(ImVec2(0, 20 * scale));
+            ImGui::EndChild();
+            return;
+        }
         if (ImGui::Button("Verificar de novo")) RefreshEngines();
         ImGui::Dummy(ImVec2(0, 6 * scale));
         // A RetroArch chosen for one console can serve every console its cores cover.

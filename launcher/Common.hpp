@@ -53,6 +53,9 @@ void PrepareModules(const std::wstring& game, const std::wstring& prep, std::wst
 void EnsureUnicodeIni(const std::wstring& path);
 std::wstring ReadIni(const std::wstring& path, const wchar_t* section, const wchar_t* key, const wchar_t* fallback);
 std::wstring Lower(std::wstring text);
+// A game's name as shown: what download sites and dump tools add to file names goes away ("(nswvault.com)",
+// "[0100...][v0]", "Base Game", "(USA)", "(En,Fr,De)", underscores); "(Disc 2)" and the like stay. Never empty.
+std::wstring CleanTitle(const std::wstring& title);
 // What follows the last dot of the file name, lower-case and with the dot; empty when there is none.
 std::wstring Extension(const std::wstring& path);
 std::wstring FileName(const std::wstring& path);

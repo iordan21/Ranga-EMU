@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cwchar>
+#include <cwctype>
 
 namespace Ranga {
 
@@ -352,6 +353,95 @@ std::wstring ReadIni(const std::wstring& path, const wchar_t* section, const wch
 std::wstring Lower(std::wstring text) {
     for (auto& character : text) character = static_cast<wchar_t>(towlower(character));
     return text;
+}
+
+namespace {
+// Whether a word looks like a site ("nswvault.com", "www.algo.net").
+bool LooksLikeSite(const std::wstring& word) {
+    const std::wstring low = Lower(word);
+    if (low.rfind(L"www.", 0) == 0) return true;
+    for (const wchar_t* end : {L".com", L".net", L".org", L".io", L".xyz", L".ru", L".to", L".cc", L".me", L".info", L".br", L".co", L".in", L".ws"}) {
+        const size_t n = wcslen(end);
+        if (low.size() > n && low.compare(low.size() - n, n, end) == 0) return true;
+    }
+    return false;
+}
+
+// Whether what is inside ( ) only says region, languages, version or the dump: nothing a player needs to read.
+bool NoiseInside(const std::wstring& inside) {
+    const std::wstring low = Lower(inside);
+    if (low.find(L"disc") != std::wstring::npos || low.find(L"disco") != std::wstring::npos || low.find(L"cd") == 0) return false;
+    for (const wchar_t* word : {L"usa", L"europe", L"japan", L"world", L"brazil", L"brasil", L"asia", L"korea", L"china", L"germany", L"france",
+                                L"spain", L"italy", L"australia", L"ntsc", L"pal", L"eur", L"jpn", L"us", L"eu", L"jp", L"en", L"rev",
+                                L"proto", L"beta", L"demo", L"unl", L"nsp", L"xci", L"nsz", L"base game", L"update", L"dlc"}) {
+        if (low == word || low.rfind(std::wstring(word) + L" ", 0) == 0 || low.rfind(std::wstring(word) + L",", 0) == 0) return true;
+    }
+    // The old ROM sets' codes: (U), (E), (J), (UE), (!).
+    if (!inside.empty() && inside.size() <= 3) {
+        bool code = true;
+        for (const wchar_t c : inside) if (!(iswupper(c) || c == L'!')) code = false;
+        if (code) return true;
+    }
+    // "En,Fr,De", "v1.1", "1.0.2"
+    bool letters = true;
+    for (const wchar_t c : low) if (!(iswalpha(c) || c == L',' || c == L'+' || c == L' ')) letters = false;
+    if (letters && low.find(L',') != std::wstring::npos && low.size() <= 40) return true;
+    if (!low.empty() && (low[0] == L'v' || iswdigit(low[0]))) {
+        bool version = true;
+        for (const wchar_t c : low.substr(low[0] == L'v' ? 1 : 0)) if (!(iswdigit(c) || c == L'.')) version = false;
+        if (version) return true;
+    }
+    return LooksLikeSite(inside);
+}
+}
+
+std::wstring CleanTitle(const std::wstring& title) {
+    std::wstring text = title;
+    // A name with no spaces but underscores or dots between words: they were the spaces.
+    if (text.find(L' ') == std::wstring::npos) {
+        for (wchar_t& c : text) if (c == L'_') c = L' ';
+    }
+    // Brackets: [0100...], [v0], [US] and the like are always tags; parentheses go only when they hold noise.
+    std::wstring out;
+    for (size_t i = 0; i < text.size(); ++i) {
+        const wchar_t open = text[i];
+        if (open == L'[' || open == L'(' || open == L'{') {
+            const wchar_t close = open == L'[' ? L']' : open == L'(' ? L')' : L'}';
+            const size_t end = text.find(close, i + 1);
+            if (end != std::wstring::npos) {
+                const std::wstring inside = text.substr(i + 1, end - i - 1);
+                if (open != L'(' || NoiseInside(inside)) {
+                    i = end;
+                    out += L' ';
+                    continue;
+                }
+            }
+        }
+        out += open;
+    }
+    // Loose words: sites and "Base Game".
+    std::wstring words, word;
+    auto flush = [&] {
+        if (!word.empty() && !LooksLikeSite(word)) words += (words.empty() ? L"" : L" ") + word;
+        word.clear();
+    };
+    for (const wchar_t c : out) {
+        if (iswspace(c)) flush();
+        else word += c;
+    }
+    flush();
+    for (const wchar_t* tag : {L"Base Game", L"base game", L"BASE GAME"}) {
+        for (size_t at; (at = words.find(tag)) != std::wstring::npos;) words.erase(at, wcslen(tag));
+    }
+    // Spaces and dashes left at the ends or doubled.
+    std::wstring clean;
+    for (const wchar_t c : words) {
+        if (c == L' ' && (clean.empty() || clean.back() == L' ')) continue;
+        clean += c;
+    }
+    while (!clean.empty() && (clean.back() == L' ' || clean.back() == L'-' || clean.back() == L'_' || clean.back() == L',')) clean.pop_back();
+    while (!clean.empty() && (clean.front() == L' ' || clean.front() == L'-' || clean.front() == L'_')) clean.erase(0, 1);
+    return clean.empty() ? title : clean;
 }
 
 std::wstring FileName(const std::wstring& path) {

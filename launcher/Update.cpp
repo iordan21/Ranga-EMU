@@ -201,6 +201,29 @@ int HttpGet(const std::wstring& source, const std::wstring& path, std::string* b
     return status;
 }
 
+// The lines of a signed list: its version, notes and files (only the safe paths).
+void ReadManifest(const std::string& manifest, std::string& version, std::string& notes, std::vector<UpdateFile>& files) {
+    size_t start = 0;
+    while (start < manifest.size()) {
+        size_t end = manifest.find('\n', start);
+        if (end == std::string::npos) end = manifest.size();
+        const std::string line = manifest.substr(start, end - start);
+        start = end + 1;
+        if (line.rfind("versao ", 0) == 0) version = line.substr(7);
+        else if (line.rfind("notas ", 0) == 0) notes = line.substr(6);
+        else if (line.rfind("arquivo ", 0) == 0) {
+            const size_t a = 8, b = line.find(' ', a), c = b == std::string::npos ? b : line.find(' ', b + 1);
+            if (c == std::string::npos) continue;
+            UpdateFile file;
+            file.sha256 = line.substr(a, b - a);
+            file.size = std::strtoull(line.c_str() + b + 1, nullptr, 10);
+            file.path = Wide(line.substr(c + 1));
+            std::replace(file.path.begin(), file.path.end(), L'/', L'\\');
+            if (SafePath(file.path) && file.sha256.size() == 64) files.push_back(file);
+        }
+    }
+}
+
 std::string UrlPath(const std::wstring& path) {
     std::string out = Utf8(path);
     std::replace(out.begin(), out.end(), '\\', '/');
@@ -275,31 +298,66 @@ UpdateInfo CheckUpdate(const std::wstring& root) {
         info.error = L"A lista de atualização não tem a assinatura certa: ignorada.";
         return info;
     }
-    size_t start = 0;
-    while (start < manifest.size()) {
-        size_t end = manifest.find('\n', start);
-        if (end == std::string::npos) end = manifest.size();
-        const std::string line = manifest.substr(start, end - start);
-        start = end + 1;
-        if (line.rfind("versao ", 0) == 0) info.version = line.substr(7);
-        else if (line.rfind("notas ", 0) == 0) info.notes = line.substr(6);
-        else if (line.rfind("arquivo ", 0) == 0) {
-            const size_t a = 8, b = line.find(' ', a), c = b == std::string::npos ? b : line.find(' ', b + 1);
-            if (c == std::string::npos) continue;
-            UpdateFile file;
-            file.sha256 = line.substr(a, b - a);
-            file.size = std::strtoull(line.c_str() + b + 1, nullptr, 10);
-            file.path = Wide(line.substr(c + 1));
-            std::replace(file.path.begin(), file.path.end(), L'/', L'\\');
-            if (!SafePath(file.path) || file.sha256.size() != 64) continue;
-            const std::wstring local = root + L"\\" + file.path;
-            if (Exists(local) && static_cast<uint64_t>(FileSize(local)) == file.size && HashFile(local) == file.sha256) continue;
-            info.download += file.size;
-            info.changed.push_back(file);
-        }
+    std::vector<UpdateFile> files;
+    ReadManifest(manifest, info.version, info.notes, files);
+    for (const UpdateFile& file : files) {
+        const std::wstring local = root + L"\\" + file.path;
+        if (Exists(local) && static_cast<uint64_t>(FileSize(local)) == file.size && HashFile(local) == file.sha256) continue;
+        info.download += file.size;
+        info.changed.push_back(file);
     }
     if (info.version.empty()) info.error = L"A lista de atualização veio vazia.";
     return info;
+}
+
+IntegrityReport CheckIntegrity(const std::wstring& root, const std::function<void(int, int)>& progress) {
+    IntegrityReport report;
+    report.host = CanPublishUpdate(root);
+    std::string manifest, signature;
+    if (report.host) {
+        // The hosting PC: its own published copy (salas\atualizacao), checked like a friend's would be.
+        manifest = ReadBytes(Published(root) + L"\\manifest.txt");
+        signature = ReadBytes(Published(root) + L"\\manifest.sig");
+        if (manifest.empty()) {
+            report.error = L"Nenhuma versão publicada ainda: publique uma para ter com o que comparar.";
+            return report;
+        }
+    } else {
+        const std::wstring source = UpdateSource(root);
+        if (source.empty()) {
+            report.error = L"Nenhum endereço de atualização (engines.ini [Ranga] atualizacao): sem lista para comparar.";
+            return report;
+        }
+        if (HttpGet(source, L"/ranga/manifest", &manifest, L"", nullptr) != 200 || HttpGet(source, L"/ranga/manifest.sig", &signature, L"", nullptr) != 200) {
+            report.error = L"O PC que hospeda não respondeu (desligado?): a lista dos arquivos certos vem dele.";
+            return report;
+        }
+    }
+    if (!Verify(manifest, signature)) {
+        report.error = L"A lista dos arquivos não tem a assinatura certa: ignorada.";
+        return report;
+    }
+    std::vector<UpdateFile> files;
+    ReadManifest(manifest, report.version, report.repair.notes, files);
+    if (report.version.empty() || files.empty()) {
+        report.error = L"A lista dos arquivos veio vazia.";
+        return report;
+    }
+    report.repair.version = report.version;
+    report.behind = !report.host && InstalledUpdate(root) != report.version;
+    for (size_t i = 0; i < files.size(); ++i) {
+        if (progress) progress(static_cast<int>(i), static_cast<int>(files.size()));
+        const UpdateFile& file = files[i];
+        const std::wstring local = root + L"\\" + file.path;
+        ++report.checked;
+        if (!Exists(local)) report.missing.push_back(file.path);
+        else if (static_cast<uint64_t>(FileSize(local)) != file.size || HashFile(local) != file.sha256) report.different.push_back(file.path);
+        else continue;
+        report.repair.changed.push_back(file);
+        report.repair.download += file.size;
+    }
+    if (progress) progress(static_cast<int>(files.size()), static_cast<int>(files.size()));
+    return report;
 }
 
 std::wstring DownloadUpdate(const std::wstring& root, const UpdateInfo& info, const std::function<void(uint64_t, uint64_t)>& progress) {
