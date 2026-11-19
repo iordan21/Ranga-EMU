@@ -22,14 +22,18 @@ struct UpdateFile {
 };
 
 struct UpdateInfo {
+    std::wstring source; // where the list came from (and where the files are fetched)
     std::string version, notes;
     std::vector<UpdateFile> changed; // the files that differ from this PC's
     uint64_t download = 0;           // their size together
     std::wstring error;              // why there is nothing (empty: checked fine)
 };
 
-// The address updates come from ("host:port"): engines.ini [Ranga] atualizacao, else the classics' playit tunnel.
-std::wstring UpdateSource(const std::wstring& root);
+// Where updates come from, tried in order and the newest signed list wins: engines.ini [Ranga] atualizacao (one or
+// more, separated by ';'), the GitHub release (kGithubRepo's latest), and the address built in (Enderecos.hpp).
+// Each is a "host:port" of a hosting PC's table server or an "https://..." folder of a release.
+std::vector<std::wstring> UpdateSources(const std::wstring& root);
+std::wstring UpdateSource(const std::wstring& root); // the first of them
 // The version this PC last updated to or published (engines.ini [Ranga] versao_atualizacao).
 std::string InstalledUpdate(const std::wstring& root);
 
@@ -63,6 +67,11 @@ struct IntegrityReport {
     std::wstring error;    // why nothing was checked
 };
 IntegrityReport CheckIntegrity(const std::wstring& root, const std::function<void(int, int)>& progress);
+
+// The hosting PC: the published version (salas\atualizacao) also as a release on GitHub, through the gh command
+// (signed in on this PC), so friends get it with this PC turned off. The three newest releases stay. Uploads everything
+// (about 450 MB): minutes, off the window's thread.
+std::wstring PublishToGitHub(const std::wstring& root, std::string& version);
 
 // The hosting PC: a whole Ranga for a friend who has none (a new or formatted PC), as one zip in folder: the programs,
 // the cores and the emulators, with this PC's engines.ini minus what is only this PC's (server, group, backup,

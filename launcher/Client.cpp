@@ -804,6 +804,7 @@ struct Client {
         if (checkThread.joinable()) checkThread.join();
         if (backupThread.joinable()) backupThread.join();
         if (packageThread.joinable()) packageThread.join();
+        if (githubThread.joinable()) githubThread.join();
         StopProfileThreads();
     }
 
@@ -819,6 +820,23 @@ struct Client {
     const bool autoUpdate = _wgetenv(L"RANGA_CLIENT_AUTO_UPDATE") != nullptr;
     std::array<char, 256> publishNotes{};
     std::wstring publishResult;
+    // After publishing here, the same version goes up to GitHub (PublishToGitHub) in the background.
+    std::thread githubThread;
+    std::atomic<bool> githubBusy{false};
+    std::wstring githubResult; // under updateLock
+
+    void StartGitHubUpload() {
+        if (githubBusy) return;
+        if (githubThread.joinable()) githubThread.join();
+        githubBusy = true;
+        githubThread = std::thread([this, root = library.Root()] {
+            std::string version;
+            const std::wstring error = PublishToGitHub(root, version);
+            std::lock_guard guard(updateLock);
+            githubResult = error.empty() ? L"No GitHub também: " + Wide(version) + L" (os amigos baixam mesmo com este PC desligado)." : error;
+            githubBusy = false;
+        });
+    }
     // The whole Ranga for a friend with none (MakeFriendPackage), made in the background.
     std::thread packageThread;
     std::atomic<bool> packageBusy{false};
@@ -2953,7 +2971,21 @@ struct Client {
                     std::string version;
                     const std::wstring error = PublishUpdate(library.Root(), publishNotes.data(), version);
                     publishResult = error.empty() ? L"Publicada a versão " + Wide(version) + L"." : error;
+                    if (error.empty()) StartGitHubUpload();
                 };
+            }
+            if (githubBusy) {
+                ImGui::SetCursorPosX(labelWidth);
+                ImGui::TextDisabled("Mandando para o GitHub (uns minutos)...");
+                moving = true;
+            } else {
+                std::lock_guard guard(updateLock);
+                if (!githubResult.empty()) {
+                    ImGui::SetCursorPosX(labelWidth);
+                    ImGui::PushTextWrapPos(0);
+                    ImGui::TextDisabled("%s", Utf8(githubResult).c_str());
+                    ImGui::PopTextWrapPos();
+                }
             }
             if (!publishResult.empty()) {
                 ImGui::SameLine();
@@ -6014,8 +6046,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
         while (!notes.empty() && (notes.back() == L' ' || notes.back() == L'"')) notes.pop_back();
         std::string version;
         const std::wstring error = PublishUpdate(root, Utf8(notes), version);
-        WriteTextLine(root + L"\\salas\\publicar.log", error.empty() ? L"publicada " + Wide(version) : error);
-        return error.empty() ? 0 : 1;
+        if (!error.empty()) {
+            WriteTextLine(root + L"\\salas\\publicar.log", error);
+            return 1;
+        }
+        std::string sent;
+        const std::wstring github = wcsstr(commandLine, L"--sem-github") != nullptr ? L"GitHub: pulado" : PublishToGitHub(root, sent);
+        WriteTextLine(root + L"\\salas\\publicar.log", L"publicada " + Wide(version) + L" | " + (github.empty() ? L"GitHub: ok" : github));
+        return 0;
     }
     // RangaEmu.exe --servidor: this PC hosts rooms; the rooms section shows from now on.
     if (commandLine != nullptr && wcsstr(commandLine, L"--servidor") != nullptr) SetRoomServerEnabled(root, true);

@@ -20,6 +20,8 @@ constexpr const char* kPublicKey =
     "45435331200000006ef08f65b2c637d064250a6666e58a8434dc4370fc88748aa8fbdd0361a7ecf9a8bc7a04cf2e32f94214255c5dca20f2"
     "babfe9abaa7b8db9d7c4bc9d8552409e";
 constexpr const wchar_t* kDefaultSource = RANGA_FONTE_ATUALIZACAO;
+constexpr const wchar_t* kGithubRepo = L"iordan21/Ranga-EMU";
+constexpr const wchar_t* kGithubSource = L"https://github.com/iordan21/Ranga-EMU/releases/latest/download";
 
 std::wstring Ini(const std::wstring& root) { return root + L"\\engines.ini"; }
 std::wstring Published(const std::wstring& root) { return root + L"\\salas\\atualizacao"; }
@@ -157,19 +159,46 @@ void MakeParents(const std::wstring& path) {
 }
 
 // GET http://host:port<path>, the body to a file or to memory. Returns the HTTP status, 0 when unreachable.
-int HttpGet(const std::wstring& source, const std::wstring& path, std::string* body, const std::wstring& toFile, const std::function<void(uint64_t)>& got) {
-    std::wstring host = source;
+// A file of an update as a release asset: its path with "--" for each folder ("cores--fbneo_libretro.dll").
+std::wstring AssetName(const std::wstring& path) {
+    std::wstring out;
+    for (const wchar_t c : path) {
+        if (c == L'\\' || c == L'/') out += L"--";
+        else out += c;
+    }
+    return out;
+}
+
+// GET from a source: a table server ("host:port", the paths as they are) or a release folder ("https://...", where
+// /ranga/manifest is manifest.txt and /ranga/f/<path> is the asset AssetName(path); redirects are followed).
+int HttpGet(const std::wstring& source, const std::wstring& request, std::string* body, const std::wstring& toFile, const std::function<void(uint64_t)>& got) {
+    std::wstring host = source, path = request;
     INTERNET_PORT port = 80;
-    if (const size_t colon = source.rfind(L':'); colon != std::wstring::npos) {
+    DWORD flags = 0;
+    const bool secure = source.rfind(L"https://", 0) == 0;
+    if (secure || source.rfind(L"http://", 0) == 0) {
+        const std::wstring rest = source.substr(secure ? 8 : 7);
+        const size_t slash = rest.find(L'/');
+        host = rest.substr(0, slash);
+        const std::wstring base = slash == std::wstring::npos ? L"" : rest.substr(slash);
+        port = secure ? INTERNET_DEFAULT_HTTPS_PORT : INTERNET_DEFAULT_HTTP_PORT;
+        if (secure) flags = WINHTTP_FLAG_SECURE;
+        if (request == L"/ranga/manifest") path = L"/manifest.txt";
+        else if (request == L"/ranga/manifest.sig") path = L"/manifest.sig";
+        else if (request.rfind(L"/ranga/f/", 0) == 0) path = L"/" + AssetName(request.substr(9));
+        path = base + path;
+    } else if (const size_t colon = source.rfind(L':'); colon != std::wstring::npos) {
         host = source.substr(0, colon);
         port = static_cast<INTERNET_PORT>(_wtoi(source.c_str() + colon + 1));
     }
-    HINTERNET session = WinHttpOpen(L"RangaEmu", WINHTTP_ACCESS_TYPE_NO_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    HINTERNET session = WinHttpOpen(L"RangaEmu", secure ? WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY : WINHTTP_ACCESS_TYPE_NO_PROXY, WINHTTP_NO_PROXY_NAME,
+                                    WINHTTP_NO_PROXY_BYPASS, 0);
+    if (session == nullptr && secure) session = WinHttpOpen(L"RangaEmu", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (session == nullptr) return 0;
     WinHttpSetTimeouts(session, 8000, 8000, 15000, 30000);
     int status = 0;
     if (HINTERNET connection = WinHttpConnect(session, host.c_str(), port, 0)) {
-        if (HINTERNET request = WinHttpOpenRequest(connection, L"GET", path.c_str(), nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, 0)) {
+        if (HINTERNET request = WinHttpOpenRequest(connection, L"GET", path.c_str(), nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, flags)) {
             if (WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) && WinHttpReceiveResponse(request, nullptr)) {
                 DWORD code = 0, size = sizeof(code);
                 WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_HEADER_NAME_BY_INDEX, &code, &size, WINHTTP_NO_HEADER_INDEX);
@@ -230,9 +259,87 @@ std::string UrlPath(const std::wstring& path) {
     return out;
 }
 
+// The newest signed list among the sources (each fetched and checked); source says which one. Empty manifest: none.
+std::wstring FetchManifest(const std::wstring& root, std::string& manifest, std::wstring& source) {
+    manifest.clear();
+    source.clear();
+    std::string best;
+    bool answered = false, badSignature = false;
+    for (const std::wstring& from : UpdateSources(root)) {
+        std::string text, signature;
+        if (HttpGet(from, L"/ranga/manifest", &text, L"", nullptr) != 200 || HttpGet(from, L"/ranga/manifest.sig", &signature, L"", nullptr) != 200) continue;
+        answered = true;
+        if (!Verify(text, signature)) {
+            badSignature = true;
+            continue;
+        }
+        std::string version, notes;
+        std::vector<UpdateFile> files;
+        ReadManifest(text, version, notes, files);
+        // "AAAA.MM.DD-HHMM" sorts as text.
+        if (!version.empty() && version > best) {
+            best = version;
+            manifest = text;
+            source = from;
+        }
+    }
+    if (!manifest.empty()) return L"";
+    if (badSignature) return L"A lista de atualização não tem a assinatura certa: ignorada.";
+    if (!answered) return L"Nem o GitHub nem o PC que hospeda responderam (sem internet?).";
+    return L"A lista de atualização veio vazia.";
 }
 
-std::wstring UpdateSource(const std::wstring& root) { return ReadIni(Ini(root), L"Ranga", L"atualizacao", kDefaultSource); }
+// Runs a command hidden and waits; out gets what it printed. The exit code, or -1 when it did not start.
+int RunCaptured(std::wstring command, const std::wstring& folder, std::string& out) {
+    out.clear();
+    wchar_t temp[MAX_PATH];
+    GetTempPathW(MAX_PATH, temp);
+    const std::wstring logPath = std::wstring(temp) + L"ranga-comando-" + std::to_wstring(GetCurrentProcessId()) + L".log";
+    SECURITY_ATTRIBUTES inherit{sizeof(inherit), nullptr, TRUE};
+    HANDLE log = CreateFileW(logPath.c_str(), GENERIC_WRITE, FILE_SHARE_READ, &inherit, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    STARTUPINFOW startup{sizeof(startup)};
+    startup.dwFlags = STARTF_USESHOWWINDOW | STARTF_USESTDHANDLES;
+    startup.wShowWindow = SW_HIDE;
+    startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    startup.hStdOutput = log;
+    startup.hStdError = log;
+    PROCESS_INFORMATION process{};
+    const bool started = CreateProcessW(nullptr, command.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, folder.empty() ? nullptr : folder.c_str(),
+                                        &startup, &process);
+    if (log != INVALID_HANDLE_VALUE) CloseHandle(log);
+    if (!started) return -1;
+    WaitForSingleObject(process.hProcess, INFINITE);
+    DWORD code = 1;
+    GetExitCodeProcess(process.hProcess, &code);
+    CloseHandle(process.hProcess);
+    CloseHandle(process.hThread);
+    out = ReadBytes(logPath);
+    DeleteFileW(logPath.c_str());
+    return static_cast<int>(code);
+}
+
+}
+
+std::vector<std::wstring> UpdateSources(const std::wstring& root) {
+    std::vector<std::wstring> sources;
+    const auto add = [&](std::wstring source) {
+        while (!source.empty() && (source.back() == L' ' || source.back() == L'/')) source.pop_back();
+        while (!source.empty() && source.front() == L' ') source.erase(0, 1);
+        if (!source.empty() && std::find(sources.begin(), sources.end(), source) == sources.end()) sources.push_back(source);
+    };
+    const std::wstring chosen = ReadIni(Ini(root), L"Ranga", L"atualizacao", L"");
+    for (size_t start = 0; start <= chosen.size();) {
+        size_t end = chosen.find(L';', start);
+        if (end == std::wstring::npos) end = chosen.size();
+        add(chosen.substr(start, end - start));
+        start = end + 1;
+    }
+    add(kGithubSource);
+    add(kDefaultSource);
+    return sources;
+}
+
+std::wstring UpdateSource(const std::wstring& root) { return UpdateSources(root).front(); }
 
 std::string InstalledUpdate(const std::wstring& root) { return Utf8(ReadIni(Ini(root), L"Ranga", L"versao_atualizacao", L"")); }
 
@@ -284,20 +391,9 @@ std::wstring PublishUpdate(const std::wstring& root, const std::string& notes, s
 
 UpdateInfo CheckUpdate(const std::wstring& root) {
     UpdateInfo info;
-    const std::wstring source = UpdateSource(root);
-    std::string manifest, signature;
-    if (source.empty()) {
-        info.error = L"Nenhum endereço de atualização (engines.ini [Ranga] atualizacao).";
-        return info;
-    }
-    if (HttpGet(source, L"/ranga/manifest", &manifest, L"", nullptr) != 200 || HttpGet(source, L"/ranga/manifest.sig", &signature, L"", nullptr) != 200) {
-        info.error = L"O PC que hospeda não respondeu (desligado?).";
-        return info;
-    }
-    if (!Verify(manifest, signature)) {
-        info.error = L"A lista de atualização não tem a assinatura certa: ignorada.";
-        return info;
-    }
+    std::string manifest;
+    info.error = FetchManifest(root, manifest, info.source);
+    if (!info.error.empty()) return info;
     std::vector<UpdateFile> files;
     ReadManifest(manifest, info.version, info.notes, files);
     for (const UpdateFile& file : files) {
@@ -454,6 +550,70 @@ std::wstring MakeFriendPackage(const std::wstring& root, const std::wstring& fol
     return L"";
 }
 
+std::wstring PublishToGitHub(const std::wstring& root, std::string& version) {
+    const std::wstring published = Published(root);
+    const std::string manifest = ReadBytes(published + L"\\manifest.txt");
+    std::string notes;
+    std::vector<UpdateFile> files;
+    ReadManifest(manifest, version, notes, files);
+    if (version.empty() || files.empty()) return L"Nenhuma versão publicada para mandar.";
+    wchar_t found[MAX_PATH] = {};
+    std::wstring gh = SearchPathW(nullptr, L"gh.exe", nullptr, MAX_PATH, found, nullptr) != 0 ? found : L"C:\\Program Files\\GitHub CLI\\gh.exe";
+    if (!Exists(gh)) return L"Falta o GitHub CLI (gh) neste PC: a versão ficou só nesta sala.";
+    SetEnvironmentVariableW(L"GH_PROMPT_DISABLED", L"1");
+
+    // The assets: each file under its AssetName (hard links, no copy), the list, its signature and the notes.
+    const std::wstring staging = root + L"\\salas\\atualizacao-github";
+    RemoveTree(staging);
+    CreateDirectoryW(staging.c_str(), nullptr);
+    std::wstring assets;
+    for (const UpdateFile& file : files) {
+        const std::wstring from = published + L"\\files\\" + file.path, to = staging + L"\\" + AssetName(file.path);
+        if (!CreateHardLinkW(to.c_str(), from.c_str(), nullptr) && !CopyFileW(from.c_str(), to.c_str(), FALSE)) {
+            RemoveTree(staging);
+            return L"Não deu para preparar " + file.path + L".";
+        }
+        assets += L" \"" + AssetName(file.path) + L"\"";
+    }
+    CopyFileW((published + L"\\manifest.txt").c_str(), (staging + L"\\manifest.txt").c_str(), FALSE);
+    CopyFileW((published + L"\\manifest.sig").c_str(), (staging + L"\\manifest.sig").c_str(), FALSE);
+    if (FILE* note = _wfopen((staging + L"\\notas.txt").c_str(), L"wb")) {
+        const std::string text = notes + "\n\nVersão assinada do Ranga Emu. O Ranga baixa e confere sozinho; não precisa baixar nada daqui.\n";
+        std::fwrite(text.data(), 1, text.size(), note);
+        std::fclose(note);
+    }
+    const std::wstring tag = L"v" + Wide(version);
+    std::string said;
+    const int code = RunCaptured(L"\"" + gh + L"\" release create " + tag + L" --repo " + kGithubRepo + L" --title \"Ranga " + Wide(version) +
+                                     L"\" --notes-file notas.txt --latest manifest.txt manifest.sig" + assets,
+                                 staging, said);
+    RemoveTree(staging);
+    if (code != 0) {
+        if (said.size() > 300) said = said.substr(said.size() - 300);
+        return L"O GitHub não aceitou a versão (" + std::to_wstring(code) + L"): " + Wide(said);
+    }
+    // Only the three newest releases stay (each has every file).
+    std::string list;
+    if (RunCaptured(L"\"" + gh + L"\" release list --repo " + std::wstring(kGithubRepo) + L" --limit 100 --json tagName --jq .[].tagName", L"", list) == 0) {
+        std::vector<std::string> tags;
+        size_t start = 0;
+        while (start < list.size()) {
+            size_t end = list.find('\n', start);
+            if (end == std::string::npos) end = list.size();
+            std::string line = list.substr(start, end - start);
+            start = end + 1;
+            while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+            if (line.rfind("v20", 0) == 0) tags.push_back(line);
+        }
+        std::sort(tags.rbegin(), tags.rend());
+        for (size_t i = 3; i < tags.size(); ++i) {
+            std::string ignored;
+            RunCaptured(L"\"" + gh + L"\" release delete " + Wide(tags[i]) + L" --repo " + kGithubRepo + L" --cleanup-tag --yes", L"", ignored);
+        }
+    }
+    return L"";
+}
+
 IntegrityReport CheckIntegrity(const std::wstring& root, const std::function<void(int, int)>& progress) {
     IntegrityReport report;
     report.host = CanPublishUpdate(root);
@@ -467,17 +627,10 @@ IntegrityReport CheckIntegrity(const std::wstring& root, const std::function<voi
             return report;
         }
     } else {
-        const std::wstring source = UpdateSource(root);
-        if (source.empty()) {
-            report.error = L"Nenhum endereço de atualização (engines.ini [Ranga] atualizacao): sem lista para comparar.";
-            return report;
-        }
-        if (HttpGet(source, L"/ranga/manifest", &manifest, L"", nullptr) != 200 || HttpGet(source, L"/ranga/manifest.sig", &signature, L"", nullptr) != 200) {
-            report.error = L"O PC que hospeda não respondeu (desligado?): a lista dos arquivos certos vem dele.";
-            return report;
-        }
+        report.error = FetchManifest(root, manifest, report.repair.source);
+        if (!report.error.empty()) return report;
     }
-    if (!Verify(manifest, signature)) {
+    if (report.host && !Verify(manifest, signature)) {
         report.error = L"A lista dos arquivos não tem a assinatura certa: ignorada.";
         return report;
     }
@@ -505,7 +658,7 @@ IntegrityReport CheckIntegrity(const std::wstring& root, const std::function<voi
 }
 
 std::wstring DownloadUpdate(const std::wstring& root, const UpdateInfo& info, const std::function<void(uint64_t, uint64_t)>& progress) {
-    const std::wstring source = UpdateSource(root), staging = Staging(root);
+    const std::wstring source = info.source.empty() ? UpdateSource(root) : info.source, staging = Staging(root);
     uint64_t done = 0;
     for (const UpdateFile& file : info.changed) {
         const std::wstring to = staging + L"\\" + file.path;
