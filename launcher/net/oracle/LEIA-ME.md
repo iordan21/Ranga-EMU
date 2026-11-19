@@ -21,7 +21,7 @@ continuam em cada PC.
 4. **Shape**: **Ampere** → `VM.Standard.A1.Flex` com **1 OCPU e 6 GB** (tem o selo *Always Free-eligible*).
    Se aparecer *Out of capacity*, tente mais tarde ou use a AMD `VM.Standard.E2.1.Micro`, também grátis.
 5. **Networking**: rede nova (VCN), sub-rede pública, **Assign a public IPv4 address** marcado.
-6. **Add SSH keys** → **Paste public keys** → cole a chave pública do Ranga (`C:\Users\iorda\.ssh\ranga-oracle.pub`).
+6. **Add SSH keys** → **Paste public keys** → cole a chave pública do Ranga (`%USERPROFILE%\.ssh\ranga-oracle.pub`).
 7. **Create**. Quando ficar **Running**, copie o **Public IP address**.
 
 ## 3. A porta
