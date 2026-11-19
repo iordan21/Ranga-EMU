@@ -67,13 +67,13 @@ add_subdirectory(core/relinker)
 if(WIN32)
     set(IMGUI_DIR ${CMAKE_SOURCE_DIR}/3rdparty/imgui)
     add_executable(RangaEmu WIN32
-        launcher/Client.cpp launcher/Common.cpp launcher/Covers.cpp launcher/Dlss5.cpp launcher/Library.cpp launcher/Runner.cpp launcher/Systems.cpp launcher/Embed.cpp launcher/Rooms.cpp launcher/ConsoleGraphics.cpp launcher/Update.cpp launcher/Http.cpp launcher/PlayerProfile.cpp launcher/launcher.rc
+        launcher/Client.cpp launcher/Common.cpp launcher/Covers.cpp launcher/Dlss5.cpp launcher/Library.cpp launcher/Runner.cpp launcher/Systems.cpp launcher/Embed.cpp launcher/Rooms.cpp launcher/ConsoleGraphics.cpp launcher/Update.cpp launcher/Http.cpp launcher/PlayerProfile.cpp launcher/Lobby.cpp launcher/launcher.rc
         ${IMGUI_DIR}/imgui.cpp ${IMGUI_DIR}/imgui_draw.cpp ${IMGUI_DIR}/imgui_tables.cpp ${IMGUI_DIR}/imgui_widgets.cpp
         ${IMGUI_DIR}/backends/imgui_impl_win32.cpp ${IMGUI_DIR}/backends/imgui_impl_dx11.cpp)
     target_include_directories(RangaEmu PRIVATE ${IMGUI_DIR} ${IMGUI_DIR}/backends ${CMAKE_SOURCE_DIR}/3rdparty/stb)
     target_compile_definitions(RangaEmu PRIVATE UNICODE _UNICODE)
     target_link_options(RangaEmu PRIVATE -municode -static)
-    target_link_libraries(RangaEmu PRIVATE SDL2-static d3d11 d3dcompiler dxgi dwmapi ole32 shell32 shlwapi uuid gdi32 comctl32 winhttp bcrypt)
+    target_link_libraries(RangaEmu PRIVATE SDL2-static d3d11 d3dcompiler dxgi dwmapi ole32 shell32 shlwapi uuid gdi32 comctl32 winhttp bcrypt ws2_32 iphlpapi)
     # Ranga Retro: libretro cores inside Ranga's own window (launcher/retro).
     # RetroAchievements (3rdparty/rcheevos, MIT): the achievements Ranga Retro checks in the game's memory.
     enable_language(C)

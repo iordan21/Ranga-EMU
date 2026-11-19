@@ -11,6 +11,7 @@
 #include "Update.hpp"
 #include "Http.hpp"
 #include "PlayerProfile.hpp"
+#include "Lobby.hpp"
 
 #include <d3d11.h>
 #include <shellapi.h>
@@ -642,6 +643,17 @@ struct Client {
     // The Switch game's online room (Eden's multiplayer rooms), as the game's core options keep it: 0 off, 1 join,
     // 2 host. The core reads them when the game starts.
     int roomMode = 0;
+    // Joining a Switch room: the hosting PC's own (private, through playit) or one of Eden's public rooms, picked from
+    // the list (Lobby.hpp), which is fetched again every 15 s while it shows.
+    bool roomPublic = false;
+    std::mutex lobbyLock;
+    std::vector<LobbyRoom> lobby;
+    std::string lobbyProblem;
+    long long lobbyAt = 0;
+    std::thread lobbyThread;
+    std::atomic<bool> lobbyBusy{false};
+    ULONGLONG lobbyAskedAt = 0;
+    bool lobbyAll = false;
     std::array<char, 128> roomAddress{}, roomPort{}, roomNickname{}, roomPassword{};
     // Online play of the classics (Ranga Retro's own, Netplay.hpp): this game's choice and the table server's state.
     std::array<char, 128> onlineAddress{}, onlineName{};
@@ -943,6 +955,7 @@ struct Client {
             if (game->system == L"SWITCH") {
                 const std::string mode = ReadCoreOption(*game, "eden_sala");
                 roomMode = mode == "entrar" ? 1 : mode == "criar" ? 2 : 0;
+                roomPublic = ReadCoreOption(*game, "ranga_sala_tipo") == "publica";
                 // The room comes filled in: what this game has, else what was last typed for any Switch game, and
                 // the room's usual port. What comes from elsewhere is written to the game, where the core reads it.
                 const auto fill = [&](std::array<char, 128>& field, const char* key, const wchar_t* remembered, const char* usual) {
@@ -953,7 +966,9 @@ struct Client {
                     value.copy(field.data(), field.size() - 1);
                     if (value != own) WriteCoreOption(*game, key, value);
                 };
-                fill(roomAddress, "eden_sala_endereco", L"sala_endereco", "");
+                fill(roomAddress, "eden_sala_endereco", L"sala_endereco", roomPublic ? "" : kPrivateSwitchRoom);
+                // A public room is only the one picked from the list, never the private one remembered for the others.
+                if (roomPublic && roomAddress.data() == Utf8(RememberedSwitch(L"sala_endereco"))) SetRoomField(*game, roomAddress, "eden_sala_endereco", "");
                 fill(roomPort, "eden_sala_porta", L"sala_porta", "24872");
                 fill(roomPassword, "eden_sala_senha", L"sala_senha", "");
                 // The player's name is one for every Switch game: the one last typed wins over what the game kept.
@@ -981,6 +996,199 @@ struct Client {
 
     // What was last typed for a Switch game (the player's name, the room), kept beside the emulators' choices so the
     // next game starts with it.
+    // The hosting PC's Switch room through its playit tunnel (UDP), for anyone joining the private room.
+    static constexpr const char* kPrivateSwitchRoom = "";
+
+    void RefreshLobby(bool force) {
+        if (lobbyBusy) return;
+        const ULONGLONG now = GetTickCount64();
+        if (!force && lobbyAskedAt != 0 && now - lobbyAskedAt < 15000) return;
+        if (lobbyThread.joinable()) lobbyThread.join();
+        lobbyAskedAt = now;
+        lobbyBusy = true;
+        lobbyThread = std::thread([this] {
+            std::vector<LobbyRoom> rooms;
+            std::string error;
+            const bool ok = FetchSwitchLobby(rooms, error);
+            if (ok) {
+                // Every room's machine is asked at once (24 at a time), so the list is not held up by those that
+                // never answer ping.
+                std::vector<std::string> addresses;
+                for (const auto& room : rooms) if (std::find(addresses.begin(), addresses.end(), room.address) == addresses.end()) addresses.push_back(room.address);
+                std::vector<int> pings(addresses.size(), -1);
+                for (size_t start = 0; start < addresses.size(); start += 24) {
+                    std::vector<std::thread> batch;
+                    for (size_t i = start; i < std::min(addresses.size(), start + 24); ++i) batch.emplace_back([&, i] { pings[i] = PingAddress(addresses[i], 700); });
+                    for (auto& thread : batch) thread.join();
+                }
+                for (auto& room : rooms) room.ping = pings[static_cast<size_t>(std::find(addresses.begin(), addresses.end(), room.address) - addresses.begin())];
+            }
+            std::lock_guard guard(lobbyLock);
+            if (ok) {
+                lobby = std::move(rooms);
+                lobbyAt = static_cast<long long>(std::time(nullptr));
+                lobbyProblem.clear();
+            } else {
+                lobbyProblem = error;
+            }
+            lobbyBusy = false;
+        });
+    }
+
+    void SetRoomField(const Game& game, std::array<char, 128>& field, const char* key, const std::string& value) {
+        field.fill(0);
+        value.copy(field.data(), field.size() - 1);
+        WriteCoreOption(game, key, value);
+    }
+
+    // Private: back to the room last typed (the hosting PC's through playit when none was). Public: the list.
+    void SetRoomPublic(const Game& game, bool on) {
+        roomPublic = on;
+        WriteCoreOption(game, "ranga_sala_tipo", on ? "publica" : "privada");
+        if (on) {
+            // Nothing chosen yet: the game must not go to the private room by mistake.
+            SetRoomField(game, roomAddress, "eden_sala_endereco", "");
+            SetRoomField(game, roomPassword, "eden_sala_senha", "");
+            RefreshLobby(true);
+            return;
+        }
+        std::string address = Utf8(RememberedSwitch(L"sala_endereco")), port = Utf8(RememberedSwitch(L"sala_porta"));
+        SetRoomField(game, roomAddress, "eden_sala_endereco", address.empty() ? kPrivateSwitchRoom : address);
+        SetRoomField(game, roomPort, "eden_sala_porta", port.empty() ? "24872" : port);
+        SetRoomField(game, roomPassword, "eden_sala_senha", Utf8(RememberedSwitch(L"sala_senha")));
+    }
+
+    // Eden's public rooms for this game: how many are playing it in each, how many are in each, the ping, the lock.
+    void PublicRooms(const Game& game, float labelWidth, float scale) {
+        RefreshLobby(false);
+        const uint64_t titleId = SwitchTitleId(game.folder);
+        const std::string loose = LooseTitle(Utf8(game.title));
+        const auto sameGame = [&](uint64_t id, const std::string& name) {
+            // An update or add-on of the game differs from it only in the last three hex digits of its id.
+            if (titleId != 0 && id != 0) return (id ^ titleId) < 0x1000;
+            const std::string other = LooseTitle(name);
+            return !loose.empty() && !other.empty() && (other.find(loose) != std::string::npos || loose.find(other) != std::string::npos);
+        };
+        std::vector<LobbyRoom> rooms;
+        std::string problem;
+        long long at = 0;
+        {
+            std::lock_guard guard(lobbyLock);
+            rooms = lobby;
+            problem = lobbyProblem;
+            at = lobbyAt;
+        }
+        struct Row {
+            const LobbyRoom* room;
+            int playing;
+            bool preferred;
+        };
+        std::vector<Row> rows;
+        for (const auto& room : rooms) {
+            int playing = 0;
+            for (const auto& player : room.players) playing += sameGame(player.gameId, player.gameName);
+            const bool preferred = sameGame(room.preferredGameId, room.preferredGameName);
+            if (lobbyAll || playing > 0 || preferred) rows.push_back({&room, playing, preferred});
+        }
+        std::sort(rows.begin(), rows.end(), [](const Row& a, const Row& b) {
+            if (a.playing != b.playing) return a.playing > b.playing;
+            if (a.preferred != b.preferred) return a.preferred;
+            const int pa = a.room->ping < 0 ? 100000 : a.room->ping, pb = b.room->ping < 0 ? 100000 : b.room->ping;
+            if (pa != pb) return pa < pb;
+            return a.room->players.size() > b.room->players.size();
+        });
+
+        ImGui::SetCursorPosX(labelWidth);
+        ImGui::BeginGroup();
+        if (ImGui::Button(lobbyBusy ? "Atualizando..." : "Atualizar")) RefreshLobby(true);
+        ImGui::SameLine();
+        ImGui::Checkbox("Mostrar salas de outros jogos", &lobbyAll);
+        ImGui::SameLine();
+        ImGui::AlignTextToFramePadding();
+        if (at != 0) ImGui::TextDisabled("%d salas · atualiza sozinha a cada 15 s (%s)", static_cast<int>(rows.size()), FormatAgo(at).c_str());
+        else if (lobbyBusy) ImGui::TextDisabled("Buscando as salas...");
+        if (!problem.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
+            ImGui::TextUnformatted(problem.c_str());
+            ImGui::PopStyleColor();
+        }
+        const std::string chosenAddress = roomAddress.data();
+        const int chosenPort = std::atoi(roomPort.data());
+        const LobbyRoom* chosen = nullptr;
+        const float width = ImGui::GetContentRegionAvail().x;
+        if (ImGui::BeginTable("##publicRooms", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingStretchProp,
+                              ImVec2(width, 280 * scale))) {
+            ImGui::TableSetupScrollFreeze(0, 1);
+            ImGui::TableSetupColumn("Sala", ImGuiTableColumnFlags_WidthStretch, 4.0f);
+            ImGui::TableSetupColumn("Neste jogo", ImGuiTableColumnFlags_WidthStretch, 1.1f);
+            ImGui::TableSetupColumn("Na sala", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+            ImGui::TableSetupColumn("Ping", ImGuiTableColumnFlags_WidthStretch, 0.8f);
+            ImGui::TableSetupColumn("Senha", ImGuiTableColumnFlags_WidthStretch, 0.7f);
+            ImGui::TableHeadersRow();
+            for (size_t i = 0; i < rows.size(); ++i) {
+                const LobbyRoom& room = *rows[i].room;
+                const bool selected = room.address == chosenAddress && room.port == chosenPort;
+                if (selected) chosen = &room;
+                ImGui::TableNextRow(ImGuiTableRowFlags_None, 28 * scale);
+                ImGui::TableNextColumn();
+                ImGui::PushID(static_cast<int>(i));
+                // A name that was only emoji has no letter left: the room's address says which it is.
+                const bool hasLetter = std::any_of(room.name.begin(), room.name.end(), [](char c) { return std::isalnum(static_cast<unsigned char>(c)) != 0; });
+                const std::string name = hasLetter ? room.name : "Sala " + room.address + ":" + std::to_string(room.port);
+                if (ImGui::Selectable(name.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns)) {
+                    SetRoomField(game, roomAddress, "eden_sala_endereco", room.address);
+                    SetRoomField(game, roomPort, "eden_sala_porta", std::to_string(room.port));
+                    SetRoomField(game, roomPassword, "eden_sala_senha", "");
+                }
+                if (ImGui::IsItemHovered()) {
+                    std::string who;
+                    for (const auto& player : room.players) {
+                        who += player.nickname + (player.gameName.empty() ? "  (no menu)" : "  ·  " + player.gameName) + "\n";
+                    }
+                    ImGui::SetTooltip("%s\nJogo da sala: %s\n%s:%d\n\n%s", name.c_str(), room.preferredGameName.c_str(), room.address.c_str(), room.port,
+                                      who.empty() ? "Ninguém dentro agora." : who.c_str());
+                }
+                ImGui::PopID();
+                ImGui::TableNextColumn();
+                if (rows[i].playing > 0) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, Color(kGreen));
+                    ImGui::Text("%d jogando", rows[i].playing);
+                    ImGui::PopStyleColor();
+                } else {
+                    ImGui::TextDisabled("0");
+                }
+                ImGui::TableNextColumn();
+                ImGui::Text("%d / %d", static_cast<int>(room.players.size()), room.maxPlayers);
+                ImGui::TableNextColumn();
+                if (room.ping < 0) ImGui::TextDisabled("-");
+                else {
+                    ImGui::PushStyleColor(ImGuiCol_Text, Color(room.ping <= 60 ? kGreen : room.ping <= 130 ? kAmber : kRed));
+                    ImGui::Text("%d ms", room.ping);
+                    ImGui::PopStyleColor();
+                }
+                ImGui::TableNextColumn();
+                ImGui::TextDisabled("%s", room.hasPassword ? "sim" : "-");
+            }
+            ImGui::EndTable();
+        }
+        if (rows.empty() && at != 0) ImGui::TextDisabled("Nenhuma sala pública com este jogo agora. Marque \"Mostrar salas de outros jogos\" para ver todas.");
+        if (chosen != nullptr) {
+            ImGui::PushStyleColor(ImGuiCol_Text, Color(kGreen));
+            ImGui::Text("Escolhida: %s", chosen->name.c_str());
+            ImGui::PopStyleColor();
+            if (chosen->hasPassword) {
+                ImGui::TextDisabled("Esta sala tem senha:");
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(220 * scale);
+                ImGui::InputText("##publicPassword", roomPassword.data(), roomPassword.size(), ImGuiInputTextFlags_Password);
+                if (ImGui::IsItemDeactivatedAfterEdit()) WriteCoreOption(game, "eden_sala_senha", roomPassword.data());
+            }
+        } else if (!rows.empty()) {
+            ImGui::TextDisabled("Clique numa sala para entrar nela quando o jogo abrir.");
+        }
+        ImGui::EndGroup();
+    }
+
     std::wstring RememberedSwitch(const wchar_t* key) const { return ReadIni(library.Root() + L"\\engines.ini", L"SWITCH", key, L""); }
     void RememberSwitch(const wchar_t* key, const std::string& value) {
         const std::wstring ini = library.Root() + L"\\engines.ini";
@@ -2039,6 +2247,13 @@ struct Client {
             ImGui::Dummy(ImVec2(0, 2 * scale));
             label("Sala online");
             if (ImGui::Combo("##room", &roomMode, modes, 3)) WriteCoreOption(game, "eden_sala", modeValues[roomMode]);
+            if (roomMode == 1) {
+                label("Tipo de sala");
+                if (ImGui::RadioButton("Privada (a sua, pelo playit)", !roomPublic) && roomPublic) SetRoomPublic(game, false);
+                ImGui::SameLine();
+                if (ImGui::RadioButton("Pública (lista do Eden)", roomPublic) && !roomPublic) SetRoomPublic(game, true);
+            }
+            if (roomMode == 1 && roomPublic) PublicRooms(game, labelWidth, scale);
             if (roomMode != 0) {
                 const auto field = [&](const char* name, const char* id, std::array<char, 128>& text, const char* key, const wchar_t* remembered, ImGuiInputTextFlags flags = 0) {
                     label(name);
@@ -2048,33 +2263,36 @@ struct Client {
                         RememberSwitch(remembered, text.data());
                     }
                 };
-                if (roomMode == 1) field("Endereço", "##roomAddress", roomAddress, "eden_sala_endereco", L"sala_endereco");
+                const bool typed = !(roomMode == 1 && roomPublic);
+                if (roomMode == 1 && typed) field("Endereço", "##roomAddress", roomAddress, "eden_sala_endereco", L"sala_endereco");
                 // Joining with "address:port" (as playit shows it), that port is the one used: the field is not shown,
                 // so a leftover 24872 there can no longer look like it matters.
                 const std::string address = roomAddress.data();
                 const size_t colon = address.rfind(':');
                 const bool portInAddress = colon != std::string::npos && colon + 1 < address.size() &&
                                            std::all_of(address.begin() + static_cast<std::ptrdiff_t>(colon + 1), address.end(), [](unsigned char c) { return std::isdigit(c); });
-                if (roomMode == 1 && portInAddress) {
+                if (!typed) {
+                } else if (roomMode == 1 && portInAddress) {
                     label("Porta");
                     ImGui::AlignTextToFramePadding();
                     ImGui::TextDisabled("%s (a do endereço)", address.substr(colon + 1).c_str());
                 } else {
                     field("Porta", "##roomPort", roomPort, "eden_sala_porta", L"sala_porta", ImGuiInputTextFlags_CharsDecimal);
                 }
-                field("Senha", "##roomPassword", roomPassword, "eden_sala_senha", L"sala_senha");
+                if (typed) field("Senha", "##roomPassword", roomPassword, "eden_sala_senha", L"sala_senha");
                 const std::string nickname = roomNickname.data();
                 const bool nicknameFits = nickname.size() >= 4 && nickname.size() <= 20 &&
                     std::all_of(nickname.begin(), nickname.end(), [](unsigned char c) { return std::isalnum(c) || c == '.' || c == '_' || c == '-' || c == ' '; });
                 const char* problem = !nicknameFits ? "Para a sala, o nome do jogador precisa de 4 a 20 letras ou números, sem acento." :
-                                      roomMode == 1 && roomAddress[0] == 0 ? "Falta o endereço que o dono da sala passou." : nullptr;
+                                      roomMode == 1 && roomAddress[0] == 0 ? (roomPublic ? "Escolha uma sala na lista." : "Falta o endereço que o dono da sala passou.") : nullptr;
                 if (problem != nullptr) {
                     ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
                     ImGui::TextWrapped("%s", problem);
                     ImGui::PopStyleColor();
                 }
                 ImGui::PushTextWrapPos(0);
-                if (roomMode == 1) ImGui::TextDisabled("Cole o endereço como o dono da sala passou; \"endereço:porta\" junto também serve, e aí a porta pode ficar vazia. Senha só se a sala tiver.");
+                if (roomMode == 1 && !typed) ImGui::TextDisabled("Sala pública: outras pessoas podem estar nela e ver o seu apelido; no jogo, só joga com você quem entrar na mesma partida. A sala é de outra pessoa e pode sair do ar.");
+                else if (roomMode == 1) ImGui::TextDisabled("Cole o endereço como o dono da sala passou; \"endereço:porta\" junto também serve, e aí a porta pode ficar vazia. Senha só se a sala tiver.");
                 else ImGui::TextDisabled("A sala abre junto com o jogo, na porta escolhida (vazia = 24872), em UDP. Para amigos de fora entrarem, aponte um túnel UDP (playit, por exemplo) para 127.0.0.1 nessa porta e passe a eles o endereço do túnel.");
                 ImGui::TextDisabled("No jogo, todos escolhem o modo sem fio local / LAN, não o online da Nintendo. Todos precisam da mesma versão do emulador e do jogo.");
                 ImGui::PopTextWrapPos();
@@ -3346,6 +3564,7 @@ struct Client {
     bool raDone = false;
 
     void StopProfileThreads() {
+        if (lobbyThread.joinable()) lobbyThread.join();
         if (profileThread.joinable()) profileThread.join();
         if (chatThread.joinable()) chatThread.join();
         // The friends see this Ranga closed at once, not five minutes later.
