@@ -31,6 +31,8 @@ struct Hooks {
 
 // Connects to the table server at address ("host:port"; no port is the usual 24873) and sits at the table of game.
 // False (and the reason in the log and on screen) when the server cannot be reached; the game then runs alone.
+// delay 0 is automatic: the player running the game measures every friend's ping and sets the table's delay from the
+// farthest one. Whatever the player who runs the game uses is the table's delay, which everyone takes.
 bool Start(const std::string& address, const std::string& game, const std::string& name, int delay, const Hooks& hooks);
 bool Active();
 // Whether this player runs the game for the table (slot 0): its saves are its own; the others' are left alone.

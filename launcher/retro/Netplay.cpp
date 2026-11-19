@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <map>
@@ -23,7 +24,15 @@ enum Message : uint8_t {
     kCheck,                    // u32 frame, u32 crc
     kAgain,                    // (a player's state differs: slot 0 sends it again)
     kInputs,                   // u16 n, n x (u32 frame, input): a player's own controls again, for a newcomer
+    kDelay,                    // u8 frames: the table's delay, from slot 0 (before its state, to a newcomer)
+    kPing,                     // u32 stamp, from slot 0
+    kPong,                     // u32 stamp: the ping answered
 };
+
+// The automatic delay: ping once a second, the last few kept per player, and a new delay only after it held a while.
+constexpr ULONGLONG kPingEvery = 1000, kDelaySettles = 3000;
+constexpr size_t kPingSamples = 5;
+constexpr int kMinDelay = 2, kMaxDelay = 10;
 
 constexpr int kPlayers = RangaNet::kMaxPlayers;
 constexpr uint32_t kCheckEvery = 300;
@@ -55,6 +64,11 @@ struct Session {
     std::map<uint32_t, uint32_t> hostChecks, ownChecks;
     ULONGLONG lastAgain = 0, waitingSince = 0, lastSync = 0;
     Input current;
+    // The automatic delay (slot 0 only): each friend's last pings, the delay they point to and since when.
+    bool autoDelay = false;
+    ULONGLONG lastPing = 0, candidateSince = 0;
+    int candidate = 0, worstPing = -1;
+    std::array<std::vector<int>, kPlayers> pings;
 };
 
 Session* s = nullptr;
@@ -292,6 +306,8 @@ void Handle(uint8_t type, const uint8_t* body, size_t size) {
         if (s->slot == 0) {
             s->present[slot] = true;
             s->start[slot] = s->frame;
+            s->pings[static_cast<size_t>(slot)].clear();
+            Queue(RangaNet::Writer(kDelay).U8(static_cast<uint8_t>(s->delay)).Done());
             SendState();
         }
         return;
@@ -340,7 +356,79 @@ void Handle(uint8_t type, const uint8_t* body, size_t size) {
         case kAgain:
             if (s->slot == 0 && GetTickCount64() - s->lastSync > 3000) SendState();
             break;
+        case kDelay: {
+            const int delay = r.U8();
+            if (from == 0 && s->slot != 0 && r.Ok() && delay != s->delay) {
+                s->delay = std::clamp(delay, 1, 15);
+                char text[64];
+                std::snprintf(text, sizeof(text), "atraso da mesa: %d quadros", s->delay);
+                Log(text);
+            }
+            break;
+        }
+        case kPing: {
+            const uint32_t stamp = r.U32();
+            if (from == 0 && s->slot != 0 && r.Ok()) Queue(RangaNet::Writer(kPong).U32(stamp).Done());
+            break;
+        }
+        case kPong: {
+            const uint32_t stamp = r.U32();
+            if (s->slot == 0 && r.Ok() && from != 0) {
+                auto& samples = s->pings[static_cast<size_t>(from)];
+                samples.push_back(static_cast<int>(static_cast<uint32_t>(GetTickCount64()) - stamp));
+                if (samples.size() > kPingSamples) samples.erase(samples.begin());
+            }
+            break;
+        }
     }
+}
+
+// Slot 0: a ping to everyone once a second, and the table's delay from the farthest friend. A frame's controls have to
+// cross from one player to the other, about half a round trip through the room, plus a little margin; the delay only
+// changes once the new value held for a few seconds, and is sent to the table. Raising or lowering it while the game
+// runs leaves no hole: the controls already sent stay, and the frames ahead are sent up to the new delay.
+void Tune() {
+    const ULONGLONG now = GetTickCount64();
+    bool others = false;
+    for (int i = 1; i < kPlayers; ++i) others = others || s->present[i];
+    if (!others) return;
+    if (now - s->lastPing >= kPingEvery) {
+        s->lastPing = now;
+        Queue(RangaNet::Writer(kPing).U32(static_cast<uint32_t>(now)).Done());
+    }
+    int worst = -1;
+    for (int i = 1; i < kPlayers; ++i) {
+        if (!s->present[i] || s->pings[static_cast<size_t>(i)].empty()) continue;
+        std::vector<int> sorted = s->pings[static_cast<size_t>(i)];
+        std::sort(sorted.begin(), sorted.end());
+        worst = std::max(worst, sorted[sorted.size() / 2]);
+    }
+    s->worstPing = worst;
+    // RANGA_ONLINE_DEBUG=1: the ping and the delay it points to, every ten seconds.
+    static const bool debug = std::getenv("RANGA_ONLINE_DEBUG") != nullptr;
+    static ULONGLONG lastReport = 0;
+    if (debug && worst >= 0 && now - lastReport >= 10000) {
+        lastReport = now;
+        s->hooks.log("[online] ping do amigo mais longe: %d ms; atraso %d quadros\n", worst, s->delay);
+    }
+    if (!s->autoDelay || worst < 0) return;
+    const int target = std::clamp(static_cast<int>(std::ceil((worst / 2.0 + 8.0) / 16.67)) + 1, kMinDelay, kMaxDelay);
+    if (target == s->delay) {
+        s->candidate = 0;
+        return;
+    }
+    if (target != s->candidate) {
+        s->candidate = target;
+        s->candidateSince = now;
+        return;
+    }
+    if (now - s->candidateSince < kDelaySettles) return;
+    s->delay = target;
+    s->candidate = 0;
+    Queue(RangaNet::Writer(kDelay).U8(static_cast<uint8_t>(s->delay)).Done());
+    char text[96];
+    std::snprintf(text, sizeof(text), "atraso automático: %d quadros (ping de %d ms)", s->delay, worst);
+    Log(text);
 }
 
 void Drop(const std::wstring& why) {
@@ -368,7 +456,8 @@ bool Start(const std::string& address, const std::string& game, const std::strin
     s->hooks = hooks;
     s->game = game;
     s->name = name.empty() ? "Jogador" : name;
-    s->delay = std::clamp(delay, 1, 15);
+    s->autoDelay = delay <= 0;
+    s->delay = s->autoDelay ? 4 : std::clamp(delay, 1, 15);
     addrinfo hints{}, *found = nullptr;
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
@@ -411,7 +500,7 @@ bool Start(const std::string& address, const std::string& game, const std::strin
     setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&noDelay), sizeof(noDelay));
     s->socket = sock;
     Queue(RangaNet::Writer(RangaNet::kHello).U8(RangaNet::kVersion).Str(game).Str(s->name).Done());
-    s->hooks.log("[online] conectado a %s, jogo %s, atraso de %d quadros\n", address.c_str(), game.c_str(), s->delay);
+    s->hooks.log("[online] conectado a %s, jogo %s, atraso de %d quadros%s\n", address.c_str(), game.c_str(), s->delay, s->autoDelay ? " (automático)" : "");
     return true;
 }
 
@@ -450,6 +539,7 @@ void Pump() {
         s->out.clear();
         s->outAt = 0;
     }
+    if (s->slot == 0) Tune();
 }
 
 void Send(const Input& local) {
@@ -529,7 +619,9 @@ std::wstring Status() {
     for (const bool here : s->present) players += here;
     if (s->waitingSince != 0 && GetTickCount64() - s->waitingSince > 400) return L"online: esperando o outro jogador";
     if (players <= 1) return L"online: esperando amigos";
-    return L"online: " + std::to_wstring(players) + L" jogadores";
+    std::wstring text = L"online: " + std::to_wstring(players) + L" jogadores, atraso " + std::to_wstring(s->delay);
+    if (s->slot == 0 && s->worstPing >= 0) text += L" (ping " + std::to_wstring(s->worstPing) + L" ms)";
+    return text;
 }
 
 void Stop() {

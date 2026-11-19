@@ -2105,7 +2105,9 @@ void StartOnline(const std::wstring& corePath, const std::wstring& romPath, bool
         std::snprintf(text, sizeof(text), ":%llx:%08x", static_cast<unsigned long long>(size.QuadPart), hash);
         game += text;
     }
-    const int delay = std::clamp(std::atoi(option("ranga_online_atraso").c_str()), 0, 15);
+    // "auto" (or nothing) is the automatic delay (0); a number is that many frames.
+    const std::string delayOption = option("ranga_online_atraso");
+    const int delay = delayOption.empty() || delayOption == "auto" ? 0 : std::clamp(std::atoi(delayOption.c_str()), 0, 15);
     Netplay::Hooks hooks;
     hooks.stateSize = [] { return g.core.serializeSize(); };
     hooks.saveState = [](void* data, size_t size) { return g.core.serialize(data, size); };
@@ -2118,7 +2120,7 @@ void StartOnline(const std::wstring& corePath, const std::wstring& romPath, bool
     hooks.message = [](const std::wstring& text) { ShowMessage(text, 240); };
     // Players 3 and 4 need their ports too.
     for (unsigned port = 2; port < 4; ++port) g.core.setControllerPort(port, RETRO_DEVICE_JOYPAD);
-    Netplay::Start(address, game, option("ranga_online_nome"), delay > 0 ? delay : 4, hooks);
+    Netplay::Start(address, game, option("ranga_online_nome"), delay, hooks);
 }
 
 int RetroMain(int argc, wchar_t** argv) {
@@ -2308,6 +2310,15 @@ int RetroMain(int argc, wchar_t** argv) {
     } else if (!video.Create(g_window)) {
         Log("[retro] Direct3D 11 não iniciou\n");
         return 5;
+    }
+    // What the game draws with, for the client: DLSS 5 (a Vulkan layer) is only offered for games that draw with Vulkan.
+    if (!saveDir.empty()) {
+        const std::wstring workspace = saveDir.substr(0, saveDir.find_last_of(L"\\/"));
+        const char* api = g_coreDraws ? "proprio" : g_hwVulkan ? "vulkan" : g_hwActive ? "opengl" : "d3d11";
+        if (FILE* file = _wfopen((workspace + L"\\video.txt").c_str(), L"wb")) {
+            std::fputs(api, file);
+            std::fclose(file);
+        }
     }
     ShowWindow(g_window, SW_SHOWNORMAL);
     SetForegroundWindow(g_window);
@@ -2500,6 +2511,13 @@ int RetroMain(int argc, wchar_t** argv) {
     if (g_hwActive && g_hw.context_destroy != nullptr) g_hw.context_destroy();
     g.core.unloadGame();
     g.core.deinit();
+    // With DLSS 5 (ReShade's Vulkan layer and NVIDIA's DLSS) the device's teardown crashed in nvngx_dlssd.dll on
+    // 14/11/2026, after everything was saved: the process ends here instead, as Windows frees all of it anyway.
+    if (const char* layers = std::getenv("VK_INSTANCE_LAYERS"); g_hwVulkan && layers != nullptr && *layers != '\0') {
+        Log("[retro] fim (DLSS 5: sem desmontar o Vulkan)\n");
+        std::fflush(nullptr);
+        TerminateProcess(GetCurrentProcess(), 0);
+    }
     if (g_hwVulkan) RetroVulkan::Destroy(g_negotiation);
     for (auto* pad : g_pads) if (pad != nullptr) SDL_GameControllerClose(pad);
     SDL_Quit();

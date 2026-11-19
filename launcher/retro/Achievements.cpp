@@ -1,14 +1,27 @@
 #include "Achievements.hpp"
+#include "ChdReader.hpp"
 #include "../Http.hpp"
 
 #include "libretro.h"
 #include "rc_client.h"
 #include "rc_libretro.h"
+#include "rc_hash.h"
+
+#define STB_IMAGE_STATIC
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_ONLY_PNG
+#include "stb_image.h"
+
+#include <atomic>
+#include <functional>
+#include <memory>
 
 #include <algorithm>
 #include <cmath>
 #include <condition_variable>
 #include <cstdarg>
+#include <cstdlib>
+#include <cstring>
 #include <cwctype>
 #include <cstdio>
 #include <ctime>
@@ -25,6 +38,15 @@ struct Request {
     std::string url, post, type;
     rc_client_server_callback_t callback = nullptr;
     void* data = nullptr;
+    // A download of Ranga's own (a badge): handled right there on the worker's thread, nothing goes to rcheevos.
+    std::function<void(const Ranga::HttpResult&)> own;
+};
+
+// An achievement's or game's picture, filled by the worker once downloaded: BGRA, ready for GDI.
+struct Picture {
+    std::atomic<bool> ready{false};
+    int width = 0, height = 0;
+    std::vector<unsigned char> bgra;
 };
 
 struct Reply {
@@ -36,6 +58,7 @@ struct Reply {
 struct Notice {
     std::wstring heading, title, detail;
     bool trophy = true;
+    std::shared_ptr<Picture> picture; // the badge, when there is one (may still be downloading)
 };
 
 struct State {
@@ -60,6 +83,7 @@ struct State {
     Notice current;
     HWND popup = nullptr;
     ULONGLONG shownUntil = 0;
+    bool paintedPicture = false;
 };
 
 State* s = nullptr;
@@ -150,8 +174,40 @@ void Log(const char* format, ...) {
     s->setup.log(text);
 }
 
-void Notify(const std::wstring& heading, const std::wstring& title, const std::wstring& detail, bool trophy = true) {
-    if (s != nullptr) s->notices.push_back({heading, title, detail, trophy});
+// The badge at url, downloaded and decoded on the worker's thread; the notice shows it as soon as it is there.
+std::shared_ptr<Picture> FetchPicture(const char* url) {
+    if (s == nullptr || url == nullptr || std::strncmp(url, "https://", 8) != 0) return nullptr;
+    auto picture = std::make_shared<Picture>();
+    Request request;
+    request.url = url;
+    request.own = [picture](const Ranga::HttpResult& got) {
+        if (got.status != 200 || got.body.empty()) return;
+        int width = 0, height = 0, channels = 0;
+        unsigned char* pixels = stbi_load_from_memory(reinterpret_cast<const stbi_uc*>(got.body.data()), static_cast<int>(got.body.size()), &width, &height, &channels, 4);
+        if (pixels == nullptr) return;
+        // Over the notice's own background, so GDI needs no alpha.
+        picture->bgra.resize(static_cast<size_t>(width) * height * 4);
+        for (size_t i = 0; i < static_cast<size_t>(width) * height; ++i) {
+            const unsigned a = pixels[i * 4 + 3];
+            const unsigned back[3] = {0x1c, 0x18, 0x17}; // B, G, R of the notice's background
+            for (int c = 0; c < 3; ++c) picture->bgra[i * 4 + c] = static_cast<unsigned char>((pixels[i * 4 + (2 - c)] * a + back[c] * (255 - a)) / 255);
+            picture->bgra[i * 4 + 3] = 255;
+        }
+        stbi_image_free(pixels);
+        picture->width = width;
+        picture->height = height;
+        picture->ready = true;
+    };
+    {
+        std::lock_guard guard(s->lock);
+        s->requests.push_back(std::move(request));
+    }
+    s->wake.notify_one();
+    return picture;
+}
+
+void Notify(const std::wstring& heading, const std::wstring& title, const std::wstring& detail, bool trophy = true, const char* badgeUrl = nullptr) {
+    if (s != nullptr) s->notices.push_back({heading, title, detail, trophy, FetchPicture(badgeUrl)});
 }
 
 std::string Clean(const char* text) {
@@ -232,6 +288,12 @@ void Worker(State* state) {
             state->requests.pop_front();
             state->busy = true;
         }
+        if (request.own) {
+            request.own(Ranga::HttpRequest("GET", request.url, "", "", state->userAgent, 15000));
+            std::lock_guard guard(state->lock);
+            state->busy = false;
+            continue;
+        }
         Reply reply;
         reply.result = Ranga::HttpRequest(request.post.empty() ? "GET" : "POST", request.url, request.post, request.post.empty() ? "" : request.type, state->userAgent, 30000);
         reply.callback = request.callback;
@@ -248,7 +310,7 @@ void RC_CCONV Event(const rc_client_event_t* event, rc_client_t*) {
     switch (event->type) {
         case RC_CLIENT_EVENT_ACHIEVEMENT_TRIGGERED: {
             const rc_client_achievement_t* a = event->achievement;
-            Notify(L"Conquista desbloqueada  ·  " + std::to_wstring(a->points) + L" pontos", Wide(a->title), Wide(a->description));
+            Notify(L"Conquista desbloqueada  ·  " + std::to_wstring(a->points) + L" pontos", Wide(a->title), Wide(a->description), true, a->badge_url);
             Log("[conquistas] desbloqueada: %s (%u)\n", a->title, a->id);
             WriteList();
             break;
@@ -290,7 +352,7 @@ void RC_CCONV GameLoaded(int result, const char* error, rc_client_t* client, voi
         Notify(L"RetroAchievements  ·  modo normal", Wide(game != nullptr ? game->title : ""),
                std::to_wstring(summary.num_unlocked_achievements) + L" de " + std::to_wstring(summary.num_core_achievements) + L" conquistas  ·  " +
                    std::to_wstring(summary.points_unlocked) + L" de " + std::to_wstring(summary.points_core) + L" pontos",
-               false);
+               false, game != nullptr ? game->badge_url : nullptr);
     }
     Log("[conquistas] %s: %u de %u conquistas\n", game != nullptr ? game->title : "?", summary.num_unlocked_achievements, summary.num_core_achievements);
     WriteList();
@@ -317,10 +379,24 @@ void PaintPopup(HWND window) {
     HBRUSH background = CreateSolidBrush(RGB(0x17, 0x18, 0x1c));
     FillRect(dc, &client, background);
     DeleteObject(background);
+    const std::shared_ptr<Picture> picture = s->current.picture;
+    s->paintedPicture = picture != nullptr && picture->ready;
+    if (s->paintedPicture) {
+        BITMAPINFO info{};
+        info.bmiHeader.biSize = sizeof(info.bmiHeader);
+        info.bmiHeader.biWidth = picture->width;
+        info.bmiHeader.biHeight = -picture->height;
+        info.bmiHeader.biPlanes = 1;
+        info.bmiHeader.biBitCount = 32;
+        info.bmiHeader.biCompression = BI_RGB;
+        SetStretchBltMode(dc, HALFTONE);
+        SetBrushOrgEx(dc, 0, 0, nullptr);
+        StretchDIBits(dc, pad, pad, medal, medal, 0, 0, picture->width, picture->height, picture->bgra.data(), &info, DIB_RGB_COLORS, SRCCOPY);
+    }
     HBRUSH edge = CreateSolidBrush(s->current.trophy ? RGB(0xf5, 0xa5, 0x24) : RGB(0x3e, 0x8e, 0xd0));
     HGDIOBJ oldBrush = SelectObject(dc, edge);
     HGDIOBJ oldPen = SelectObject(dc, GetStockObject(NULL_PEN));
-    RoundRect(dc, pad, pad, pad + medal, pad + medal, medal / 3, medal / 3);
+    if (!s->paintedPicture) RoundRect(dc, pad, pad, pad + medal, pad + medal, medal / 3, medal / 3);
     // A star in the square.
     POINT star[10];
     const double cx = pad + medal / 2.0, cy = pad + medal * 0.53;
@@ -329,7 +405,7 @@ void PaintPopup(HWND window) {
         star[i] = {static_cast<LONG>(cx + std::cos(angle) * radius), static_cast<LONG>(cy + std::sin(angle) * radius)};
     }
     SelectObject(dc, GetStockObject(WHITE_BRUSH));
-    Polygon(dc, star, 10);
+    if (!s->paintedPicture) Polygon(dc, star, 10);
     SelectObject(dc, oldPen);
     SelectObject(dc, oldBrush);
     DeleteObject(edge);
@@ -375,7 +451,10 @@ LRESULT CALLBACK PopupProc(HWND window, UINT message, WPARAM wParam, LPARAM lPar
 void ShowNotices() {
     if (s->setup.window == nullptr) return;
     const ULONGLONG now = GetTickCount64();
-    if (s->shownUntil != 0 && now < s->shownUntil) return;
+    if (s->shownUntil != 0 && now < s->shownUntil) {
+        if (s->popup != nullptr && !s->paintedPicture && s->current.picture != nullptr && s->current.picture->ready) InvalidateRect(s->popup, nullptr, TRUE);
+        return;
+    }
     if (s->notices.empty()) {
         if (s->shownUntil != 0 && s->popup != nullptr) ShowWindow(s->popup, SW_HIDE);
         s->shownUntil = 0;
@@ -432,7 +511,9 @@ void Start(const Setup& setup) {
     if (console == 0 || s != nullptr) return;
     const std::string profile = ReadWhole(setup.programFolder + L"\\perfil\\perfil.txt");
     const std::string user = ProfileValue(profile, "ra_usuario"), token = ProfileValue(profile, "ra_token");
-    if (user.empty() || token.empty()) return;
+    // RANGA_RETRO_TEST_CONQUISTA=<badge url> (tests): shows one made-up unlock with that badge, signed in or not.
+    const char* test = std::getenv("RANGA_RETRO_TEST_CONQUISTA");
+    if ((user.empty() || token.empty()) && test == nullptr) return;
     s = new State;
     s->setup = setup;
     s->console = console;
@@ -447,7 +528,15 @@ void Start(const Setup& setup) {
     rc_client_enable_logging(s->client, RC_CLIENT_LOG_LEVEL_WARN, ClientLog);
     rc_client_set_event_handler(s->client, Event);
     rc_client_set_hardcore_enabled(s->client, 0);
+    // .chd discs too (PS1, PS2, PSP, Saturn, Sega CD, Dreamcast, PC Engine CD), through libchdr.
+    static rc_hash_callbacks_t hashCallbacks{};
+    ChdCdReader(hashCallbacks.cdreader);
+    rc_client_set_hash_callbacks(s->client, &hashCallbacks);
     s->worker = std::thread(Worker, s);
+    if (test != nullptr) {
+        Notify(L"Conquista desbloqueada  ·  10 pontos", L"Teste da insígnia", L"Aviso de teste do Ranga, com a imagem baixada do RetroAchievements.", true, test);
+        if (user.empty() || token.empty()) return;
+    }
     Log("[conquistas] entrando como %s (console %u)\n", user.c_str(), console);
     rc_client_begin_login_with_token(s->client, user.c_str(), token.c_str(), LoggedIn, nullptr);
 }

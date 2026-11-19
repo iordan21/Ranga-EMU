@@ -659,6 +659,7 @@ struct Client {
     std::array<char, 128> onlineAddress{}, onlineName{};
     bool onlineOn = false;
     int onlineDelay = 4;
+    bool onlineDelayAuto = true;
     // The servers beside the Switch's rooms (Rooms.hpp Extra), by kind: the port typed, whether it runs, why not.
     std::array<char, 8> serverPort[2]{};
     bool serverRunning[2] = {};
@@ -911,7 +912,9 @@ struct Client {
         if (name.empty()) name = Utf8(RememberedSwitch(L"jogador"));
         fill(onlineAddress, "ranga_online_endereco", Utf8(RememberedOnline(L"online_endereco")));
         fill(onlineName, "ranga_online_nome", name);
-        const int delay = std::atoi(ReadCoreOption(game, "ranga_online_atraso").c_str());
+        const std::string delayText = ReadCoreOption(game, "ranga_online_atraso");
+        const int delay = std::atoi(delayText.c_str());
+        onlineDelayAuto = delayText.empty() || delayText == "auto";
         onlineDelay = delay >= 2 && delay <= 8 ? delay : 4;
         LoadServerPorts();
     }
@@ -952,6 +955,7 @@ struct Client {
             options = LoadOptions(*game);
             addons = LoadAddons(*game);
             dlss5Kit = InspectDlss5(library.Root());
+            gameVideo = ReadBytes(game->workspace + L"\\video.txt");
             if (game->system == L"SWITCH") {
                 const std::string mode = ReadCoreOption(*game, "eden_sala");
                 roomMode = mode == "entrar" ? 1 : mode == "criar" ? 2 : 0;
@@ -2301,10 +2305,12 @@ struct Client {
             if (running) ImGui::TextDisabled("Feche o jogo para mudar a sala.");
             RoomsSection(game, label, labelWidth, scale);
         }
-        ImGui::Dummy(ImVec2(0, 6 * scale));
-        ImGui::Separator();
-        ImGui::Dummy(ImVec2(0, 2 * scale));
-        Dlss5Section(game);
+        if (ShowsDlss5(game)) {
+            ImGui::Dummy(ImVec2(0, 6 * scale));
+            ImGui::Separator();
+            ImGui::Dummy(ImVec2(0, 2 * scale));
+            Dlss5Section(game);
+        }
         ImGui::Dummy(ImVec2(0, 6 * scale));
         ImGui::Separator();
         ImGui::Dummy(ImVec2(0, 2 * scale));
@@ -2357,10 +2363,28 @@ struct Client {
         }
     }
 
+    // What the chosen game drew with the last time it ran in Ranga Retro (video.txt): vulkan, opengl, d3d11 or proprio.
+    std::string gameVideo;
+
+    // Consoles whose cores draw in software (Direct3D 11 in Ranga Retro): DLSS 5, a Vulkan layer, never reaches them.
+    static bool SoftwareConsole(const std::wstring& system) {
+        static const wchar_t* consoles[] = {L"NES", L"SNES", L"MD", L"SMS", L"SEGACD", L"PCE", L"A2600", L"ARCADE", L"GB", L"GBA"};
+        for (const wchar_t* id : consoles) if (system == id) return true;
+        return false;
+    }
+
+    // Whether the DLSS 5 part shows for this game at all: not for a 2D console in Ranga Retro, unless it was left on.
+    bool ShowsDlss5(const Game& game) {
+        return options.dlss5 || !External(game) || !EngineFor(game.system).native || !SoftwareConsole(game.system);
+    }
+
     void Dlss5Section(const Game& game) {
         // Its files go in and out when the game starts, so the switch only changes while the game is closed.
         const bool running = runner.Busy() && runner.TitleId() == game.titleId;
-        ImGui::BeginDisabled(running);
+        // In Ranga Retro the layer only takes hold of a game drawing with Vulkan; what it drew with last time says.
+        const bool native = External(game) && EngineFor(game.system).native;
+        const bool notVulkan = native && !gameVideo.empty() && gameVideo != "vulkan";
+        ImGui::BeginDisabled(running || (notVulkan && !options.dlss5));
         if (ImGui::Checkbox("DLSS 5 (experimental)", &options.dlss5)) {
             dlss5Kit = InspectDlss5(library.Root());
             Save();
@@ -2369,6 +2393,11 @@ struct Client {
         ImGui::SameLine();
         if (running) {
             ImGui::TextDisabled("Feche o jogo para ligar ou desligar.");
+        } else if (notVulkan) {
+            ImGui::PushStyleColor(ImGuiCol_Text, Color(options.dlss5 ? kAmber : kDim));
+            ImGui::TextWrapped("Este jogo desenha com %s no Ranga: o DLSS 5 só pega em jogos que desenham com Vulkan.",
+                               gameVideo == "opengl" ? "OpenGL" : gameVideo == "d3d11" ? "Direct3D" : "a própria janela do emulador");
+            ImGui::PopStyleColor();
         } else if (dlss5Kit.ready) {
             ImGui::PushStyleColor(ImGuiCol_Text, Color(kGreen));
             ImGui::TextUnformatted(options.dlss5 ? "ligado, arquivos prontos" : "arquivos prontos");
@@ -2380,7 +2409,8 @@ struct Client {
         }
         ImGui::PushTextWrapPos(0);
         ImGui::TextDisabled("Como o DLSS 5 Swapper faz com emuladores: ReShade + DLSS5-Feeder + um add-on neural, com os arquivos que você colocar na pasta do DLSS 5. O Ranga não baixa nenhum deles. Só placa RTX 50, e pesa: o FPS pode cair perto da metade.");
-        if (External(game)) ImGui::TextDisabled("Em outro emulador, só pega se ele estiver desenhando com Vulkan (escolha Vulkan nas configurações de vídeo dele).");
+        if (native && gameVideo.empty()) ImGui::TextDisabled("Abra o jogo uma vez: o Ranga anota se ele desenha com Vulkan, o único jeito que o DLSS 5 pega.");
+        else if (External(game) && !native) ImGui::TextDisabled("Em outro emulador, só pega se ele estiver desenhando com Vulkan (escolha Vulkan nas configurações de vídeo dele).");
         ImGui::PopTextWrapPos();
         if (ImGui::Button("Abrir pasta do DLSS 5")) {
             CreateDlss5Folder(library.Root());
@@ -2456,7 +2486,18 @@ struct Client {
             field("Endereço da sala", "##onlineAddress", onlineAddress, "ranga_online_endereco", L"online_endereco");
             field("Seu nome", "##onlineName", onlineName, "ranga_online_nome", L"online_nome");
             label("Atraso");
-            if (ImGui::SliderInt("##onlineDelay", &onlineDelay, 2, 8, "%d quadros")) WriteCoreOption(game, "ranga_online_atraso", std::to_string(onlineDelay));
+            if (ImGui::Checkbox("Automático##onlineDelayAuto", &onlineDelayAuto))
+                WriteCoreOption(game, "ranga_online_atraso", onlineDelayAuto ? "auto" : std::to_string(onlineDelay));
+            if (!onlineDelayAuto) {
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(220 * scale);
+                if (ImGui::SliderInt("##onlineDelay", &onlineDelay, 2, 8, "%d quadros")) WriteCoreOption(game, "ranga_online_atraso", std::to_string(onlineDelay));
+            }
+            ImGui::SetCursorPosX(labelWidth);
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextDisabled(onlineDelayAuto ? "Quem hospeda mede o ping de cada amigo e ajusta o atraso sozinho durante o jogo (vale o de quem hospeda)."
+                                                : "Vale o atraso de quem hospeda: menos é mais rápido, mais aguenta conexão ruim sem engasgar.");
+            ImGui::PopTextWrapPos();
             if (onlineAddress[0] == 0) {
                 ImGui::SetCursorPosX(labelWidth);
                 ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
