@@ -109,3 +109,6 @@ cookies.txt
 
 .env
 .env.local
+
+# Endereços do PC que hospeda (ver launcher/Enderecos.hpp)
+launcher/Enderecos.local.hpp

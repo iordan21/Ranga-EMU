@@ -1,5 +1,6 @@
 #include "Update.hpp"
 #include "Common.hpp"
+#include "Enderecos.hpp"
 
 #include <windows.h>
 #include <bcrypt.h>
@@ -18,7 +19,7 @@ namespace {
 constexpr const char* kPublicKey =
     "45435331200000006ef08f65b2c637d064250a6666e58a8434dc4370fc88748aa8fbdd0361a7ecf9a8bc7a04cf2e32f94214255c5dca20f2"
     "babfe9abaa7b8db9d7c4bc9d8552409e";
-constexpr const wchar_t* kDefaultSource = L"";
+constexpr const wchar_t* kDefaultSource = RANGA_FONTE_ATUALIZACAO;
 
 std::wstring Ini(const std::wstring& root) { return root + L"\\engines.ini"; }
 std::wstring Published(const std::wstring& root) { return root + L"\\salas\\atualizacao"; }
@@ -262,6 +263,10 @@ UpdateInfo CheckUpdate(const std::wstring& root) {
     UpdateInfo info;
     const std::wstring source = UpdateSource(root);
     std::string manifest, signature;
+    if (source.empty()) {
+        info.error = L"Nenhum endereço de atualização (engines.ini [Ranga] atualizacao).";
+        return info;
+    }
     if (HttpGet(source, L"/ranga/manifest", &manifest, L"", nullptr) != 200 || HttpGet(source, L"/ranga/manifest.sig", &signature, L"", nullptr) != 200) {
         info.error = L"O PC que hospeda não respondeu (desligado?).";
         return info;

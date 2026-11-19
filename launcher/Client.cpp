@@ -1,6 +1,7 @@
 // Ranga Emu client: a library of games of every console on the left, the chosen game on the right, with Play and its
 // options, cheats and logs, and an Emulators page where each console other than PS5 gets the emulator that runs it.
 #include "Common.hpp"
+#include "Enderecos.hpp"
 #include "Covers.hpp"
 #include "Dlss5.hpp"
 #include "Library.hpp"
@@ -996,7 +997,7 @@ struct Client {
     // What was last typed for a Switch game (the player's name, the room), kept beside the emulators' choices so the
     // next game starts with it.
     // The hosting PC's Switch room through its playit tunnel (UDP), for anyone joining the private room.
-    static constexpr const char* kPrivateSwitchRoom = "";
+    static constexpr const char* kPrivateSwitchRoom = RANGA_SALA_SWITCH_PRIVADA;
 
     void RefreshLobby(bool force) {
         if (lobbyBusy) return;
