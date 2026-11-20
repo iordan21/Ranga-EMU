@@ -3554,7 +3554,7 @@ struct Client {
         ImGui::PushFont(semibold, 28);
         ImGui::TextUnformatted("Emuladores");
         ImGui::PopFont();
-        ImGui::TextDisabled("Jogos de PS5 rodam no Ranga e o Bloodborne, como experimento, no port nativo; outros jogos de PS4 não rodam. Cada outro console roda no emulador que você escolher aqui. O Ranga não baixa nenhum: baixe do site oficial, extraia onde quiser e aponte o .exe. BIOS, firmware e chaves vêm do seu próprio console.");
+        ImGui::TextDisabled("Cada console roda no emulador que você escolher aqui. O Ranga não baixa nenhum: baixe do site oficial, extraia onde quiser e aponte o .exe. BIOS, firmware e chaves vêm do seu próprio console.");
         ImGui::Dummy(ImVec2(0, 6 * scale));
         // The page opens with the focus on Voltar, so the gamepad has a place to move from.
         if (focusEngines) {
