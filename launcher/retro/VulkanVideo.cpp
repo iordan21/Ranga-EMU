@@ -75,7 +75,10 @@ struct Context {
     VkDeviceMemory probeMemory = VK_NULL_HANDLE;
     const uint8_t* probePixel = nullptr;
     bool loggedImage = false;
+    int statsSets = 0, statsChanges = 0;
+    std::string shotPath;
 } c;
+constexpr VkDeviceSize kShotBytes = 3840ull * 2160ull * 4ull;
 
 template <typename T> bool LoadInstance(T& function, const char* name) {
     function = reinterpret_cast<T>(c.getInstanceProcAddr(c.instance, name));
@@ -95,7 +98,10 @@ void RETRO_CALLCONV SetImage(void*, const retro_vulkan_image* image, uint32_t co
         c.loggedImage = true;
         c.log("[retro] Vulkan: primeira imagem do core, formato %d, layout %d, fila %u\n", static_cast<int>(image->create_info.format), static_cast<int>(image->image_layout), family);
     }
-    c.coreImage = image != nullptr ? image->create_info.image : VK_NULL_HANDLE;
+    ++c.statsSets;
+    const VkImage next = image != nullptr ? image->create_info.image : VK_NULL_HANDLE;
+    if (next != c.coreImage) ++c.statsChanges;
+    c.coreImage = next;
     c.coreLayout = image != nullptr ? image->image_layout : VK_IMAGE_LAYOUT_GENERAL;
     c.coreFamily = family;
     c.coreWaits.assign(semaphores, semaphores + count);
@@ -310,8 +316,12 @@ bool Create(HWND window, const retro_hw_render_context_negotiation_interface_vul
         vkCreateSemaphore(c.device, &semaphoreInfo, nullptr, &c.acquired[i]);
     }
     c.probe = std::getenv("RANGA_RETRO_PROBE") != nullptr;
+    // RANGA_RETRO_SHOT=<file.bmp> (with the probe): the whole presented image is written there every two seconds, so an
+    // unattended test sees the game without photographing the screen.
+    if (const char* shot = std::getenv("RANGA_RETRO_SHOT"); c.probe && shot != nullptr) c.shotPath = shot;
     if (c.probe) {
-        VkBufferCreateInfo bufferInfo{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, nullptr, 0, 4, VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_SHARING_MODE_EXCLUSIVE};
+        const VkDeviceSize probeBytes = c.shotPath.empty() ? 4 : kShotBytes;
+        VkBufferCreateInfo bufferInfo{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, nullptr, 0, probeBytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_SHARING_MODE_EXCLUSIVE};
         vkCreateBuffer(c.device, &bufferInfo, nullptr, &c.probeBuffer);
         VkMemoryRequirements needs{};
         vkGetBufferMemoryRequirements(c.device, c.probeBuffer, &needs);
@@ -326,7 +336,7 @@ bool Create(HWND window, const retro_hw_render_context_negotiation_interface_vul
         vkAllocateMemory(c.device, &allocateInfo, nullptr, &c.probeMemory);
         vkBindBufferMemory(c.device, c.probeBuffer, c.probeMemory, 0);
         void* mapped = nullptr;
-        vkMapMemory(c.device, c.probeMemory, 0, 4, 0, &mapped);
+        vkMapMemory(c.device, c.probeMemory, 0, probeBytes, 0, &mapped);
         c.probePixel = static_cast<const uint8_t*>(mapped);
     }
     if (!CreateSwapchain()) c.needsRecreate = true;
@@ -363,6 +373,12 @@ void BeginFrame() {
 }
 
 void Resize() { c.needsRecreate = true; }
+
+void TakeStats(int& sets, int& changes) {
+    sets = c.statsSets;
+    changes = c.statsChanges;
+    c.statsSets = c.statsChanges = 0;
+}
 
 void Present(HWND, unsigned frameWidth, unsigned frameHeight, float aspect) {
     if (c.needsRecreate) {
@@ -416,13 +432,18 @@ void Present(HWND, unsigned frameWidth, unsigned frameHeight, float aspect) {
                 VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, to, from);
     }
     const bool probeNow = c.probe && c.probeBuffer != VK_NULL_HANDLE && GetTickCount64() - c.probeAt > 2000;
+    const bool shotNow = probeNow && !c.shotPath.empty() && VkDeviceSize(c.extent.width) * c.extent.height * 4 <= kShotBytes;
     if (probeNow) {
         Barrier(cmd, target, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
                 VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
         VkBufferImageCopy copy{};
         copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-        copy.imageOffset = {static_cast<int32_t>(c.extent.width / 2), static_cast<int32_t>(c.extent.height / 2), 0};
-        copy.imageExtent = {1, 1, 1};
+        if (shotNow) {
+            copy.imageExtent = {c.extent.width, c.extent.height, 1};
+        } else {
+            copy.imageOffset = {static_cast<int32_t>(c.extent.width / 2), static_cast<int32_t>(c.extent.height / 2), 0};
+            copy.imageExtent = {1, 1, 1};
+        }
         vkCmdCopyImageToBuffer(cmd, target, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, c.probeBuffer, 1, &copy);
         Barrier(cmd, target, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_TRANSFER_READ_BIT, 0,
                 VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
@@ -465,7 +486,23 @@ void Present(HWND, unsigned frameWidth, unsigned frameHeight, float aspect) {
     if (probeNow) {
         vkWaitForFences(c.device, 1, &c.fences[c.index], VK_TRUE, UINT64_MAX);
         c.probeAt = GetTickCount64();
-        c.log("[retro] sonda Vulkan: quadro %ux%u, centro da janela %u,%u,%u\n", frameWidth, frameHeight, c.probePixel[2], c.probePixel[1], c.probePixel[0]);
+        const uint8_t* center = shotNow ? c.probePixel + (size_t(c.extent.height / 2) * c.extent.width + c.extent.width / 2) * 4 : c.probePixel;
+        c.log("[retro] sonda Vulkan: quadro %ux%u, centro da janela %u,%u,%u\n", frameWidth, frameHeight, center[2], center[1], center[0]);
+        if (shotNow) {
+            // A top-down 32-bit BMP: the swapchain is B8G8R8A8, which is BMP's own order.
+            const uint32_t w = c.extent.width, h = c.extent.height, bytes = w * h * 4;
+            BITMAPFILEHEADER file{0x4D42, static_cast<DWORD>(sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + bytes), 0, 0,
+                                  sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER)};
+            BITMAPINFOHEADER info{sizeof(BITMAPINFOHEADER), static_cast<LONG>(w), -static_cast<LONG>(h), 1, 32, BI_RGB, bytes};
+            const std::string temp = c.shotPath + ".tmp";
+            if (FILE* out = std::fopen(temp.c_str(), "wb")) {
+                std::fwrite(&file, sizeof(file), 1, out);
+                std::fwrite(&info, sizeof(info), 1, out);
+                std::fwrite(c.probePixel, 1, bytes, out);
+                std::fclose(out);
+                MoveFileExA(temp.c_str(), c.shotPath.c_str(), MOVEFILE_REPLACE_EXISTING);
+            }
+        }
     }
     // Semaphores and command buffers are used once; the image stays for a duplicated frame.
     c.coreWaits.clear();

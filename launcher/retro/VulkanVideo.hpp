@@ -26,6 +26,8 @@ void BeginFrame();
 // After retro_run: shows the image the core set, frameWidth x frameHeight of it, with the aspect ratio.
 void Present(HWND window, unsigned frameWidth, unsigned frameHeight, float aspect);
 void Resize();
+// RANGA_RETRO_STATS: images the core set since the last call, and how many of them were a different image.
+void TakeStats(int& sets, int& changes);
 void Destroy(const retro_hw_render_context_negotiation_interface_vulkan* negotiation);
 
 }

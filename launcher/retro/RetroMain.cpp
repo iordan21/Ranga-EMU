@@ -539,6 +539,9 @@ bool RETRO_CALLCONV Environment(unsigned command, void* data) {
             // A key the core never listed but the game's options file has (Ranga's own, for the core's online rooms).
             else if (const auto extra = g.overrides.find(key); extra != g.overrides.end()) value = &extra->second;
             variable->value = value != nullptr ? value->c_str() : nullptr;
+            // RANGA_RETRO_DEBUG=1: each option the core asks for, once, with the answer.
+            if (static std::set<std::string> asked; std::getenv("RANGA_RETRO_DEBUG") != nullptr && asked.insert(key).second)
+                Log("[retro] o core perguntou %s: %s\n", key.c_str(), value != nullptr ? value->c_str() : "(nada)");
             return value != nullptr;
         }
         case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE:
@@ -632,9 +635,16 @@ bool RETRO_CALLCONV Environment(unsigned command, void* data) {
 uint32_t Expand5(uint32_t value) { return (value << 3) | (value >> 2); }
 uint32_t Expand6(uint32_t value) { return (value << 2) | (value >> 4); }
 
+// RANGA_RETRO_STATS: frames the core handed over and frames it repeated, since the last stats line.
+int g_statsFrames = 0, g_statsDupes = 0;
+
 void RETRO_CALLCONV VideoRefresh(const void* data, unsigned width, unsigned height, size_t pitch) {
     // A null frame repeats the previous one (GET_CAN_DUPE).
-    if (data == nullptr || width == 0 || height == 0) return;
+    if (data == nullptr || width == 0 || height == 0) {
+        ++g_statsDupes;
+        return;
+    }
+    ++g_statsFrames;
     // A GPU frame is already in the framebuffer; only its size is news.
     if (data == RETRO_HW_FRAME_BUFFER_VALID) {
         g_hwFrameWidth = width;
@@ -1064,6 +1074,25 @@ public:
             glReadPixels(client.right / 2, client.bottom / 2, 1, 1, gl::kRgba, gl::kUnsignedByte, shown);
             Log("[retro] sonda: quadro %ux%u, centro do core %u,%u,%u, mais claro %u, centro da janela %u,%u,%u\n", frameWidth, frameHeight,
                 core[0], core[1], core[2], bright, shown[0], shown[1], shown[2]);
+            // RANGA_RETRO_SHOT=<file.bmp>: the whole window too, as the Vulkan path does.
+            if (const char* shot = std::getenv("RANGA_RETRO_SHOT"); shot != nullptr && client.right > 0 && client.bottom > 0) {
+                const uint32_t w = static_cast<uint32_t>(client.right), h = static_cast<uint32_t>(client.bottom), bytes = w * h * 4;
+                std::vector<unsigned char> pixels(bytes);
+                glReadPixels(0, 0, static_cast<int>(w), static_cast<int>(h), gl::kRgba, gl::kUnsignedByte, pixels.data());
+                for (size_t i = 0; i < pixels.size(); i += 4) std::swap(pixels[i], pixels[i + 2]);
+                // OpenGL's rows go bottom up, which is a BMP's own order with a positive height.
+                BITMAPFILEHEADER file{0x4D42, static_cast<DWORD>(sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + bytes), 0, 0,
+                                      sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER)};
+                BITMAPINFOHEADER info{sizeof(BITMAPINFOHEADER), static_cast<LONG>(w), static_cast<LONG>(h), 1, 32, BI_RGB, bytes};
+                const std::string temp = std::string(shot) + ".tmp";
+                if (FILE* out = std::fopen(temp.c_str(), "wb")) {
+                    std::fwrite(&file, sizeof(file), 1, out);
+                    std::fwrite(&info, sizeof(info), 1, out);
+                    std::fwrite(pixels.data(), 1, bytes, out);
+                    std::fclose(out);
+                    MoveFileExA(temp.c_str(), shot, MOVEFILE_REPLACE_EXISTING);
+                }
+            }
         }
         SwapBuffers(dc);
     }
@@ -1153,6 +1182,32 @@ HWND CreateGameWindow(const std::wstring& title) {
     const BOOL dark = TRUE;
     DwmSetWindowAttribute(window, 20, &dark, sizeof(dark));
     return window;
+}
+
+#ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
+#define CREATE_WAITABLE_TIMER_HIGH_RESOLUTION 0x00000002
+#endif
+
+// Waits until 1/rate after the last call's deadline: a high-resolution timer for most of it (Sleep can oversleep by
+// 15 ms, which chopped the sound), a short spin for the last millisecond. Far behind (a load, a stall), it starts over
+// from now instead of rushing to catch up.
+void PaceTo(double rate) {
+    using Clock = std::chrono::steady_clock;
+    static Clock::time_point due = Clock::now();
+    static HANDLE timer = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+    due += std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(1.0 / rate));
+    const Clock::time_point now = Clock::now();
+    if (due < now - std::chrono::milliseconds(20)) {
+        due = now;
+        return;
+    }
+    const auto left = due - now;
+    if (timer != nullptr && left > std::chrono::milliseconds(2)) {
+        LARGE_INTEGER when;
+        when.QuadPart = -static_cast<LONGLONG>(std::chrono::duration_cast<std::chrono::nanoseconds>(left - std::chrono::milliseconds(1)).count() / 100);
+        if (SetWaitableTimer(timer, &when, 0, nullptr, nullptr, FALSE)) WaitForSingleObject(timer, INFINITE);
+    }
+    while (Clock::now() < due) YieldProcessor();
 }
 
 double DisplayRefresh() {
@@ -2207,6 +2262,10 @@ void ApplyCoreDefaults(const std::wstring& corePath, const std::wstring& systemD
     if (name.rfind(L"mupen64plus_next", 0) == 0) g.overrides["mupen64plus-rdp-plugin"] = g_preferVulkan ? "parallel" : "gliden64";
     // Cemu starts in OpenGL; with Vulkan it shares Ranga's device. xemu hands over a finished picture either way.
     if (name.rfind(L"cemu", 0) == 0) g.overrides["cemu_gpu_api"] = g_preferVulkan ? "Vulkan" : "OpenGL";
+    // PCSX2 draws with OpenGL: with its Vulkan renderer Medal of Honor: Vanguard froze for good in the plane before the
+    // first jump (picture still, sound going) at any resolution, MTVU on or off; OpenGL and the software renderer play
+    // through it (unattended test, 20/11/2026). A game's options file can still ask for Vulkan.
+    if (name.rfind(L"pcsx2", 0) == 0) g.overrides["pcsx2_renderer"] = "OpenGL";
 }
 
 void ReadOptionsFile(const std::wstring& path) {
@@ -2625,6 +2684,11 @@ int RetroMain(int argc, wchar_t** argv) {
             if (GetTickCount64() - statsAt > 5000) {
                 Log("[retro] som: pico %d, fila %u bytes; %d voltas, %d quadros do core: %.1f ms no core e %.1f ms na tela por volta\n",
                     peak, audio.Queued(), loops, runs, loops > 0 ? runSeconds * 1000 / loops : 0.0, loops > 0 ? presentSeconds * 1000 / loops : 0.0);
+                int sets = 0, changes = 0;
+                RetroVulkan::TakeStats(sets, changes);
+                Log("[retro] imagem: %d quadros novos e %d repetidos do core, %d imagens entregues (%d trocas de imagem), %ux%u\n",
+                    g_statsFrames, g_statsDupes, sets, changes, g_hwFrameWidth, g_hwFrameHeight);
+                g_statsFrames = g_statsDupes = 0;
                 peak = loops = runs = 0;
                 runSeconds = presentSeconds = 0;
                 statsAt = GetTickCount64();
@@ -2651,10 +2715,34 @@ int RetroMain(int argc, wchar_t** argv) {
             if (g.frameNew) {
                 video.Upload(g.frame, g.frameWidth, g.frameHeight);
                 g.frameNew = false;
+                // RANGA_RETRO_SHOT=<file.bmp>: the core's frame written there every two seconds (the Vulkan path does
+                // the same with the probe), so an unattended test sees the game.
+                static const char* shot = std::getenv("RANGA_RETRO_SHOT");
+                static ULONGLONG shotAt = 0;
+                if (shot != nullptr && GetTickCount64() - shotAt > 2000) {
+                    shotAt = GetTickCount64();
+                    const uint32_t w = g.frameWidth, h = g.frameHeight, bytes = w * h * 4;
+                    BITMAPFILEHEADER file{0x4D42, static_cast<DWORD>(sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + bytes), 0, 0,
+                                          sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER)};
+                    BITMAPINFOHEADER info{sizeof(BITMAPINFOHEADER), static_cast<LONG>(w), -static_cast<LONG>(h), 1, 32, BI_RGB, bytes};
+                    const std::string temp = std::string(shot) + ".tmp";
+                    if (FILE* out = std::fopen(temp.c_str(), "wb")) {
+                        std::fwrite(&file, sizeof(file), 1, out);
+                        std::fwrite(&info, sizeof(info), 1, out);
+                        std::fwrite(g.frame.data(), 1, bytes, out);
+                        std::fclose(out);
+                        MoveFileExA(temp.c_str(), shot, MOVEFILE_REPLACE_EXISTING);
+                    }
+                }
             }
             video.Draw(aspect, true);
         }
         if (stats) presentSeconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - presentFrom).count();
+        // Locked to the screen, the swapchain's V-Sync is meant to hold one core frame per refresh. On a PC where it does
+        // not wait (V-Sync forced off by the driver), a core that waits on the GPU kept the pace by itself, until a PS2
+        // game's mission drew at 30 FPS: the frames with nothing new came back at once and the game ran at twice its
+        // speed, the sound piling up. The clock holds the loop to the screen's rate; with V-Sync working it is already met.
+        if (locked && !g_coreDraws && frames > 0) PaceTo(refresh);
 
         const ULONGLONG tick = GetTickCount64();
         if (tick - lastSave > 10000) {
