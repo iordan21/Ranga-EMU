@@ -280,7 +280,7 @@ void ApplyTheme(float scale) {
 // Pad, Handheld, Cartridge, Disc and Arcade are kinds; the rest are one console's own shape (still no logos): Slab a
 // flat ribbed box (PS2), Arch a box with a round top (PS3), Tablet a pad with a screen (Wii U), Remote a slim upright
 // remote (Wii), Cube a cube with a handle (GameCube), Chest a big box with a round gem on top (Xbox).
-enum class Glyph { Pad, Handheld, Cartridge, Disc, Arcade, Slab, Arch, Tablet, Remote, Cube, Chest };
+enum class Glyph { Pad, Handheld, Cartridge, Disc, Arcade, Slab, Arch, Tablet, Remote, Cube, Chest, Hybrid, Wide, Clam };
 
 struct Look {
     const wchar_t* id;
@@ -295,11 +295,11 @@ struct Look {
 constexpr Look kLooks[] = {
     {L"PS5", "PS5", 0x3a7bf0, 0x0b1d4a, Glyph::Pad, "Sony", 2020, 0x5b93ff}, {L"PS4", "PS4", 0x2459b8, 0x081633, Glyph::Pad, "Sony", 2013, 0x4f86e8},
     {L"PS3", "PS3", 0x4a4e57, 0x0c0d10, Glyph::Arch, "Sony", 2006, 0xc9cdd6}, {L"PS2", "PS2", 0x2b3f8f, 0x070b1f, Glyph::Slab, "Sony", 2000, 0x6e8cff},
-    {L"PS1", "PS1", 0x9097a3, 0x2a2c33, Glyph::Disc, "Sony", 1994, 0xc2c7d0}, {L"PSP", "PSP", 0x585c66, 0x111216, Glyph::Handheld, "Sony", 2004, 0xb0b5bf},
-    {L"SWITCH", "Switch", 0xe4002b, 0x4a0010, Glyph::Handheld, "Nintendo", 2017, 0xff4560}, {L"WIIU", "Wii U", 0x0aa6d6, 0x00303f, Glyph::Tablet, "Nintendo", 2012, 0x3cc6f2},
+    {L"PS1", "PS1", 0x9097a3, 0x2a2c33, Glyph::Disc, "Sony", 1994, 0xc2c7d0}, {L"PSP", "PSP", 0x585c66, 0x111216, Glyph::Wide, "Sony", 2004, 0xb0b5bf},
+    {L"SWITCH", "Switch", 0xe4002b, 0x4a0010, Glyph::Hybrid, "Nintendo", 2017, 0xff4560}, {L"WIIU", "Wii U", 0x0aa6d6, 0x00303f, Glyph::Tablet, "Nintendo", 2012, 0x3cc6f2},
     {L"WII", "Wii", 0xa9bfcf, 0x2e3a44, Glyph::Remote, "Nintendo", 2006, 0xdce8f2}, {L"GC", "GC", 0x7357c0, 0x1d1238, Glyph::Cube, "Nintendo", 2001, 0xa48cf0},
-    {L"3DS", "3DS", 0xd8303b, 0x3d070b, Glyph::Handheld, "Nintendo", 2011, 0xff5a64}, {L"NDS", "DS", 0x878a93, 0x24262b, Glyph::Handheld, "Nintendo", 2004, 0xc8ccd4},
-    {L"GBA", "GBA", 0x6550c8, 0x170f3d, Glyph::Handheld, "Nintendo", 2001, 0x9d88f0}, {L"GB", "GB", 0x93b31c, 0x1f3a0b, Glyph::Handheld, "Nintendo", 1989, 0xb2d43a},
+    {L"3DS", "3DS", 0xd8303b, 0x3d070b, Glyph::Clam, "Nintendo", 2011, 0xff5a64}, {L"NDS", "DS", 0x878a93, 0x24262b, Glyph::Clam, "Nintendo", 2004, 0xc8ccd4},
+    {L"GBA", "GBA", 0x6550c8, 0x170f3d, Glyph::Wide, "Nintendo", 2001, 0x9d88f0}, {L"GB", "GB", 0x93b31c, 0x1f3a0b, Glyph::Handheld, "Nintendo", 1989, 0xb2d43a},
     {L"N64", "N64", 0x24a05a, 0x06281a, Glyph::Cartridge, "Nintendo", 1996, 0x45cc80}, {L"SNES", "SNES", 0x7a6abd, 0x1e1838, Glyph::Cartridge, "Nintendo", 1990, 0xa99bea},
     {L"NES", "NES", 0xd21a38, 0x3b0610, Glyph::Cartridge, "Nintendo", 1983, 0xff5a6a}, {L"MD", "MD", 0x45474d, 0x0a0a0a, Glyph::Cartridge, "Sega", 1988, 0xd6d8de},
     {L"SMS", "SMS", 0xd03434, 0x2d0808, Glyph::Cartridge, "Sega", 1985, 0xff6464}, {L"SEGACD", "Sega CD", 0x3a4aa0, 0x0a0f2b, Glyph::Disc, "Sega", 1991, 0x7d8ef0},
@@ -460,6 +460,56 @@ void DrawGlyph(ImDrawList* draw, Glyph glyph, ImVec2 c, float s, ImU32 color, Im
             draw->AddCircleFilled(ImVec2(c.x, min.y), s * 0.16f, color, 40);
             draw->AddCircleFilled(ImVec2(c.x, min.y), s * 0.11f, shade, 40);
             draw->AddCircleFilled(ImVec2(c.x, min.y), s * 0.06f, color, 24);
+            break;
+        }
+        case Glyph::Hybrid: {
+            // The tablet with a Joy-Con on each side, a gap between them and the screen: stick and buttons on the
+            // left one, buttons and stick on the right.
+            const float half = s * 0.48f, tall = s * 0.21f, rail = s * 0.13f, gap = s * 0.025f;
+            draw->AddRectFilled(ImVec2(c.x - half, c.y - tall), ImVec2(c.x - half + rail, c.y + tall), color, s * 0.09f, ImDrawFlags_RoundCornersLeft);
+            draw->AddRectFilled(ImVec2(c.x + half - rail, c.y - tall), ImVec2(c.x + half, c.y + tall), color, s * 0.09f, ImDrawFlags_RoundCornersRight);
+            const ImVec2 body(c.x - half + rail + gap, c.y - tall), bodyEnd(c.x + half - rail - gap, c.y + tall);
+            draw->AddRectFilled(body, bodyEnd, color, s * 0.01f);
+            draw->AddRectFilled(ImVec2(body.x + s * 0.035f, body.y + s * 0.04f), ImVec2(bodyEnd.x - s * 0.035f, bodyEnd.y - s * 0.04f), shade, s * 0.01f);
+            const float lx = c.x - half + rail * 0.5f, rx = c.x + half - rail * 0.5f;
+            draw->AddCircleFilled(ImVec2(lx, c.y - tall * 0.45f), s * 0.035f, shade, 16);
+            draw->AddCircleFilled(ImVec2(rx, c.y + tall * 0.35f), s * 0.035f, shade, 16);
+            const float r = s * 0.016f, d = s * 0.032f;
+            for (const ImVec2 offset : {ImVec2(0, -d), ImVec2(0, d), ImVec2(-d, 0), ImVec2(d, 0)}) {
+                draw->AddCircleFilled(ImVec2(lx + offset.x, c.y + tall * 0.35f + offset.y), r, shade, 10);
+                draw->AddCircleFilled(ImVec2(rx + offset.x, c.y - tall * 0.45f + offset.y), r, shade, 10);
+            }
+            break;
+        }
+        case Glyph::Wide: {
+            // A handheld held sideways: the screen in the middle, the cross on the left, the buttons on the right.
+            const ImVec2 min(c.x - s * 0.47f, c.y - s * 0.2f), max(c.x + s * 0.47f, c.y + s * 0.2f);
+            draw->AddRectFilled(min, max, color, s * 0.18f);
+            draw->AddRectFilled(ImVec2(c.x - s * 0.22f, c.y - s * 0.14f), ImVec2(c.x + s * 0.22f, c.y + s * 0.12f), shade, s * 0.015f);
+            const float arm = s * 0.04f, length = s * 0.12f;
+            const ImVec2 dpad(min.x + s * 0.12f, c.y - s * 0.01f);
+            draw->AddRectFilled(ImVec2(dpad.x - length / 2, dpad.y - arm / 2), ImVec2(dpad.x + length / 2, dpad.y + arm / 2), shade, arm * 0.3f);
+            draw->AddRectFilled(ImVec2(dpad.x - arm / 2, dpad.y - length / 2), ImVec2(dpad.x + arm / 2, dpad.y + length / 2), shade, arm * 0.3f);
+            const ImVec2 face(max.x - s * 0.12f, c.y - s * 0.01f);
+            const float r = s * 0.022f, d = s * 0.042f;
+            for (const ImVec2 offset : {ImVec2(0, -d), ImVec2(0, d), ImVec2(-d, 0), ImVec2(d, 0)}) draw->AddCircleFilled(ImVec2(face.x + offset.x, face.y + offset.y), r, shade, 12);
+            break;
+        }
+        case Glyph::Clam: {
+            // Open, seen from the front: the top half with its screen, the hinge, the bottom half with the touch
+            // screen between the cross and the buttons.
+            const float w = s * 0.34f;
+            draw->AddRectFilled(ImVec2(c.x - w, c.y - s * 0.44f), ImVec2(c.x + w, c.y - s * 0.03f), color, s * 0.05f);
+            draw->AddRectFilled(ImVec2(c.x - w * 0.72f, c.y - s * 0.38f), ImVec2(c.x + w * 0.72f, c.y - s * 0.09f), shade, s * 0.01f);
+            draw->AddRectFilled(ImVec2(c.x - w, c.y + s * 0.01f), ImVec2(c.x + w, c.y + s * 0.44f), color, s * 0.05f);
+            draw->AddRectFilled(ImVec2(c.x - w * 0.45f, c.y + s * 0.07f), ImVec2(c.x + w * 0.45f, c.y + s * 0.34f), shade, s * 0.01f);
+            const float arm = s * 0.03f, length = s * 0.09f;
+            const ImVec2 dpad(c.x - w * 0.75f, c.y + s * 0.2f);
+            draw->AddRectFilled(ImVec2(dpad.x - length / 2, dpad.y - arm / 2), ImVec2(dpad.x + length / 2, dpad.y + arm / 2), shade, arm * 0.3f);
+            draw->AddRectFilled(ImVec2(dpad.x - arm / 2, dpad.y - length / 2), ImVec2(dpad.x + arm / 2, dpad.y + length / 2), shade, arm * 0.3f);
+            const ImVec2 face(c.x + w * 0.75f, c.y + s * 0.2f);
+            const float r = s * 0.017f, d = s * 0.032f;
+            for (const ImVec2 offset : {ImVec2(0, -d), ImVec2(0, d), ImVec2(-d, 0), ImVec2(d, 0)}) draw->AddCircleFilled(ImVec2(face.x + offset.x, face.y + offset.y), r, shade, 10);
             break;
         }
     }
@@ -785,6 +835,7 @@ struct Client {
     // Where the gamepad is on the home screen: 0 the row of consoles, 1 the buttons under it, 2 the console's games;
     // the column within the row, and how many games the last frame had room for.
     int homeRow = 0, homeColumn = 0, homeGamesShown = 0;
+    int recentFocus = 0; // the game in focus in Continuar jogando (homeRow 3)
     // The game page has just opened: the focus goes to Jogar.
     bool focusPlay = false, focusEngines = false;
     // Frames left in which ImGui's focus ring is kept showing (ShowRing).
@@ -2089,6 +2140,12 @@ struct Client {
         const float rounding = 10 * scale, width = max.x - min.x, height = max.y - min.y;
         const Texture& icon = Icon(game);
         if (icon.view == nullptr) {
+            // Too small for the title (Continuar jogando): only the console's outline, in its color.
+            if (width < 90 * scale) {
+                GradientRect(draw, min, max, look.top, look.bottom, rounding);
+                DrawGlyph(draw, look.glyph, ImVec2(min.x + width * 0.5f, min.y + height * 0.5f), width * 0.62f, Packed(0xffffff, 0.85f), Packed(look.bottom));
+                return;
+            }
             draw->AddRectFilled(min, max, Packed(kSurface), rounding);
             DrawGlyph(draw, look.glyph, ImVec2(min.x + width * 0.5f, min.y + height * 0.36f), width * 0.42f, Packed(0xffffff, 0.14f), Packed(kSurface, 0.0f));
             const std::string title = Utf8(game.title);
@@ -2129,6 +2186,85 @@ struct Client {
         draw->AddRect(ImVec2(min.x - grow, min.y - grow), ImVec2(max.x + grow, max.y + grow), Packed(0xffffff), rounding + grow, 0, 2 * scale);
     }
 
+    // The games last played, newest first, as indices into the library (at most count; the console's own menu and
+    // games no longer in the library left out).
+    std::vector<int> RecentGames(size_t count) {
+        std::vector<std::pair<int64_t, int>> played;
+        for (size_t i = 0; i < library.Games().size(); ++i) {
+            const auto found = profile.games.find(library.Games()[i].titleId);
+            if (found != profile.games.end() && found->second.last > 0) played.emplace_back(found->second.last, static_cast<int>(i));
+        }
+        std::sort(played.begin(), played.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+        std::vector<int> result;
+        for (const auto& [when, index] : played) {
+            if (result.size() == count) break;
+            result.push_back(index);
+        }
+        return result;
+    }
+
+    static float RecentPanelWidth(float scale) { return 300 * scale; }
+
+    // "agora há pouco", "há 3 h", "ontem", "há 5 dias": when a game was last played.
+    static std::string PlayedWhen(int64_t last) {
+        const int64_t ago = static_cast<int64_t>(std::time(nullptr)) - last;
+        if (ago < 3600) return "agora há pouco";
+        if (ago < 86400) return "há " + std::to_string(ago / 3600) + " h";
+        if (ago < 2 * 86400) return "ontem";
+        return "há " + std::to_string(ago / 86400) + " dias";
+    }
+
+    // Continuar jogando: the last games played, of any console, one card each with its art, name, console and when.
+    void RecentPanel(ImDrawList* draw, const std::vector<int>& recent, ImVec2 at, float scale) {
+        const float width = RecentPanelWidth(scale), card = 72 * scale, gap = 10 * scale, art = 56 * scale;
+        draw->AddText(semibold, 18 * scale, at, Packed(kText), "Continuar jogando");
+        float y = at.y + 32 * scale;
+        for (size_t k = 0; k < recent.size(); ++k) {
+            const Game& game = library.Games()[static_cast<size_t>(recent[k])];
+            const ImVec2 min(at.x, y), max(at.x + width, y + card);
+            ImGui::SetCursorScreenPos(min);
+            ImGui::PushID(static_cast<int>(k) + 100000);
+            if (ImGui::InvisibleButton("##continue", ImVec2(width, card))) pending = [this, index = recent[k]] { OpenGame(index); };
+            const bool lit = (homeRow == 3 && recentFocus == static_cast<int>(k)) || ImGui::IsItemHovered();
+            ImGui::PopID();
+            draw->AddRectFilled(min, max, Packed(lit ? kSelected : kSurface, 0.92f), 12 * scale);
+            if (lit) Focus(draw, min, max, scale * 0.6f, 12 * scale);
+            const ImVec2 artMin(min.x + 8 * scale, min.y + (card - art) / 2);
+            GameArt(draw, game, artMin, ImVec2(artMin.x + art, artMin.y + art), scale * 0.7f);
+            const float textX = artMin.x + art + 12 * scale;
+            const ImVec4 clip(textX, min.y, max.x - 10 * scale, max.y);
+            const std::string title = Utf8(game.title);
+            draw->AddText(semibold, 15 * scale, ImVec2(textX, min.y + 15 * scale), Packed(kText), title.c_str(), nullptr, 0, &clip);
+            std::string line = SystemName(game.system);
+            if (const auto found = profile.games.find(game.titleId); found != profile.games.end()) line += "  ·  " + PlayedWhen(found->second.last);
+            draw->AddText(nullptr, 13 * scale, ImVec2(textX, min.y + 39 * scale), Packed(LookFor(game.system).name), line.c_str(), nullptr, 0, &clip);
+            y += card + gap;
+        }
+    }
+
+    // The game's art (index into the library; -1 none) over the top right of the home page, faded into the
+    // background toward the left and the bottom so the text over it stays readable.
+    void Backdrop(ImDrawList* draw, int index, ImVec2 origin, ImVec2 size) {
+        if (index < 0 || index >= static_cast<int>(library.Games().size())) return;
+        const Texture& art = Icon(library.Games()[static_cast<size_t>(index)]);
+        if (art.view == nullptr || art.width <= 0 || art.height <= 0) return;
+        const ImVec2 min(origin.x + size.x * 0.32f, origin.y), max(origin.x + size.x, origin.y + size.y * 0.8f);
+        const float boxAspect = (max.x - min.x) / (max.y - min.y), imageAspect = static_cast<float>(art.width) / static_cast<float>(art.height);
+        ImVec2 uv0(0, 0), uv1(1, 1);
+        if (imageAspect > boxAspect) {
+            const float visible = boxAspect / imageAspect;
+            uv0.x = (1 - visible) / 2, uv1.x = uv0.x + visible;
+        } else {
+            const float visible = imageAspect / boxAspect;
+            uv0.y = (1 - visible) * 0.3f, uv1.y = uv0.y + visible;
+        }
+        draw->AddImage(art.Ref(), min, max, uv0, uv1, Packed(0xffffff, 0.2f));
+        const ImU32 solid = Packed(kBackground), clear = Packed(kBackground, 0.25f);
+        draw->AddRectFilledMultiColor(min, ImVec2(min.x + (max.x - min.x) * 0.6f, max.y), solid, clear, clear, solid);
+        const float fade = (max.y - min.y) * 0.45f;
+        draw->AddRectFilledMultiColor(ImVec2(min.x, max.y - fade), max, Packed(kBackground, 0.0f), Packed(kBackground, 0.0f), solid, solid);
+    }
+
     void Home(float scale, const Nav& input) {
         // On the top row (Adicionar jogo, Emuladores) the gamepad moves nothing else; up from the consoles reaches it.
         const bool inBar = TopBar(input, 3);
@@ -2149,35 +2285,61 @@ struct Client {
         const std::wstring missing = console == L"PS5" || console == L"PS4" ? L"" : MissingFor(console, L"");
         const char* systemLabel = SystemButton(console);
         const bool systemButton = systemLabel != nullptr && engine.native && engine.ready && missing.empty();
-        // Down goes from the consoles to the buttons under them and on to the games; up and back return.
+        const auto games = ConsoleGames(console);
+        const auto recent = RecentGames(4);
+        const bool hasRecent = !recent.empty();
+        // Down goes from the consoles to the buttons under them and on to the games; up and back return. Right past
+        // the last button or game reaches Continuar jogando, at the right; there up and down go along, left comes back.
         bool openLibrary = false, openSystem = false;
-        int openGame = -1;
+        int openGame = -1, openRecent = -1;
         if (homeRow == 0) {
             if (nav.down) homeRow = 1, homeColumn = 0;
             else if (nav.accept) openLibrary = true;
         } else if (homeRow == 1) {
             const int buttons = systemButton ? 2 : 1;
             if (nav.left && homeColumn > 0) --homeColumn;
-            if (nav.right && homeColumn + 1 < buttons) ++homeColumn;
+            if (nav.right && homeColumn + 1 >= buttons && hasRecent) homeRow = 3, recentFocus = 0;
+            else if (nav.right && homeColumn + 1 < buttons) ++homeColumn;
             homeColumn = std::min(homeColumn, buttons - 1);
-            if (nav.up || nav.back) homeRow = 0;
+            if (homeRow != 1) {
+            } else if (nav.up || nav.back) homeRow = 0;
             else if (nav.down && homeGamesShown > 0) homeRow = 2, homeColumn = 0;
             else if (nav.accept) (homeColumn == 0 ? openLibrary : openSystem) = true;
+        } else if (homeRow == 3) {
+            recentFocus = std::clamp(recentFocus, 0, std::max(0, static_cast<int>(recent.size()) - 1));
+            if (!hasRecent || nav.left) homeRow = 1, homeColumn = 0;
+            else if (nav.up && recentFocus > 0) --recentFocus;
+            else if (nav.down && recentFocus + 1 < static_cast<int>(recent.size())) ++recentFocus;
+            else if (nav.back) homeRow = 0;
+            else if (nav.accept) openRecent = recentFocus;
         } else if (homeGamesShown == 0) {
             homeRow = 1, homeColumn = 0;
         } else {
             if (nav.left && homeColumn > 0) --homeColumn;
-            if (nav.right && homeColumn + 1 < homeGamesShown) ++homeColumn;
+            if (nav.right && homeColumn + 1 >= homeGamesShown && hasRecent) homeRow = 3, recentFocus = 0;
+            else if (nav.right && homeColumn + 1 < homeGamesShown) ++homeColumn;
             homeColumn = std::min(homeColumn, homeGamesShown - 1);
-            if (nav.up) homeRow = 1, homeColumn = 0;
+            if (homeRow != 2) {
+            } else if (nav.up) homeRow = 1, homeColumn = 0;
             else if (nav.back) homeRow = 0;
             else if (nav.accept) openGame = homeColumn;
         }
         if (openLibrary) pending = [this] { OpenConsole(); };
         if (openSystem && !runner.Busy()) pending = [this] { runner.StartSystem(library.Root(), console); };
+        if (openRecent >= 0) pending = [this, index = recent[static_cast<size_t>(openRecent)]] { OpenGame(index); };
 
         ImDrawList* draw = ImGui::GetWindowDrawList();
         const ImVec2 origin = ImGui::GetWindowPos(), size = ImGui::GetWindowSize();
+
+        // Behind everything, the art of the game in focus (else the console's first game) spread over the right and
+        // faded into the background, as a console's home does.
+        {
+            int backdrop = -1;
+            if (homeRow == 2 && homeColumn < static_cast<int>(games.size())) backdrop = games[static_cast<size_t>(homeColumn)];
+            else if (homeRow == 3 && recentFocus < static_cast<int>(recent.size())) backdrop = recent[static_cast<size_t>(recentFocus)];
+            else if (!games.empty()) backdrop = games.front();
+            Backdrop(draw, backdrop, origin, size);
+        }
 
         const float left = 40 * scale;
         ImGui::SetCursorPos(ImVec2(left, 24 * scale));
@@ -2255,41 +2417,39 @@ struct Client {
         if (!missing.empty()) {
             ImGui::Dummy(ImVec2(0, 4 * scale));
             ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
-            ImGui::PushTextWrapPos(origin.x + size.x - left - ImGui::GetWindowPos().x);
+            ImGui::PushTextWrapPos(size.x - left - (hasRecent ? RecentPanelWidth(scale) + 30 * scale : 0));
             ImGui::TextWrapped("%s", Utf8(missing).c_str());
             ImGui::PopTextWrapPos();
             ImGui::PopStyleColor();
         }
         ImGui::EndGroup();
 
-        // A few of its games, straight to their page.
-        const auto games = ConsoleGames(console);
+        // A few of its games, straight to their page, each with its name under it.
+        const float rowRight = origin.x + size.x - left - (hasRecent ? RecentPanelWidth(scale) + 30 * scale : 0);
         y = ImGui::GetItemRectMax().y + 28 * scale;
-        const float cover = 112 * scale, coverGap = 14 * scale;
+        const float cover = 140 * scale, coverGap = 18 * scale, caption = 26 * scale;
         homeGamesShown = 0;
-        if (!games.empty() && y + cover < origin.y + size.y - 30 * scale) {
+        if (!games.empty() && y + cover + caption < origin.y + size.y - 30 * scale) {
             for (size_t k = 0; k < games.size(); ++k) {
                 const float x = origin.x + left + k * (cover + coverGap);
-                if (x + cover > origin.x + size.x - left) break;
+                if (x + cover > rowRight) break;
                 ++homeGamesShown;
                 const ImVec2 min(x, y), max(x + cover, y + cover);
+                const bool focused = homeRow == 2 && homeColumn == static_cast<int>(k);
                 GameArt(draw, library.Games()[static_cast<size_t>(games[k])], min, max, scale);
                 ImGui::SetCursorScreenPos(min);
                 ImGui::PushID(games[k]);
-                if (ImGui::InvisibleButton("##recent", ImVec2(cover, cover)) || openGame == static_cast<int>(k)) pending = [this, index = games[k]] { OpenGame(index); };
-                if (homeRow == 2 && homeColumn == static_cast<int>(k)) {
-                    // The gamepad has no pointer for a tooltip to follow: the name goes under the row.
-                    Focus(draw, min, max, scale * 0.6f, 10 * scale);
-                    const std::string title = Utf8(library.Games()[static_cast<size_t>(games[k])].title);
-                    const ImVec4 clip(origin.x + left, max.y, origin.x + size.x - left, max.y + 40 * scale);
-                    draw->AddText(nullptr, ImGui::GetFontSize(), ImVec2(origin.x + left, max.y + 12 * scale), Packed(kText), title.c_str(), nullptr, 0, &clip);
-                } else if (ImGui::IsItemHovered()) {
-                    Focus(draw, min, max, scale * 0.6f, 10 * scale);
-                    ImGui::SetTooltip("%s", Utf8(library.Games()[static_cast<size_t>(games[k])].title).c_str());
-                }
+                if (ImGui::InvisibleButton("##recent", ImVec2(cover, cover + caption)) || openGame == static_cast<int>(k)) pending = [this, index = games[k]] { OpenGame(index); };
+                const bool lit = focused || ImGui::IsItemHovered();
+                if (lit) Focus(draw, min, max, scale * 0.6f, 10 * scale);
+                const std::string title = Utf8(library.Games()[static_cast<size_t>(games[k])].title);
+                const ImVec4 clip(min.x, max.y, max.x, max.y + caption);
+                draw->AddText(lit ? semibold : nullptr, ImGui::GetFontSize() * 0.95f, ImVec2(min.x + 2 * scale, max.y + 8 * scale), Packed(lit ? kText : kDim), title.c_str(), nullptr, 0, &clip);
                 ImGui::PopID();
             }
         }
+
+        if (hasRecent) RecentPanel(draw, recent, ImVec2(origin.x + size.x - left - RecentPanelWidth(scale), rowY + big + 30 * scale), scale);
         const char* hint = "Setas ou direcional: escolher    Enter, X ou A: abrir    Esc, O ou B: voltar";
         if (gamepads.Connected()) draw->AddText(nullptr, ImGui::GetFontSize() * 0.9f, ImVec2(origin.x + left, origin.y + size.y - 30 * scale), Packed(kDim), hint);
     }
