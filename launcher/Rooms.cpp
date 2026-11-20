@@ -1,6 +1,9 @@
 #include "Rooms.hpp"
 #include "Common.hpp"
 
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <iphlpapi.h>
 #include <windows.h>
 #include <shlobj.h>
 #include <shobjidl.h>
@@ -215,6 +218,38 @@ void SetExtraPort(const std::wstring& root, Extra extra, int port) {
     WritePrivateProfileStringW(Info(extra).section, L"porta", std::to_wstring(std::clamp(port, 1, 65535)).c_str(), Ini(root).c_str());
 }
 
+bool ExtraLan(const std::wstring& root, Extra extra) { return ReadNumber(Ini(root), Info(extra).section, L"lan", 0) != 0; }
+
+void SetExtraLan(const std::wstring& root, Extra extra, bool on) {
+    EnsureUnicodeIni(Ini(root));
+    WritePrivateProfileStringW(Info(extra).section, L"lan", on ? L"1" : L"0", Ini(root).c_str());
+}
+
+std::vector<std::wstring> LanAddresses() {
+    std::vector<std::wstring> found;
+    ULONG size = 16 * 1024;
+    std::vector<unsigned char> buffer(size);
+    auto* list = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
+    ULONG flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER;
+    if (GetAdaptersAddresses(AF_INET, flags, nullptr, list, &size) == ERROR_BUFFER_OVERFLOW) {
+        buffer.resize(size);
+        list = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data());
+    }
+    if (GetAdaptersAddresses(AF_INET, flags, nullptr, list, &size) != NO_ERROR) return found;
+    for (auto* adapter = list; adapter != nullptr; adapter = adapter->Next) {
+        // Only cards that are up and lead somewhere (a gateway): not the loopback, nor virtual ones without a way out.
+        if (adapter->OperStatus != IfOperStatusUp || adapter->IfType == IF_TYPE_SOFTWARE_LOOPBACK || adapter->FirstGatewayAddress == nullptr) continue;
+        for (auto* unicast = adapter->FirstUnicastAddress; unicast != nullptr; unicast = unicast->Next) {
+            const auto* ip = reinterpret_cast<const sockaddr_in*>(unicast->Address.lpSockaddr);
+            const unsigned char* b = reinterpret_cast<const unsigned char*>(&ip->sin_addr);
+            // Home networks: 10.x, 172.16-31.x, 192.168.x.
+            if (!(b[0] == 10 || (b[0] == 172 && b[1] >= 16 && b[1] <= 31) || (b[0] == 192 && b[1] == 168))) continue;
+            found.push_back(std::to_wstring(b[0]) + L"." + std::to_wstring(b[1]) + L"." + std::to_wstring(b[2]) + L"." + std::to_wstring(b[3]));
+        }
+    }
+    return found;
+}
+
 bool ExtraOn(const std::wstring& root, Extra extra) { return ReadNumber(Ini(root), Info(extra).section, L"ligada", 1) != 0; }
 
 bool ExtraRunning(const std::wstring& root, Extra extra) {
@@ -237,6 +272,8 @@ std::wstring StartExtra(const std::wstring& root, Extra extra) {
     const std::wstring log = Folder(root) + L"\\" + info.log;
     std::wstring command = L"\"" + ExtraExe(root, extra) + L"\" --port " + std::to_wstring(port);
     if (extra == Extra::Classics) {
+        // Open to the home network too when asked (lan=1); otherwise only this PC and its playit tunnel reach it.
+        if (ExtraLan(root, extra)) command += L" --lan";
         command += L" --log \"" + log + L"\" --atualizacao \"" + root + L"\\salas\\atualizacao\" --perfis \"" + root + L"\\salas\\perfis\"";
         // The group's code, when the friends set one (letters and digits only, see PlayerProfile.hpp GroupCode).
         std::wstring group;

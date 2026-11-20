@@ -240,6 +240,48 @@ void Runner::Await(PROCESS_INFORMATION& process, const std::wstring& logs, const
 
 namespace {
 
+// Turns the PS3 core's network on (internet, RPCN, UPnP for the games' direct links) or off, in its config.yml's Net
+// section; the other lines stay as they are. Nothing to do while the file doesn't exist (the core makes it on its first
+// start, network off, which is RPCS3's default).
+void SetPs3Network(const std::wstring& root, bool on) {
+    const std::wstring path = root + L"\\bios\\retroarch\\rpcs3\\config\\config.yml";
+    const std::string text = ReadBytes(path);
+    if (text.empty()) return;
+    std::string out;
+    bool inNet = false, changed = false;
+    size_t start = 0;
+    while (start < text.size()) {
+        size_t end = text.find('\n', start);
+        const bool last = end == std::string::npos;
+        if (last) end = text.size();
+        std::string line = text.substr(start, end - start);
+        start = end + 1;
+        const bool cr = !line.empty() && line.back() == '\r';
+        if (cr) line.pop_back();
+        if (!line.empty() && line[0] != ' ') inNet = line == "Net:";
+        if (inNet) {
+            const auto set = [&](const char* key, const char* value) {
+                const std::string prefix = std::string("  ") + key + ":";
+                if (line.rfind(prefix, 0) != 0) return;
+                const std::string wanted = prefix + " " + value;
+                if (line != wanted) line = wanted, changed = true;
+            };
+            set("Internet enabled", on ? "Connected" : "Disconnected");
+            set("PSN status", on ? "RPCN" : "Disconnected");
+            set("UPNP Enabled", on ? "true" : "false");
+        }
+        out += line;
+        if (cr) out += '\r';
+        if (!last) out += '\n';
+    }
+    if (!changed) return;
+    const HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) return;
+    DWORD put = 0;
+    WriteFile(file, out.data(), static_cast<DWORD>(out.size()), &put, nullptr);
+    CloseHandle(file);
+}
+
 // Python 3.10 or newer, which the port's scripts need. Each candidate is asked for its version: the Microsoft Store's
 // python.exe in WindowsApps is a real Python once installed from the Store, and only a stub that opens the Store before.
 std::wstring FindPython(const std::wstring& logs) {
@@ -392,6 +434,9 @@ void Runner::RunExternal(const std::wstring& root, const Game& game, const Optio
             if (FinalPath(link) == FinalPath(rom.substr(0, slash))) coreRom = link + rom.substr(slash);
         }
     }
+    // The PS3's network is in the core's own config.yml (Net), read when the game boots: on for a game with online
+    // (RPCN) chosen, off otherwise, so a game without it never tries to log in.
+    if (engine.native && game.system == L"PS3") SetPs3Network(root, ReadCoreOption(game, "rpcs3_online") == "ligado");
     std::wstring command = EngineCommand(engine, coreRom, options.borderless && !engine.embed, game.title, workspace);
     if (noGame) {
         if (const size_t at = command.find(L"--rom \"\""); at != std::wstring::npos) command.replace(at, 8, L"--no-game");

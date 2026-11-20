@@ -48,6 +48,12 @@ enum class Extra { Classics, Rooms3ds };
 int ExtraPort(const std::wstring& root, Extra extra);
 void SetExtraPort(const std::wstring& root, Extra extra, int port);
 bool ExtraOn(const std::wstring& root, Extra extra);
+// The classics' server open to the home network as well (salas.ini lan=1, ranga-sala --lan); off: this PC and its
+// tunnel only. The 3DS's and the Switch's rooms always listen on every network.
+bool ExtraLan(const std::wstring& root, Extra extra);
+void SetExtraLan(const std::wstring& root, Extra extra, bool on);
+// This PC's addresses on home networks (192.168.x, 10.x, 172.16-31.x), for the friends in the same house.
+std::vector<std::wstring> LanAddresses();
 bool ExtraRunning(const std::wstring& root, Extra extra);
 std::wstring StartExtra(const std::wstring& root, Extra extra);
 void StopExtra(const std::wstring& root, Extra extra);

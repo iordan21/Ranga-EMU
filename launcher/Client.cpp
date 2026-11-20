@@ -773,6 +773,9 @@ struct Client {
     std::array<char, 8> serverPort[2]{};
     bool serverRunning[2] = {};
     ULONGLONG serverCheckedAt[2] = {};
+    std::vector<std::wstring> lanAddresses; // this PC on the home network, looked up every 10 s while shown
+    ULONGLONG lanCheckedAt = 0;
+    std::array<char, 64> pspLanAddress{}; // the PSP host's address typed on a PSP game's page
     std::wstring serverProblem[2];
     // The 3DS's room: this game's choice.
     bool room3dsOn = false;
@@ -1293,6 +1296,7 @@ struct Client {
         logText.clear();
         logDirty = true;
         addons.clear();
+        pspLanAddress.fill(0);
         if (Game* game = Current()) {
             options = LoadOptions(*game);
             addons = LoadAddons(*game);
@@ -2700,6 +2704,7 @@ struct Client {
         if (ClassicOnline(game.system) && EngineFor(game.system).native) OnlineSection(game, label, labelWidth, scale);
         if (game.system == L"PSP" && EngineFor(game.system).native) PspOnlineSection(game, label, scale);
         if (game.system == L"3DS" && EngineFor(game.system).native) Room3dsSection(game, label, labelWidth, scale);
+        if (game.system == L"PS3" && EngineFor(game.system).native) Ps3OnlineSection(game, label, labelWidth, scale);
         if (game.system == L"SWITCH" && EngineFor(game.system).native) {
             // Eden's multiplayer rooms: the game's local wireless / LAN mode goes through a room over UDP. The core
             // joins or hosts the room when the game starts, so nothing here changes a game that is already open.
@@ -3027,9 +3032,125 @@ struct Client {
         ServerSection(Extra::Rooms3ds, label, labelWidth, scale);
     }
 
+    // The PS3's online through RPCN, RPCS3's own free server (rpcs3.net): the game logs in with the player's RPCN
+    // account and finds the others there, as on the PSN. The account lives in the core's rpcn.yml; it is created in
+    // RPCS3's own window (Configuração > RPCN, with an e-mail for the token), and Ranga takes it from there.
+    std::wstring RpcnFile() const { return library.Root() + L"\\bios\\retroarch\\rpcs3\\config\\rpcn.yml"; }
+    std::wstring StandaloneRpcnFile() const { return library.Root() + L"\\emuladores\\rpcs3\\config\\rpcn.yml"; }
+
+    // The NPID (RPCN's user name) and whether a password is kept, from an rpcn.yml; empty name: no account there.
+    static std::pair<std::string, bool> RpcnAccount(const std::wstring& path) {
+        const auto data = ReadBytes(path);
+        std::string name;
+        bool password = false;
+        size_t start = 0;
+        while (start < data.size()) {
+            size_t end = data.find('\n', start);
+            if (end == std::string::npos) end = data.size();
+            std::string line = data.substr(start, end - start);
+            start = end + 1;
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            const auto value = [&](const char* key) -> std::optional<std::string> {
+                const std::string prefix = std::string(key) + ":";
+                if (line.rfind(prefix, 0) != 0) return std::nullopt;
+                std::string rest = line.substr(prefix.size());
+                while (!rest.empty() && (rest.front() == ' ' || rest.front() == '"')) rest.erase(0, 1);
+                while (!rest.empty() && (rest.back() == ' ' || rest.back() == '"')) rest.pop_back();
+                return rest;
+            };
+            if (const auto npid = value("NPID")) name = *npid;
+            if (const auto pass = value("Password")) password = !pass->empty();
+        }
+        return {password ? name : std::string(), password};
+    }
+
+    template <typename Label> void Ps3OnlineSection(const Game& game, Label& label, float labelWidth, float scale) {
+        ImGui::Dummy(ImVec2(0, 6 * scale));
+        ImGui::Separator();
+        ImGui::Dummy(ImVec2(0, 2 * scale));
+        const bool running = runner.Busy() && runner.TitleId() == game.titleId;
+        ImGui::BeginDisabled(running);
+        bool on = ReadCoreOption(game, "rpcs3_online") == "ligado";
+        label("Online (RPCN)");
+        if (ImGui::Checkbox("##ps3online", &on)) WriteCoreOption(game, "rpcs3_online", on ? "ligado" : "desligado");
+        ImGui::SameLine();
+        ImGui::TextDisabled(on ? "ligado: o jogo entra no RPCN quando abrir" : "desligado");
+        if (on) {
+            const auto [account, kept] = RpcnAccount(RpcnFile());
+            const auto [standalone, standaloneKept] = RpcnAccount(StandaloneRpcnFile());
+            label("Conta");
+            if (!account.empty()) {
+                ImGui::PushStyleColor(ImGuiCol_Text, Color(kGreen));
+                ImGui::Text("%s", account.c_str());
+                ImGui::PopStyleColor();
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
+                ImGui::TextUnformatted("nenhuma ainda");
+                ImGui::PopStyleColor();
+            }
+            if (!standalone.empty() && standalone != account) {
+                ImGui::SetCursorPosX(labelWidth);
+                if (ImGui::Button(("Usar a conta " + standalone + " do RPCS3").c_str())) {
+                    CreateDirectoryW((library.Root() + L"\\bios\\retroarch\\rpcs3\\config").c_str(), nullptr);
+                    CopyFileW(StandaloneRpcnFile().c_str(), RpcnFile().c_str(), FALSE);
+                }
+            }
+            const std::wstring rpcs3 = library.Root() + L"\\emuladores\\rpcs3\\rpcs3.exe";
+            if (Exists(rpcs3)) {
+                ImGui::SetCursorPosX(labelWidth);
+                if (ImGui::Button(account.empty() ? "Abrir o RPCS3 para criar a conta" : "Abrir o RPCS3 (conta do RPCN)")) {
+                    ShellExecuteW(nullptr, L"open", rpcs3.c_str(), nullptr, (library.Root() + L"\\emuladores\\rpcs3").c_str(), SW_SHOWNORMAL);
+                }
+            }
+            ImGui::SetCursorPosX(labelWidth);
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextDisabled("O RPCN é o servidor online grátis do RPCS3 (rpcs3.net), no lugar da PSN. Cada jogador cria a "
+                                "própria conta uma vez: no RPCS3, em Configuração > RPCN, crie a conta com seu e-mail, cole o "
+                                "token que chega por e-mail e volte aqui para usar a conta. No jogo, entre no modo online "
+                                "dele. O roteador de cada um precisa deixar o jogo passar (UPnP ligado); o túnel do playit "
+                                "não serve para o PS3.");
+            ImGui::PopTextWrapPos();
+        }
+        ImGui::EndDisabled();
+        if (running) ImGui::TextDisabled("Feche o jogo para mudar o online.");
+    }
+
     // The PSP's own online: its local wireless (ad hoc), through a public PRO ad hoc server kept by fans. PPSSPP's
     // server takes a fixed port (27312) and a plain IP, and the players' consoles then talk to each other directly, so
     // a playit tunnel cannot carry it; the public servers can, when the players' routers let the games through (UPnP).
+    // PPSSPP's core takes the server's IP as 12 options of one digit each (three per part, zeros in front).
+    static void WritePspServerIp(const Game& game, const std::string& address) {
+        int parts[4] = {}, count = 0;
+        for (size_t at = 0; at <= address.size() && count < 4;) {
+            const size_t dot = std::min(address.find('.', at), address.size());
+            parts[count++] = std::clamp(std::atoi(address.substr(at, dot - at).c_str()), 0, 255);
+            at = dot + 1;
+        }
+        if (count != 4) return;
+        for (int i = 0; i < 4; ++i) {
+            const int digits[3] = {parts[i] / 100, parts[i] / 10 % 10, parts[i] % 10};
+            for (int d = 0; d < 3; ++d) {
+                char key[48];
+                std::snprintf(key, sizeof(key), "ppsspp_pro_ad_hoc_server_address%02d", i * 3 + d + 1);
+                WriteCoreOption(game, key, std::to_string(digits[d]));
+            }
+        }
+    }
+
+    static std::string PspServerIp(const Game& game) {
+        std::string ip;
+        for (int i = 0; i < 4; ++i) {
+            int part = 0;
+            for (int d = 0; d < 3; ++d) {
+                char key[48];
+                std::snprintf(key, sizeof(key), "ppsspp_pro_ad_hoc_server_address%02d", i * 3 + d + 1);
+                part = part * 10 + std::atoi(ReadCoreOption(game, key).c_str());
+            }
+            ip += (i ? "." : "") + std::to_string(part);
+        }
+        return ip == "0.0.0.0" ? "" : ip;
+    }
+
     template <typename Label> void PspOnlineSection(const Game& game, Label& label, float scale) {
         ImGui::Dummy(ImVec2(0, 6 * scale));
         ImGui::Separator();
@@ -3046,14 +3167,56 @@ struct Client {
         if (ImGui::Checkbox("##pspOnline", &wanted)) {
             WriteCoreOption(game, "ppsspp_enable_wlan", wanted ? "enabled" : "disabled");
             WriteCoreOption(game, "ppsspp_change_pro_ad_hoc_server_address", servers[picked]);
+            WriteCoreOption(game, "ppsspp_enable_builtin_pro_ad_hoc_server", "disabled");
         }
         if (wanted) {
-            label("Servidor");
-            if (ImGui::Combo("##pspServer", &picked, servers, 3)) WriteCoreOption(game, "ppsspp_change_pro_ad_hoc_server_address", servers[picked]);
+            // Where the players meet: a public server on the internet, or, in the same house, the built-in server of
+            // PPSSPP on one of the PCs (its port 27312) and the others pointing at that PC's address.
+            static const char* modes[] = {"Internet (servidor público)", "Rede de casa: este PC hospeda", "Rede de casa: entrar no PC de outro"};
+            const bool hosting = ReadCoreOption(game, "ppsspp_enable_builtin_pro_ad_hoc_server") == "enabled";
+            int mode = hosting ? 1 : server == "IP address" ? 2 : 0;
+            label("Onde jogar");
+            if (ImGui::Combo("##pspMode", &mode, modes, 3)) {
+                WriteCoreOption(game, "ppsspp_enable_builtin_pro_ad_hoc_server", mode == 1 ? "enabled" : "disabled");
+                WriteCoreOption(game, "ppsspp_change_pro_ad_hoc_server_address", mode == 0 ? servers[picked] : mode == 1 ? "localhost" : "IP address");
+                if (mode == 2) {
+                    // The last address typed for any PSP game comes filled in.
+                    const std::string remembered = Utf8(RememberedOnline(L"psp_lan"));
+                    pspLanAddress.fill(0);
+                    remembered.copy(pspLanAddress.data(), pspLanAddress.size() - 1);
+                    if (!remembered.empty()) WritePspServerIp(game, remembered);
+                }
+            }
             ImGui::PushTextWrapPos(0);
-            ImGui::TextDisabled("Para jogos com multijogador local do PSP (Monster Hunter, Tekken, Ridge Racer...). Todos escolhem o mesmo servidor "
-                                "e, no jogo, o modo ad hoc / multijogador local. É um servidor público de fãs, não o playit: os PSPs conversam "
-                                "direto entre si, então depende do roteador de cada um deixar passar (UPnP ligado). Se não conectar, é o roteador.");
+            if (mode == 0) {
+                label("Servidor");
+                if (ImGui::Combo("##pspServer", &picked, servers, 3)) WriteCoreOption(game, "ppsspp_change_pro_ad_hoc_server_address", servers[picked]);
+                ImGui::TextDisabled("Para jogos com multijogador local do PSP (Monster Hunter, Tekken, Ridge Racer...). Todos escolhem o mesmo servidor "
+                                    "e, no jogo, o modo ad hoc / multijogador local. É um servidor público de fãs, não o playit: os PSPs conversam "
+                                    "direto entre si, então depende do roteador de cada um deixar passar (UPnP ligado). Se não conectar, é o roteador.");
+            } else if (mode == 1) {
+                if (GetTickCount64() - lanCheckedAt > 10000) {
+                    lanAddresses = LanAddresses();
+                    lanCheckedAt = GetTickCount64();
+                }
+                std::string where;
+                for (const auto& address : lanAddresses) where += (where.empty() ? "" : "  ou  ") + Utf8(address);
+                ImGui::TextDisabled("Este PC liga o servidor do PSP quando o jogo abrir. Os outros da casa escolhem \"entrar no PC de outro\" "
+                                    "com o endereço %s. Depois, no jogo, todos entram no modo ad hoc / multijogador local. Se o Windows "
+                                    "perguntar, permita a rede privada.", where.empty() ? "deste PC" : where.c_str());
+            } else {
+                label("Endereço do PC");
+                if (pspLanAddress[0] == 0) {
+                    const std::string current = PspServerIp(game);
+                    current.copy(pspLanAddress.data(), pspLanAddress.size() - 1);
+                }
+                ImGui::InputTextWithHint("##pspLan", "192.168.0.10", pspLanAddress.data(), pspLanAddress.size());
+                if (ImGui::IsItemDeactivatedAfterEdit()) {
+                    WritePspServerIp(game, pspLanAddress.data());
+                    RememberOnline(L"psp_lan", pspLanAddress.data());
+                }
+                ImGui::TextDisabled("O endereço que aparece na página do jogo no PC que hospeda (192.168...).");
+            }
             ImGui::PopTextWrapPos();
         }
         ImGui::EndDisabled();
@@ -3090,6 +3253,36 @@ struct Client {
         ImGui::InputText("##serverPort", serverPort[k].data(), serverPort[k].size(), ImGuiInputTextFlags_CharsDecimal);
         if (ImGui::IsItemDeactivatedAfterEdit()) SetExtraPort(library.Root(), extra, std::atoi(serverPort[k].data()));
         ImGui::EndDisabled();
+        // The home network: the classics' server opens to it on request (restarted if running); the 3DS's room
+        // always listens there. Either way the others in the house use this PC's address, without the tunnel.
+        bool lan = !classics || ExtraLan(library.Root(), extra);
+        if (classics) {
+            label("Rede de casa (LAN)");
+            if (ImGui::Checkbox("##serverLan", &lan)) {
+                SetExtraLan(library.Root(), extra, lan);
+                if (serverRunning[k]) {
+                    StopExtra(library.Root(), extra);
+                    serverProblem[k] = StartExtra(library.Root(), extra);
+                    serverCheckedAt[k] = 0;
+                }
+            }
+            ImGui::SameLine();
+            ImGui::TextDisabled(lan ? "aceita quem está na mesma rede" : "só este PC e o túnel");
+        }
+        if (lan) {
+            if (GetTickCount64() - lanCheckedAt > 10000) {
+                lanAddresses = LanAddresses();
+                lanCheckedAt = GetTickCount64();
+            }
+            if (!lanAddresses.empty()) {
+                std::string where;
+                for (const auto& address : lanAddresses) where += (where.empty() ? "" : "  ou  ") + Utf8(address) + ":" + std::to_string(ExtraPort(library.Root(), extra));
+                ImGui::SetCursorPosX(labelWidth);
+                ImGui::PushTextWrapPos(0);
+                ImGui::TextDisabled("Na mesma casa, os outros põem em \"Endereço da sala\": %s (se o Windows perguntar, permita a rede privada).", where.c_str());
+                ImGui::PopTextWrapPos();
+            }
+        }
         ImGui::SetCursorPosX(labelWidth);
         ImGui::PushStyleColor(ImGuiCol_Text, Color(serverRunning[k] ? kGreen : kDim));
         if (serverRunning[k]) ImGui::Text(classics ? "Ligada na porta %d (TCP)" : "Ligada na porta %d (UDP)", ExtraPort(library.Root(), extra));
@@ -4269,6 +4462,7 @@ struct Client {
     static bool OnlineChosen(const Game& game) {
         const std::string room = ReadCoreOption(game, "eden_sala");
         return ReadCoreOption(game, "ranga_online") == "ligado" || ReadCoreOption(game, "citra_sala") == "entrar" ||
+               ReadCoreOption(game, "rpcs3_online") == "ligado" ||
                ReadCoreOption(game, "ppsspp_enable_wlan") == "enabled" || (!room.empty() && room != "desligada");
     }
 
