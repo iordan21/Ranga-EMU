@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <cwchar>
+#include <cwctype>
 #include <utility>
 #include <vector>
 
@@ -377,7 +378,21 @@ void Runner::RunExternal(const std::wstring& root, const Game& game, const Optio
 
     // An embedded emulator stays windowed inside Ranga's window, which goes fullscreen instead.
     CreateDirectoryW((workspace + L"\\saves").c_str(), nullptr);
-    std::wstring command = EngineCommand(engine, rom, options.borderless && !engine.embed, game.title, workspace);
+    // A PSP homebrew kept as on the memory stick (...\PSP\GAME\<name>\EBOOT.PBP): PPSSPP's core sees "/PSP/GAME/" in
+    // the path and looks for it on its own memory stick (ms0:), where it isn't, then fails (20/11/2026, OpenHCL). The
+    // core gets the same folder through a link in the workspace, whose path doesn't say PSP\GAME.
+    std::wstring coreRom = rom;
+    if (engine.native && game.system == L"PSP" && !rom.empty()) {
+        std::wstring upper = rom;
+        for (auto& character : upper) character = static_cast<wchar_t>(towupper(character == L'/' ? L'\\' : character));
+        const size_t slash = rom.find_last_of(L"\\/");
+        if (upper.find(L"\\PSP\\GAME\\") != std::wstring::npos && slash != std::wstring::npos) {
+            const std::wstring link = workspace + L"\\pasta-do-jogo";
+            LinkFolder(link, rom.substr(0, slash), logs + L"\\pasta-do-jogo.log");
+            if (FinalPath(link) == FinalPath(rom.substr(0, slash))) coreRom = link + rom.substr(slash);
+        }
+    }
+    std::wstring command = EngineCommand(engine, coreRom, options.borderless && !engine.embed, game.title, workspace);
     if (noGame) {
         if (const size_t at = command.find(L"--rom \"\""); at != std::wstring::npos) command.replace(at, 8, L"--no-game");
     }
