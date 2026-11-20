@@ -543,6 +543,25 @@ void Start(const Setup& setup) {
 
 bool Active() { return s != nullptr; }
 
+std::vector<Item> List(std::wstring& game) {
+    std::vector<Item> items;
+    game.clear();
+    if (s == nullptr || !rc_client_is_game_loaded(s->client)) return items;
+    if (const rc_client_game_t* info = rc_client_get_game_info(s->client)) game = Wide(info->title);
+    rc_client_achievement_list_t* list = rc_client_create_achievement_list(s->client, RC_CLIENT_ACHIEVEMENT_CATEGORY_CORE, RC_CLIENT_ACHIEVEMENT_LIST_GROUPING_LOCK_STATE);
+    if (list == nullptr) return items;
+    for (uint32_t b = 0; b < list->num_buckets; ++b) {
+        for (uint32_t i = 0; i < list->buckets[b].num_achievements; ++i) {
+            const rc_client_achievement_t* a = list->buckets[b].achievements[i];
+            items.push_back({Wide(a->title), Wide(a->description), a->points, a->unlocked != 0});
+        }
+    }
+    rc_client_destroy_achievement_list(list);
+    // Unlocked first, as the menu shows them.
+    std::stable_sort(items.begin(), items.end(), [](const Item& x, const Item& y) { return x.unlocked && !y.unlocked; });
+    return items;
+}
+
 void Idle() {
     if (s == nullptr) return;
     std::deque<Reply> replies;

@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <vector>
 
 struct retro_memory_map;
 
@@ -37,6 +38,13 @@ struct Setup {
 // Starts when the player is signed in and the console has achievements; otherwise nothing happens at all.
 void Start(const Setup& setup);
 bool Active();
+// The game's achievements as they are now, for the in-game menu (empty when not active or the game has none).
+struct Item {
+    std::wstring title, description;
+    unsigned points = 0;
+    bool unlocked = false;
+};
+std::vector<Item> List(std::wstring& game);
 // The core's memory map (RETRO_ENVIRONMENT_SET_MEMORY_MAPS), kept for reading the game's memory.
 void SetMemoryMap(const retro_memory_map* map);
 // After every frame the core ran.

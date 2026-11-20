@@ -14,6 +14,7 @@
 #include "VulkanVideo.hpp"
 #include "Netplay.hpp"
 #include "Achievements.hpp"
+#include "Social.hpp"
 
 #ifndef UNICODE
 #define UNICODE
@@ -24,6 +25,7 @@
 #include <dwmapi.h>
 
 #include <algorithm>
+#include <ctime>
 #include <chrono>
 #include <cmath>
 #include <cstdarg>
@@ -1253,12 +1255,24 @@ struct Row {
     std::wstring label, value;
     // Left and right change it; the value is drawn between ‹ › while the row has the focus.
     bool changes = false;
+    // A line to read (a chat message, a note), drawn dimmer; picking it does nothing.
+    bool note = false;
 };
+
+// The quick answers of the chat page, for the gamepad (the PC's keyboard can also write one).
+const wchar_t* const kReplies[] = {L"gg", L"kkkkk", L"bora!", L"pera aí", L"já volto", L"partiu outra?"};
 
 struct MenuState {
     HWND window = nullptr, dim = nullptr;
-    // 0 the menu, 1 the core options.
+    // 0 the menu, 1 the core options, 2 the friends, 3 the chat with one, 4 the game's achievements.
     int page = 0, focus = 0, top = 0;
+    // Page 2: the friend of each row. Page 3: who, and the row where the answers start.
+    std::vector<std::string> friendRows;
+    std::string chatWith;
+    std::wstring chatName;
+    int answersAt = 0;
+    // Where the cursor was at the last real mouse move (see WM_MOUSEMOVE).
+    POINT cursor{};
     int slot = 0;
     bool fullscreen = false, optionChanged = false;
     // The command picked; 0 while the menu is open.
@@ -1273,14 +1287,69 @@ std::vector<Row> Rows() {
     std::vector<Row> rows;
     if (s.page == 0) {
         const std::wstring slot = L"posição " + std::to_wstring(s.slot + 1);
+        std::wstring friends = L"entre na conta", trophies = L"sem conta";
+        if (Social::Active()) {
+            int online = 0, unread = 0;
+            for (const auto& f : Social::Friends()) {
+                online += f.Online() ? 1 : 0;
+                unread += Social::Unread(f.id);
+            }
+            friends = unread > 0 ? std::to_wstring(unread) + (unread == 1 ? L" mensagem nova" : L" mensagens novas") : std::to_wstring(online) + L" online";
+        }
+        if (Achievements::Active()) {
+            std::wstring game;
+            const auto items = Achievements::List(game);
+            const auto got = std::count_if(items.begin(), items.end(), [](const Achievements::Item& i) { return i.unlocked; });
+            trophies = items.empty() ? L"nenhuma" : std::to_wstring(got) + L" de " + std::to_wstring(items.size());
+        }
         rows = {{L"Continuar", L""},
                 {L"Salvar estado", slot},
                 {L"Carregar estado", slot},
                 {L"Posição do estado", std::to_wstring(s.slot + 1) + L" de 5", true},
                 {L"Opções do core", s.options.empty() ? L"nenhuma" : std::to_wstring(s.options.size()) + L"  ›"},
                 {L"Tela cheia", s.fullscreen ? L"sim" : L"não", true},
+                {L"Amigos e chat", friends + L"  ›"},
+                {L"Conquistas", trophies + L"  ›"},
                 {L"Reiniciar o jogo", L""},
                 {L"Sair do jogo", L""}};
+        return rows;
+    }
+    if (s.page == 2) {
+        s.friendRows.clear();
+        if (!Social::Active()) return {{L"Entre na sua conta no Ranga (Perfil) para ver os amigos aqui.", L"", false, true}};
+        if (!Social::Ready()) return {{L"Buscando os amigos...", L"", false, true}};
+        for (const auto& f : Social::Friends()) {
+            const int unread = Social::Unread(f.id);
+            std::wstring state;
+            if (!f.Online()) {
+                const long long ago = std::max<long long>(0, static_cast<long long>(std::time(nullptr)) - f.seen) / 60;
+                state = f.seen == 0 ? L"offline" : ago < 60 ? L"visto há " + std::to_wstring(ago) + L" min" : ago < 1440 ? L"visto há " + std::to_wstring(ago / 60) + L" h" : L"offline";
+            } else {
+                state = f.playing.empty() ? L"online" : L"jogando " + Wide(f.playing);
+            }
+            std::wstring name = Wide(f.name.substr(0, f.name.rfind('#')));
+            if (unread > 0) name += L"  (" + std::to_wstring(unread) + L" nova" + (unread == 1 ? L")" : L"s)");
+            rows.push_back({name, state});
+            s.friendRows.push_back(f.id);
+        }
+        if (rows.empty()) rows.push_back({L"Nenhum amigo ainda: adicione pelo Perfil do Ranga.", L"", false, true});
+        return rows;
+    }
+    if (s.page == 3) {
+        const std::string me = Social::Me();
+        const auto messages = Social::Conversation(s.chatWith, 6);
+        if (messages.empty()) rows.push_back({L"Nenhuma mensagem ainda.", L"", false, true});
+        for (const auto& m : messages) rows.push_back({(m.from == me ? std::wstring(L"Você") : s.chatName) + L":  " + Wide(m.text), L"", false, true});
+        s.answersAt = static_cast<int>(rows.size());
+        rows.push_back({L"Escrever mensagem...", L""});
+        for (const wchar_t* reply : kReplies) rows.push_back({L"Mandar \"" + std::wstring(reply) + L"\"", L""});
+        return rows;
+    }
+    if (s.page == 4) {
+        if (!Achievements::Active()) return {{L"Conecte o RetroAchievements em Editar perfil, no Ranga, para ter conquistas.", L"", false, true}};
+        std::wstring game;
+        for (const auto& item : Achievements::List(game)) rows.push_back({item.title, (item.unlocked ? L"✓  " : L"") + std::to_wstring(item.points) + L" pts", false, !item.unlocked});
+        if (rows.empty()) rows.push_back({L"Este jogo não tem conquistas (ou ainda está carregando).", L"", false, true});
         return rows;
     }
     for (const size_t index : s.options) {
@@ -1301,7 +1370,7 @@ int Visible(size_t rows) { return static_cast<int>(std::min<size_t>(rows, kShown
 // The panel's size for the page, centered on the game's window, with round corners.
 void Place() {
     const int rows = Visible(Rows().size());
-    const int width = static_cast<int>(560 * s.scale), height = static_cast<int>((74 + 46 * rows + 50) * s.scale);
+    const int width = static_cast<int>((s.page >= 2 ? 720 : 560) * s.scale), height = static_cast<int>((74 + 46 * rows + 50) * s.scale);
     RECT game{};
     GetWindowRect(g_window, &game);
     const int x = (game.left + game.right - width) / 2, y = (game.top + game.bottom - height) / 2;
@@ -1341,11 +1410,60 @@ void Change(int step) {
     InvalidateRect(s.window, nullptr, FALSE);
 }
 
+// Sends a line to the friend of the chat page: one of the quick answers, or one written on the keyboard box.
+void Answer(int which) {
+    std::string text;
+    if (which < 0) {
+        char typed[512] = {};
+        ranga_text_request request{};
+        const std::string title = "Mensagem para " + Utf8(s.chatName);
+        request.title = title.c_str();
+        request.guide = "Enter ou Start: mandar    Esc: cancelar";
+        request.initial = "";
+        request.max_length = 300;
+        request.result = typed;
+        request.result_size = sizeof(typed);
+        if (!AskText(request) || !request.accepted) return;
+        text = typed;
+    } else {
+        text = Utf8(kReplies[which]);
+    }
+    if (text.find_first_not_of(' ') == std::string::npos) return;
+    Log("[retro] chat: mensagem mandada (%d letras)\n", static_cast<int>(text.size()));
+    Social::Send(s.chatWith, text);
+    Social::MarkSeen(s.chatWith);
+    // The new line pushes the answers down one: the focus stays on the answer just used.
+    Rows();
+    s.focus = s.answersAt + which + 1;
+    s.top = std::max(0, s.focus - kShown + 1);
+    Place();
+}
+
 void Pick() {
     if (s.page == 1) {
         Change(1);
         return;
     }
+    if (s.page == 2) {
+        if (s.focus < static_cast<int>(s.friendRows.size())) {
+            s.chatWith = s.friendRows[static_cast<size_t>(s.focus)];
+            for (const auto& f : Social::Friends()) {
+                if (f.id == s.chatWith) s.chatName = Wide(f.name.substr(0, f.name.rfind('#')));
+            }
+            Social::MarkSeen(s.chatWith);
+            s.page = 3;
+            Rows();
+            s.focus = s.answersAt;
+            s.top = std::max(0, s.focus - 5);
+            Place();
+        }
+        return;
+    }
+    if (s.page == 3) {
+        if (s.focus >= s.answersAt) Answer(s.focus - s.answersAt - 1);
+        return;
+    }
+    if (s.page == 4) return;
     switch (s.focus) {
         case 0: s.result = kContinue; break;
         case 1: s.result = kSave; break;
@@ -1357,16 +1475,29 @@ void Pick() {
                 Place();
             }
             break;
-        case 6: s.result = kReset; break;
-        case 7: s.result = kQuit; break;
+        case 6:
+        case 7:
+            s.page = s.focus == 6 ? 2 : 4;
+            s.focus = s.top = 0;
+            Place();
+            break;
+        case 8: s.result = kReset; break;
+        case 9: s.result = kQuit; break;
         default: Change(1); break;
     }
 }
 
 void Back() {
-    if (s.page == 1) {
+    if (s.page == 3) {
+        s.page = 2;
+        Rows();
+        const auto at = std::find(s.friendRows.begin(), s.friendRows.end(), s.chatWith);
+        s.focus = at == s.friendRows.end() ? 0 : static_cast<int>(at - s.friendRows.begin());
+        s.top = std::max(0, s.focus - kShown + 1);
+        Place();
+    } else if (s.page != 0) {
+        s.focus = s.page == 1 ? 4 : s.page == 2 ? 6 : 7;
         s.page = 0;
-        s.focus = 4;
         s.top = 0;
         Place();
     } else {
@@ -1396,7 +1527,13 @@ void Paint(HWND window) {
     HGDIOBJ oldFont = SelectObject(dc, title);
     SetTextColor(dc, kText);
     RECT head{px(28), px(22), client.right - px(28), px(56)};
-    DrawTextW(dc, s.page == 0 ? L"Menu do jogo" : L"Opções do core", -1, &head, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    std::wstring heading = s.page == 0 ? L"Menu do jogo" : s.page == 1 ? L"Opções do core" : s.page == 2 ? L"Amigos" : s.page == 3 ? s.chatName : L"Conquistas";
+    if (s.page == 4) {
+        std::wstring game;
+        Achievements::List(game);
+        if (!game.empty()) heading += L"  ·  " + game;
+    }
+    DrawTextW(dc, heading.c_str(), -1, &head, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     SelectObject(dc, small);
     SetTextColor(dc, kDim);
     DrawTextW(dc, L"Ranga Emu", -1, &head, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
@@ -1427,8 +1564,8 @@ void Paint(HWND window) {
             DrawTextW(dc, value.c_str(), -1, &place, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
             label.right = place.left - px(16);
         }
-        SetTextColor(dc, focused ? kText : RGB(0xb4, 0xb6, 0xbc));
-        DrawTextW(dc, row.label.c_str(), -1, &label, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        SetTextColor(dc, row.note ? kDim : focused ? kText : RGB(0xb4, 0xb6, 0xbc));
+        DrawTextW(dc, row.label.c_str(), -1, &label, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
     }
     if (rows.size() > static_cast<size_t>(kShown)) {
         // Where the list is, as a thin bar on the right.
@@ -1438,9 +1575,13 @@ void Paint(HWND window) {
     }
     SelectObject(dc, small);
     SetTextColor(dc, kDim);
-    RECT foot{px(28), client.bottom - px(40), client.right - px(28), client.bottom - px(12)};
-    DrawTextW(dc, s.page == 0 ? L"↑↓ escolher    ←→ mudar    A / Enter: ok    B / Esc: voltar ao jogo"
-                              : L"↑↓ escolher    ←→ mudar    B / Esc: voltar", -1, &foot, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    RECT footRect{px(28), client.bottom - px(40), client.right - px(28), client.bottom - px(12)};
+    const wchar_t* foot = s.page == 0   ? L"↑↓ escolher    ←→ mudar    A / Enter: ok    B / Esc: voltar ao jogo"
+                          : s.page == 1 ? L"↑↓ escolher    ←→ mudar    B / Esc: voltar"
+                          : s.page == 2 ? L"↑↓ escolher    A / Enter: conversar    B / Esc: voltar"
+                          : s.page == 3 ? L"A / Enter: mandar    B / Esc: voltar    (o jogo espera enquanto o menu está aberto)"
+                                        : L"↑↓ ver    B / Esc: voltar";
+    DrawTextW(dc, foot, -1, &footRect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     BitBlt(target, 0, 0, client.right, client.bottom, dc, 0, 0, SRCCOPY);
     SelectObject(dc, oldFont);
     SelectObject(dc, oldBitmap);
@@ -1460,6 +1601,7 @@ LRESULT CALLBACK Proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
         case WM_ERASEBKGND:
             return 1;
         case WM_KEYDOWN:
+            if (std::getenv("RANGA_RETRO_DEBUG") != nullptr) Log("[retro] menu: tecla %u, página %d, foco %d\n", static_cast<unsigned>(wParam), s.page, s.focus);
             if (wParam == VK_UP) Move(-1);
             else if (wParam == VK_DOWN) Move(1);
             else if (wParam == VK_LEFT) Change(-1);
@@ -1469,6 +1611,14 @@ LRESULT CALLBACK Proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
             return 0;
         case WM_MOUSEMOVE:
         case WM_LBUTTONUP: {
+            // Windows also says the mouse moved when the panel moves or resizes under a still cursor (a message coming
+            // in): only a real move takes the focus, or the gamepad's choice would jump to wherever the cursor rests.
+            POINT cursor{};
+            GetCursorPos(&cursor);
+            if (message == WM_MOUSEMOVE) {
+                if (cursor.x == s.cursor.x && cursor.y == s.cursor.y) return 0;
+                s.cursor = cursor;
+            }
             const int y = static_cast<short>(HIWORD(lParam)), row = (y - static_cast<int>(74 * s.scale)) / static_cast<int>(46 * s.scale);
             if (y >= static_cast<int>(74 * s.scale) && row < Visible(Rows().size()) && s.top + row != s.focus) {
                 s.focus = s.top + row;
@@ -1548,6 +1698,7 @@ int ShowMenu(int& slot, bool& fullscreen) {
     s = MenuState{};
     s.slot = slot;
     s.fullscreen = g_fullscreen;
+    GetCursorPos(&s.cursor);
     for (size_t i = 0; i < g.optionOrder.size(); ++i) {
         if (g.optionInfo[g.optionOrder[i]].values.size() >= 2) s.options.push_back(i);
     }
@@ -1599,6 +1750,19 @@ int ShowMenu(int& slot, bool& fullscreen) {
             DispatchMessageW(&message);
         }
         PollPads();
+        if (Social::Changed() && s.page != 1) {
+            // A message coming in while the chat is open pushes the answers down: the focus moves with them.
+            if (s.page == 3) {
+                const int offset = s.focus - s.answersAt;
+                Rows();
+                if (offset >= 0) {
+                    s.focus = s.answersAt + offset;
+                    s.top = std::max(s.top, s.focus - kShown + 1);
+                }
+                Social::MarkSeen(s.chatWith);
+            }
+            Place();
+        }
         if (!g_running || !IsWindow(g_window)) s.result = kQuit;
     }
     Log("[retro] menu: escolha %d\n", s.result);
@@ -2290,6 +2454,13 @@ int RetroMain(int argc, wchar_t** argv) {
         achievements.log = [](const char* text) { Log("%s", text); };
         Achievements::Start(achievements);
     }
+    {
+        // Friends and chat for the menu, with the session of Ranga's profile beside the program.
+        wchar_t program[MAX_PATH] = {};
+        GetModuleFileNameW(nullptr, program, MAX_PATH);
+        std::wstring folder = program;
+        Social::Start(folder.substr(0, folder.find_last_of(L"\\/")), g_window);
+    }
 
     Video video;
     GlVideo glVideo;
@@ -2351,6 +2522,7 @@ int RetroMain(int argc, wchar_t** argv) {
         // keep this loop in the message queue for good, since Windows hands out WM_PAINT whenever the queue is empty.
         MSG message;
         Achievements::Idle();
+        Social::Idle();
         for (int pending = 0; pending < 256 && PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE); ++pending) {
             TranslateMessage(&message);
             DispatchMessageW(&message);
@@ -2506,6 +2678,7 @@ int RetroMain(int argc, wchar_t** argv) {
     saves.FlushSram();
     Netplay::Stop();
     Achievements::Stop();
+    Social::Stop();
     // The context goes first, while the game is still loaded: SwanStation, told its context is lost, switches to its
     // software renderer, which needs the game's system still there.
     if (g_hwActive && g_hw.context_destroy != nullptr) g_hw.context_destroy();
