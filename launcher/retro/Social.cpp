@@ -16,7 +16,9 @@ namespace Social {
 namespace {
 
 constexpr const char* kDefaultCentral = "https://ranga-central.nadroi-dev.workers.dev";
-constexpr int kPollMs = 12000;
+// Messages every four seconds; the friends list (who is online, what they play) every fifth time.
+constexpr int kPollMs = 4000;
+constexpr int kFriendsEvery = 5;
 
 struct Notice {
     std::wstring title, text;
@@ -151,15 +153,18 @@ std::string NameOf(const std::string& id) {
 
 void Work() {
     bool first = true;
+    int round = 0;
     for (;;) {
         std::deque<std::pair<std::string, std::string>> outbox;
         long long after;
+        bool ready;
         {
             std::unique_lock guard(s->lock);
             if (!first) s->wake.wait_for(guard, std::chrono::milliseconds(kPollMs), [] { return s->stopping || !s->outbox.empty(); });
             if (s->stopping) return;
             outbox.swap(s->outbox);
             after = s->after;
+            ready = s->ready;
         }
         first = false;
         for (const auto& [to, text] : outbox) {
@@ -171,7 +176,7 @@ void Work() {
             }
         }
         std::string me;
-        const Ranga::HttpResult friends = Call("GET", "/amigos", "");
+        const Ranga::HttpResult friends = (round++ % kFriendsEvery == 0 || !ready) ? Call("GET", "/amigos", "") : Ranga::HttpResult{};
         const Ranga::HttpResult got = Call("GET", "/mensagens?desde=" + std::to_string(after), "");
         std::lock_guard guard(s->lock);
         if (friends.status == 200) {

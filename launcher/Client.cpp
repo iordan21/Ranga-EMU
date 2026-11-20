@@ -3979,7 +3979,9 @@ struct Client {
     std::atomic<bool> ownerBusy{false};
     std::thread profileThread;
     std::atomic<bool> profileBusy{false};
-    ULONGLONG profileSyncedAt = 0;
+    ULONGLONG profileSyncedAt = 0, friendsPolledAt = 0;
+    // Minimized or covered: the central is still asked, only less often.
+    bool background = false;
     uint64_t sentRevision = 0;
     std::string sentPlaying;
     // Pictures: this player's photo, the friends' (by id), and RetroAchievements' badges, downloaded once to
@@ -4092,6 +4094,14 @@ struct Client {
     }
 
     void AddToast(const std::string& title, const std::string& text, const std::string& badge) {
+        // Minimized or covered, no frames run and ImGui's clock stands still, then jumps on coming back: such a
+        // notice starts its seven seconds when it is first drawn, and the taskbar button blinks meanwhile.
+        if (background) {
+            toasts.push_back({title, text, badge, 0.0, 0.0});
+            FLASHWINFO flash{sizeof(FLASHWINFO), window, FLASHW_TRAY | FLASHW_TIMERNOFG, 3, 0};
+            FlashWindowEx(&flash);
+            return;
+        }
         toasts.push_back({title, text, badge, ImGui::GetTime() + 7.0, ImGui::GetTime()});
     }
 
@@ -4174,11 +4184,40 @@ struct Client {
         const ULONGLONG now = GetTickCount64();
         const std::string playing = playingTitle.empty() ? "" : playingTitle + "\t" + playingSystem;
         const bool changed = profile.Revision() != sentRevision || playing != sentPlaying;
+        // Between cards only the friends are asked for: every five seconds on screen, every minute minimized or covered.
+        bool friendsOnly = false;
         if (!force && profileSyncedAt != 0) {
-            if (!changed && now - profileSyncedAt < 120000) return;
             if (changed && now - profileSyncedAt < 5000) return;
+            if (!changed && now - profileSyncedAt < 120000) {
+                if (now - friendsPolledAt < (background ? 60000u : 5000u)) return;
+                friendsOnly = true;
+            }
         }
         if (profileThread.joinable()) profileThread.join();
+        friendsPolledAt = now;
+        if (friendsOnly) {
+            profileBusy = true;
+            profileThread = std::thread([this, root = library.Root(), session = profile.session] {
+                const HttpResult got = CentralCall(root, "GET", "/amigos", "", session, 8000);
+                {
+                    std::lock_guard guard(friendsLock);
+                    if (got.status == 200) {
+                        FriendsList list = ReadFriends(got.body);
+                        friends = std::move(list.friends);
+                        friendsIncoming = std::move(list.incoming);
+                        friendsOutgoing = std::move(list.outgoing);
+                        friendsBlocked = std::move(list.blocked);
+                        friendsAt = static_cast<long long>(std::time(nullptr));
+                        friendsProblem.clear();
+                    } else if (got.status == 401) {
+                        friendsProblem = "A sessão acabou: entre na sua conta de novo.";
+                        sessionExpired = true;
+                    }
+                }
+                profileBusy = false;
+            });
+            return;
+        }
         profileSyncedAt = now;
         sentRevision = profile.Revision();
         sentPlaying = playing;
@@ -5048,12 +5087,13 @@ struct Client {
         }
     }
 
-    // Fetches the conversations (every three seconds while the Chat tab is open, every thirty otherwise), sending say
-    // to the friend `to` first.
+    // Fetches the conversations (every three seconds while the Chat tab is open, five on any other screen, thirty
+    // minimized or covered), sending say to the friend `to` first.
     void PollChat(const std::string& to = "", const std::string& say = "") {
         if (!profileLoaded || chatBusy || profile.session.empty()) return;
         const ULONGLONG now = GetTickCount64();
-        if (say.empty() && chatAt != 0 && now - chatAt < (chatTabOpen ? 3000u : 30000u)) return;
+        const ULONGLONG every = chatTabOpen ? 3000u : background ? 30000u : 5000u;
+        if (say.empty() && chatAt != 0 && now - chatAt < every) return;
         if (chatThread.joinable()) chatThread.join();
         chatAt = now;
         chatBusy = true;
@@ -5808,6 +5848,11 @@ struct Client {
     // Achievements just unlocked, at the bottom left for a few seconds.
     void Toasts(float scale) {
         const double now = ImGui::GetTime();
+        for (Toast& toast : toasts) {
+            if (toast.until != 0.0) continue;
+            toast.start = now;
+            toast.until = now + 7.0;
+        }
         toasts.erase(std::remove_if(toasts.begin(), toasts.end(), [&](const Toast& toast) { return toast.until < now; }), toasts.end());
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
         float bottom = viewport->WorkPos.y + viewport->WorkSize.y - 16 * scale;
@@ -5852,6 +5897,17 @@ struct Client {
     }
 
     // The client gets out of the way while a game runs and comes back when it ends.
+    // Minimized or covered (a game is running, say): no frames are drawn, but friends and messages keep coming, so a
+    // request or a message is there at once on coming back.
+    void Background() {
+        if (!profileLoaded) return;
+        background = true;
+        ProcessAccount();
+        SyncProfiles(false);
+        NoticeChat();
+        PollChat();
+    }
+
     void Watch() {
         const auto state = runner.Current();
         if (state == lastState) return;
@@ -5880,6 +5936,7 @@ struct Client {
         ProcessEnded();
         TakeRaLogin();
         ProcessAccount();
+        background = false;
         SyncProfiles(false);
         NoticeChat();
         PollChat();
@@ -6165,6 +6222,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
             Sleep(50);
             if (!IsIconic(hwnd)) g_occluded = false;
             client.Watch();
+            client.Background();
             continue;
         }
         g_occluded = false;
