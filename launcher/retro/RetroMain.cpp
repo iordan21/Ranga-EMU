@@ -2348,6 +2348,9 @@ void StartOnline(const std::wstring& corePath, const std::wstring& romPath, bool
 
 int RetroMain(int argc, wchar_t** argv) {
     std::wstring corePath, romPath, title = L"jogo", optionsPath, systemDir, saveDir;
+    // --option key=value: a core option for this run only, over the options file and never written to it (Ranga
+    // passes its own room's local address this way when the room runs on this PC).
+    std::vector<std::pair<std::string, std::string>> runOptions;
     bool fullscreen = false;
     for (int i = 1; i < argc; ++i) {
         const std::wstring arg = argv[i];
@@ -2366,6 +2369,11 @@ int RetroMain(int argc, wchar_t** argv) {
         else if (arg == L"--fullscreen") fullscreen = true;
         else if (arg == L"--no-game") romPath = L"<sem jogo>";
         else if (arg == L"--gpu" && hasValue) g_preferVulkan = std::wstring(argv[++i]) != L"opengl";
+        else if (arg == L"--option" && hasValue) {
+            const std::string pair = Utf8(argv[++i]);
+            if (const size_t equals = pair.find('='); equals != std::string::npos && equals > 0)
+                runOptions.emplace_back(pair.substr(0, equals), pair.substr(equals + 1));
+        }
     }
     const bool noGame = romPath == L"<sem jogo>";
     if (corePath.empty() || romPath.empty()) {
@@ -2403,6 +2411,10 @@ int RetroMain(int argc, wchar_t** argv) {
     }
     if (!optionsPath.empty()) ReadOptionsFile(optionsPath);
     g.optionsPath = optionsPath;
+    for (const auto& [key, value] : runOptions) {
+        g.overrides[key] = value;
+        Log("[retro] só nesta partida: %s = %s\n", key.c_str(), value.c_str());
+    }
     {
         const auto pick = [](const char* key, std::initializer_list<const char*> names) {
             const auto found = g.overrides.find(key);

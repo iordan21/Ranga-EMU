@@ -1,9 +1,11 @@
 #include "Runner.hpp"
 #include "Dlss5.hpp"
 #include "Embed.hpp"
+#include "Rooms.hpp"
 #include "Systems.hpp"
 
 #include <cstdio>
+#include <cstdlib>
 #include <ctime>
 #include <cwchar>
 #include <utility>
@@ -378,6 +380,28 @@ void Runner::RunExternal(const std::wstring& root, const Game& game, const Optio
     std::wstring command = EngineCommand(engine, rom, options.borderless && !engine.embed, game.title, workspace);
     if (noGame) {
         if (const size_t at = command.find(L"--rom \"\""); at != std::wstring::npos) command.replace(at, 8, L"--no-game");
+    }
+    // The PC that hosts the Switch room joins it right here, not through the tunnel: through playit its own game's
+    // packets went out to playit's server and back, which adds delay and one more thing that can drop (20/11/2026 the
+    // tunnel didn't answer in time and Mario Kart lost the friend). Only for this run; the game keeps its address.
+    if (engine.native && game.system == L"SWITCH" && ReadCoreOption(game, "eden_sala") == "entrar") {
+        std::string address = ReadCoreOption(game, "eden_sala_endereco");
+        // The Porta field holds the room's own port (24872); the one in a tunnel address is playit's, which no room has.
+        const int port = std::atoi(ReadCoreOption(game, "eden_sala_porta").c_str());
+        if (const size_t colon = address.rfind(':'); colon != std::string::npos) address.resize(colon);
+        if (!address.empty() && address != "127.0.0.1" && address != "localhost" && RoomServerEnabled(root)) {
+            // The room this game asked for by its port, else the only one running here.
+            std::vector<Room> running;
+            for (const Room& room : LoadRooms(root)) {
+                if (RoomRunning(root, room)) running.push_back(room);
+            }
+            const Room* local = nullptr;
+            for (const Room& room : running) {
+                if (room.port == port) local = &room;
+            }
+            if (local == nullptr && running.size() == 1) local = &running.front();
+            if (local != nullptr) command += L" --option \"eden_sala_endereco=127.0.0.1:" + std::to_wstring(local->port) + L"\"";
+        }
     }
     {
         // The exact command goes to the log first, so a wrong argument shows there.
