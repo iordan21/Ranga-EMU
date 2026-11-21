@@ -4594,7 +4594,84 @@ struct Client {
         ImGui::EndChild();
     }
 
+    // The room a game will join when it opens, to test first: its address, the port when the address has none, and
+    // whether it is the classics' server (TCP). False when the game plays offline, or when this PC hosts that room
+    // (the game then joins it here, at 127.0.0.1: Runner).
+    bool RoomToCheck(const Game& game, std::string& address, int& port, bool& tcp) {
+        tcp = false;
+        if (game.system == L"SWITCH" && ReadCoreOption(game, "eden_sala") == "entrar") {
+            address = ReadCoreOption(game, "eden_sala_endereco");
+            port = std::atoi(ReadCoreOption(game, "eden_sala_porta").c_str());
+            if (port <= 0) port = 24872;
+            if (RoomServerEnabled(library.Root())) {
+                for (const Room& room : LoadRooms(library.Root())) if (RoomRunning(library.Root(), room)) return false;
+            }
+        } else if (game.system == L"3DS" && ReadCoreOption(game, "citra_sala") == "entrar") {
+            address = ReadCoreOption(game, "citra_sala_endereco");
+            port = 24874;
+        } else if (ClassicOnline(game.system) && ReadCoreOption(game, "ranga_online") == "ligado") {
+            address = ReadCoreOption(game, "ranga_online_endereco");
+            port = 24873;
+            tcp = true;
+        } else {
+            return false;
+        }
+        return !address.empty();
+    }
+
+    std::atomic<bool> playChecking{false}; // the room is being tested before the game opens
+
     void Play(Game& game) {
+        // With a room to join, it is asked first (3 s at most, in the background): a room that does not answer is said
+        // before the game opens, instead of the game finding out in the middle of a race.
+        // (A press can reach here twice in a frame, from the button and from the pad; the second waits for the test.)
+        if (playChecking) return;
+        std::string address;
+        int port = 0;
+        bool tcp = false;
+        if (RoomToCheck(game, address, port, tcp)) {
+            playChecking = true;
+            std::thread([this, id = game.titleId, address, port, tcp] {
+                const bool answered = ProbeRoom(address, port, tcp) >= 0;
+                std::lock_guard guard(probeLock);
+                checkedPlay = {id, answered ? 1 : 0, address};
+            }).detach();
+            return;
+        }
+        PlayNow(game);
+    }
+
+    // The answer of the test above, picked up on the drawing thread (TakePlayCheck).
+    struct PlayCheck {
+        std::wstring titleId;
+        int answered = -1; // -1: nothing waiting
+        std::string address;
+    } checkedPlay;
+
+    void TakePlayCheck() {
+        PlayCheck check;
+        {
+            std::lock_guard guard(probeLock);
+            if (checkedPlay.answered < 0) return;
+            check = std::exchange(checkedPlay, PlayCheck{});
+        }
+        playChecking = false;
+        for (size_t i = 0; i < library.Games().size(); ++i) {
+            if (library.Games()[i].titleId != check.titleId) continue;
+            if (check.answered == 1) {
+                PlayNow(library.Games()[i]);
+            } else {
+                Confirm(L"A sala " + Wide(check.address) + L" não respondeu: o online não vai funcionar agora (servidor desligado, "
+                        L"túnel do playit fora ou endereço errado).\n\nJogar mesmo assim?",
+                        [this, id = check.titleId] {
+                            for (auto& game : library.Games()) if (game.titleId == id) PlayNow(game);
+                        });
+            }
+            return;
+        }
+    }
+
+    void PlayNow(Game& game) {
         Save();
         RefreshEngines();
         // For the profile: online or not, and what the friends see as being played.
@@ -4687,8 +4764,8 @@ struct Client {
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, Color(kAccent));
         ImGui::PushStyleColor(ImGuiCol_Text, Color(0xffffff));
         ImGui::PushFont(semibold, 18);
-        ImGui::BeginDisabled(busy);
-        const char* playLabel = !busy ? "Jogar" : runner.Current() == Runner::State::Preparing ? "Preparando..." : "Rodando...";
+        ImGui::BeginDisabled(busy || playChecking);
+        const char* playLabel = playChecking ? "Testando a sala..." : !busy ? "Jogar" : runner.Current() == Runner::State::Preparing ? "Preparando..." : "Rodando...";
         // The page opens with the focus on Jogar, so Cross / A (or Enter) plays, as on a console; the d-pad goes down
         // to the options from there.
         const bool focusNow = focusPlay;
@@ -6828,6 +6905,7 @@ struct Client {
                 break;
             }
         }
+        TakePlayCheck();
         // Library changes asked for while drawing run here, before anything holds on to a game.
         if (pending) {
             auto action = std::move(pending);
