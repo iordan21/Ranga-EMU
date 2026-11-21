@@ -386,6 +386,13 @@ std::wstring PublishUpdate(const std::wstring& root, const std::string& notes, s
     RemoveTree(old);
     EnsureUnicodeIni(Ini(root));
     WritePrivateProfileStringW(L"Ranga", L"versao_atualizacao", Wide(version).c_str(), Ini(root).c_str());
+    // The news board (Novidades in every Ranga): one line per version, "version<TAB>notes", oldest first, kept on the
+    // hosting PC and sent to GitHub with each release (GitHub keeps only the newest three releases).
+    if (FILE* history = _wfopen((root + L"\\salas\\novidades.txt").c_str(), L"ab")) {
+        const std::string line = version + "\t" + oneLine + "\n";
+        std::fwrite(line.data(), 1, line.size(), history);
+        std::fclose(history);
+    }
     return L"";
 }
 
@@ -577,6 +584,7 @@ std::wstring PublishToGitHub(const std::wstring& root, std::string& version) {
     }
     CopyFileW((published + L"\\manifest.txt").c_str(), (staging + L"\\manifest.txt").c_str(), FALSE);
     CopyFileW((published + L"\\manifest.sig").c_str(), (staging + L"\\manifest.sig").c_str(), FALSE);
+    const bool history = CopyFileW((root + L"\\salas\\novidades.txt").c_str(), (staging + L"\\novidades.txt").c_str(), FALSE) != 0;
     if (FILE* note = _wfopen((staging + L"\\notas.txt").c_str(), L"wb")) {
         const std::string text = notes + "\n\nVersão assinada do Ranga Emu. O Ranga baixa e confere sozinho; não precisa baixar nada daqui.\n";
         std::fwrite(text.data(), 1, text.size(), note);
@@ -585,7 +593,7 @@ std::wstring PublishToGitHub(const std::wstring& root, std::string& version) {
     const std::wstring tag = L"v" + Wide(version);
     std::string said;
     const int code = RunCaptured(L"\"" + gh + L"\" release create " + tag + L" --repo " + kGithubRepo + L" --title \"Ranga " + Wide(version) +
-                                     L"\" --notes-file notas.txt --latest manifest.txt manifest.sig" + assets,
+                                     L"\" --notes-file notas.txt --latest manifest.txt manifest.sig" + (history ? L" novidades.txt" : L"") + assets,
                                  staging, said);
     RemoveTree(staging);
     if (code != 0) {

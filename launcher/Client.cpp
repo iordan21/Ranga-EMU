@@ -854,6 +854,8 @@ struct Client {
         // Every PC but the one that hosts looks for a newer Ranga there when it opens (Update.hpp).
         // RANGA_CLIENT_AUTO_UPDATE=1 (tests): checks even in test mode and takes the update without asking.
         if (!RoomServerEnabled(root) && (_wgetenv(L"RANGA_CLIENT_TEST_INPUT") == nullptr || autoUpdate)) StartUpdateCheck();
+        // RANGA_CLIENT_PAGE=novidades (tests): opens on the news board.
+        if (const wchar_t* start = _wgetenv(L"RANGA_CLIENT_PAGE"); start != nullptr && std::wstring(start) == L"novidades") newsOpen = true;
     }
     ~Client() {
         if (updateThread.joinable()) updateThread.join();
@@ -861,7 +863,174 @@ struct Client {
         if (backupThread.joinable()) backupThread.join();
         if (packageThread.joinable()) packageThread.join();
         if (githubThread.joinable()) githubThread.join();
+        if (newsThread.joinable()) newsThread.join();
         StopProfileThreads();
+    }
+
+    // ---- Novidades: what changed in each version of Ranga ----
+    // The history the hosting PC keeps (salas\novidades.txt, one "version<TAB>notes" line each, oldest first) and sends
+    // with every release to GitHub; every other Ranga reads it there and keeps the last copy in perfil\novidades.txt.
+    struct NewsItem {
+        std::string version, notes;
+    };
+    std::vector<NewsItem> news; // newest first, under newsLock
+    std::mutex newsLock;
+    std::thread newsThread;
+    std::atomic<bool> newsBusy{false};
+    bool newsOpen = false, newsToastShown = false;
+    ULONGLONG newsAskedAt = 0;
+
+    static std::vector<NewsItem> ParseNews(const std::string& text) {
+        std::vector<NewsItem> items;
+        size_t start = 0;
+        while (start < text.size()) {
+            size_t end = text.find('\n', start);
+            if (end == std::string::npos) end = text.size();
+            std::string line = text.substr(start, end - start);
+            start = end + 1;
+            while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+            const size_t tab = line.find('\t');
+            if (tab == std::string::npos || tab == 0 || line.rfind("20", 0) != 0) continue;
+            items.push_back({line.substr(0, tab), line.substr(tab + 1)});
+        }
+        std::reverse(items.begin(), items.end());
+        return items;
+    }
+
+    // Read again at most every half hour (and when the page opens), in the background.
+    void RefreshNews(bool force) {
+        if (newsBusy) return;
+        const ULONGLONG now = GetTickCount64();
+        if (!force && newsAskedAt != 0 && now - newsAskedAt < 30 * 60 * 1000) return;
+        newsAskedAt = now;
+        if (newsThread.joinable()) newsThread.join();
+        newsBusy = true;
+        newsThread = std::thread([this, root = library.Root()] {
+            std::string text = ReadBytes(root + L"\\salas\\novidades.txt");
+            const std::wstring cache = root + L"\\perfil\\novidades.txt";
+            if (text.empty()) {
+                const HttpResult answer = HttpRequest("GET", "https://github.com/iordan21/Ranga-EMU/releases/latest/download/novidades.txt");
+                if (answer.status == 200 && !ParseNews(answer.body).empty()) {
+                    text = answer.body;
+                    CreateDirectoryW((root + L"\\perfil").c_str(), nullptr);
+                    if (FILE* file = _wfopen(cache.c_str(), L"wb")) {
+                        std::fwrite(text.data(), 1, text.size(), file);
+                        std::fclose(file);
+                    }
+                } else {
+                    text = ReadBytes(cache);
+                }
+            }
+            auto items = ParseNews(text);
+            {
+                std::lock_guard guard(newsLock);
+                if (!items.empty()) news = std::move(items);
+            }
+            newsBusy = false;
+        });
+    }
+
+    // How many versions came since the board was last opened. The first time ever only the newest counts.
+    int UnseenNews() {
+        std::lock_guard guard(newsLock);
+        if (news.empty()) return 0;
+        const std::string seen = Utf8(ReadIni(library.Root() + L"\\engines.ini", L"Ranga", L"novidades_vistas", L""));
+        if (seen.empty()) return 1;
+        int count = 0;
+        for (const auto& item : news) count += item.version > seen ? 1 : 0;
+        return count;
+    }
+
+    void MarkNewsSeen() {
+        std::string newest;
+        {
+            std::lock_guard guard(newsLock);
+            if (!news.empty()) newest = news.front().version;
+        }
+        if (newest.empty()) return;
+        const std::wstring ini = library.Root() + L"\\engines.ini";
+        EnsureUnicodeIni(ini);
+        WritePrivateProfileStringW(L"Ranga", L"novidades_vistas", Wide(newest).c_str(), ini.c_str());
+    }
+
+    // "2026.11.20-2057" as "20/11/2026 às 20:57".
+    static std::string NewsDate(const std::string& version) {
+        if (version.size() < 15 || version[4] != '.' || version[7] != '.' || version[10] != '-') return version;
+        return version.substr(8, 2) + "/" + version.substr(5, 2) + "/" + version.substr(0, 4) + " às " + version.substr(11, 2) + ":" + version.substr(13, 2);
+    }
+
+    void OpenNews() {
+        newsOpen = true;
+        profileOpen = false;
+        enginesPage = false;
+        RefreshNews(true);
+    }
+
+    template <typename NavT> void NewsPage(float scale, const NavT& nav) {
+        RefreshNews(false);
+        if (nav.back) {
+            MarkNewsSeen();
+            newsOpen = false;
+            return;
+        }
+        const float left = 40 * scale;
+        ImGui::SetCursorPos(ImVec2(left, 22 * scale));
+        if (ImGui::Button("<  Voltar", ImVec2(0, 36 * scale))) {
+            MarkNewsSeen();
+            newsOpen = false;
+            return;
+        }
+        ImGui::SameLine(0, 18 * scale);
+        ImGui::PushFont(semibold, 28);
+        ImGui::TextUnformatted("Novidades do Ranga");
+        ImGui::PopFont();
+        ImGui::SetCursorPos(ImVec2(left, 76 * scale));
+        ImGui::TextDisabled("O que mudou em cada versão. O Ranga se atualiza sozinho quando abre.");
+        std::vector<NewsItem> items;
+        {
+            std::lock_guard guard(newsLock);
+            items = news;
+        }
+        const std::string seen = Utf8(ReadIni(library.Root() + L"\\engines.ini", L"Ranga", L"novidades_vistas", L""));
+        const std::string installed = InstalledUpdate(library.Root());
+        ImGui::SetCursorPos(ImVec2(left, 108 * scale));
+        ImGui::BeginChild("##news", ImVec2(ImGui::GetContentRegionAvail().x - left, 0), ImGuiChildFlags_None);
+        if (items.empty()) ImGui::TextDisabled(newsBusy ? "Buscando as novidades..." : "Ainda não deu para buscar as novidades (sem internet?).");
+        ImDrawList* draw = ImGui::GetWindowDrawList();
+        for (size_t i = 0; i < items.size(); ++i) {
+            const auto& item = items[i];
+            const bool fresh = seen.empty() ? i == 0 : item.version > seen;
+            const float width = ImGui::GetContentRegionAvail().x;
+            const ImVec2 top = ImGui::GetCursorScreenPos();
+            const float pad = 16 * scale;
+            draw->ChannelsSplit(2);
+            draw->ChannelsSetCurrent(1);
+            ImGui::SetCursorScreenPos(ImVec2(top.x + pad, top.y + pad));
+            ImGui::BeginGroup();
+            ImGui::PushFont(semibold, 18);
+            ImGui::TextUnformatted(NewsDate(item.version).c_str());
+            ImGui::PopFont();
+            if (fresh || item.version == installed) {
+                ImGui::SameLine(0, 12 * scale);
+                ImGui::PushStyleColor(ImGuiCol_Text, Color(fresh ? kAccent : kGreen));
+                ImGui::TextUnformatted(fresh ? "nova" : "a sua versão");
+                ImGui::PopStyleColor();
+            }
+            ImGui::PushTextWrapPos(top.x + width - pad - ImGui::GetWindowPos().x);
+            ImGui::TextUnformatted(item.notes.c_str());
+            ImGui::PopTextWrapPos();
+            ImGui::EndGroup();
+            const float bottom = ImGui::GetItemRectMax().y + pad;
+            draw->ChannelsSetCurrent(0);
+            draw->AddRectFilled(top, ImVec2(top.x + width, bottom), Packed(fresh ? kSelected : kSurface), 12 * scale);
+            draw->ChannelsMerge();
+            ImGui::SetCursorScreenPos(ImVec2(top.x, bottom + 10 * scale));
+            ImGui::Dummy(ImVec2(0, 0));
+        }
+        // The gamepad scrolls the list with up and down.
+        if (nav.down) ImGui::SetScrollY(ImGui::GetScrollY() + 120 * scale);
+        if (nav.up) ImGui::SetScrollY(std::max(0.0f, ImGui::GetScrollY() - 120 * scale));
+        ImGui::EndChild();
     }
 
     // The update: checked in the background; when there is one, a bar at the bottom offers it.
@@ -2124,7 +2293,7 @@ struct Client {
     // Adicionar jogo and Emuladores; first is Adicionar jogo's place on the top row (TopBar).
     void TopButtons(float scale, float right, int first) {
         const float wide = 170 * scale, narrow = 130 * scale, height = 36 * scale;
-        ImGui::SetCursorPos(ImVec2(right - wide - 2 * narrow - 20 * scale, 22 * scale));
+        ImGui::SetCursorPos(ImVec2(right - wide - 3 * narrow - 30 * scale, 22 * scale));
         if (ImGui::Button("+  Adicionar jogo", ImVec2(wide, height)) || barPress == first) ImGui::OpenPopup("##add");
         FocusLast(barFocus == first, scale);
         AddMenu(scale);
@@ -2132,13 +2301,34 @@ struct Client {
         if (ImGui::Button("Emuladores", ImVec2(narrow, height)) || barPress == first + 1) {
             enginesPage = true;
             profileOpen = false;
+            newsOpen = false;
             RefreshEngines();
         }
         FocusLast(barFocus == first + 1, scale);
         ImGui::SameLine(0, 10 * scale);
-        const std::string profileLabel = chatUnread > 0 ? "Perfil (" + std::to_string(chatUnread) + ")###perfil" : "Perfil###perfil";
-        if (ImGui::Button(profileLabel.c_str(), ImVec2(narrow, height)) || barPress == first + 2) OpenProfile();
+        // Novidades, with how many versions came since it was last opened.
+        RefreshNews(false);
+        const int unseen = UnseenNews();
+        // Once per opening, a notice with the newest version's notes when there is news.
+        if (unseen > 0 && !newsToastShown) {
+            newsToastShown = true;
+            std::string notes;
+            {
+                std::lock_guard guard(newsLock);
+                if (!news.empty()) notes = news.front().notes;
+            }
+            if (notes.size() > 160) notes = notes.substr(0, 157) + "...";
+            AddToast("Novidades do Ranga", notes, "");
+        }
+        const std::string newsLabel = unseen > 0 ? "Novidades (" + std::to_string(unseen) + ")###novidades" : "Novidades###novidades";
+        if (unseen > 0) ImGui::PushStyleColor(ImGuiCol_Text, Color(kAccentHover));
+        if (ImGui::Button(newsLabel.c_str(), ImVec2(narrow, height)) || barPress == first + 2) OpenNews();
+        if (unseen > 0) ImGui::PopStyleColor();
         FocusLast(barFocus == first + 2, scale);
+        ImGui::SameLine(0, 10 * scale);
+        const std::string profileLabel = chatUnread > 0 ? "Perfil (" + std::to_string(chatUnread) + ")###perfil" : "Perfil###perfil";
+        if (ImGui::Button(profileLabel.c_str(), ImVec2(narrow, height)) || barPress == first + 3) OpenProfile();
+        FocusLast(barFocus == first + 3, scale);
     }
 
     // The art of a game in a box: its own square art fills it; box art of another shape sits whole on the console's
@@ -2275,7 +2465,7 @@ struct Client {
 
     void Home(float scale, const Nav& input) {
         // On the top row (Adicionar jogo, Emuladores) the gamepad moves nothing else; up from the consoles reaches it.
-        const bool inBar = TopBar(input, 3);
+        const bool inBar = TopBar(input, 4);
         const Nav nav = inBar ? Nav{} : input;
         if (!inBar && homeRow == 0 && input.up) barFocus = 0;
         const auto shelves = Shelves();
@@ -2467,7 +2657,7 @@ struct Client {
         ImDrawList* draw = ImGui::GetWindowDrawList();
         const ImVec2 origin = ImGui::GetWindowPos(), size = ImGui::GetWindowSize();
         // The top row here is Consoles, Adicionar jogo and Emuladores.
-        const bool inBar = TopBar(input, 4);
+        const bool inBar = TopBar(input, 5);
         const Nav nav = inBar ? Nav{} : input;
         if (nav.back) {
             page = Page::Home;
@@ -3150,7 +3340,8 @@ struct Client {
                 ImGui::TextDisabled("Seu nome no PS3: %s (o mesmo do online do Ranga; a conta é criada sozinha na primeira vez). "
                                     "O endereço é o do PC que liga o servidor do PS3: na mesma casa, o 192.168... dele com :31313; "
                                     "pela internet, o IP público dele com :31313, com as portas abertas no roteador dele. Os PS3 se "
-                                    "ligam direto um no outro, então cada roteador precisa de UPnP ligado.", name.c_str());
+                                    "ligam direto um no outro; o servidor abre esse caminho sozinho na maioria das internets "
+                                    "(só falha em CGNAT dos dois lados).", name.c_str());
             } else {
                 const auto [account, kept] = RpcnAccount(StandaloneRpcnFile());
                 label("Conta");
@@ -3309,8 +3500,9 @@ struct Client {
         else if (ps3)
             ImGui::TextDisabled("O RPCN deste PC, sem e-mail e sem cadastro: cada PS3 cria a própria conta ao entrar. Na mesma casa, todos põem "
                                 "o 192.168... deste PC com a porta 31313. Pela internet, os PS3 se ligam direto um no outro, então o túnel do "
-                                "playit não serve: o roteador deste PC precisa abrir TCP 31313 e UDP 3657 (ou UPnP ligado), e o de cada "
-                                "jogador precisa de UPnP. O endereço, então, é o IP público deste PC com :31313.");
+                                "playit não serve: o roteador deste PC precisa encaminhar TCP 31313 e UDP 3657 para ele (uma vez, na "
+                                "página do roteador). Os jogadores não precisam abrir nada. O endereço, então, é o IP público deste "
+                                "PC com :31313.");
         else
             ImGui::TextDisabled("Uma sala serve para todos os jogos de 3DS. Precisa de um túnel UDP do playit para 127.0.0.1 nesta porta; "
                                 "o endereço do túnel é o que todos (você também, ou 127.0.0.1:porta) põem em \"Endereço da sala\".");
@@ -5137,6 +5329,7 @@ struct Client {
         ownerHere = !OwnerKey(library.Root()).empty();
         profileOpen = true;
         enginesPage = false;
+        newsOpen = false;
         profileViewing.clear();
         SyncProfiles(true);
     }
@@ -6407,7 +6600,7 @@ struct Client {
 
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
         const Game* shownGame = page == Page::Game ? Current() : nullptr;
-        const std::string pageKey = std::to_string(profileOpen) + std::to_string(enginesPage) + std::to_string(static_cast<int>(page)) + profileViewing +
+        const std::string pageKey = std::to_string(newsOpen) + std::to_string(profileOpen) + std::to_string(enginesPage) + std::to_string(static_cast<int>(page)) + profileViewing +
                                     (shownGame != nullptr ? Utf8(shownGame->titleId) : "") + (page == Page::Console ? Utf8(console) : "");
         if (pageKey != shownPage) {
             shownPage = pageKey;
@@ -6418,7 +6611,9 @@ struct Client {
         ImGui::SetNextWindowSize(viewport->WorkSize);
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.2f + 0.8f * appear);
         ImGui::Begin("##root", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus);
-        if (profileOpen) {
+        if (newsOpen) {
+            NewsPage(scale, nav);
+        } else if (profileOpen) {
             ProfilePage(scale, nav);
         } else if (enginesPage) {
             if (nav.back) enginesPage = false;
