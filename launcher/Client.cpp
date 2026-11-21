@@ -33,6 +33,7 @@
 #include <map>
 #include <set>
 #include <ctime>
+#include <filesystem>
 #include <cfloat>
 
 #include "imgui.h"
@@ -4337,6 +4338,56 @@ struct Client {
         }
     }
 
+    // Relatório de erro: the game's own logs, the emulator's log for its console and a short summary (Ranga's version,
+    // the game, how its last run ended) in one .zip under relatorios\, which Explorer then shows selected. Nothing
+    // personal goes in: no saves, keys, BIOS or games, only text logs.
+    void MakeErrorReport(const Game& game) {
+        const std::wstring root = library.Root();
+        SYSTEMTIME now;
+        GetLocalTime(&now);
+        wchar_t stamp[32];
+        std::swprintf(stamp, 32, L"%04d%02d%02d-%02d%02d%02d", now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond);
+        std::wstring name;
+        for (const wchar_t c : game.title) name += (iswalnum(c) || c == L' ' || c == L'-') ? c : L'_';
+        const std::wstring folder = root + L"\\relatorios\\" + name + L" " + stamp;
+        CreateDirectoryW((root + L"\\relatorios").c_str(), nullptr);
+        CreateDirectoryW(folder.c_str(), nullptr);
+        const auto copy = [&](const std::wstring& from, const std::wstring& as) {
+            if (Exists(from)) CopyFileW(from.c_str(), (folder + L"\\" + as).c_str(), FALSE);
+        };
+        for (const wchar_t* log : {L"game.log", L"game.log.last-error", L"game.err", L"launcher.log", L"prepare.log", L"dlss5.log"})
+            copy(game.workspace + L"\\logs\\" + log, log);
+        if (game.system == L"PS3") copy(root + L"\\bios\\retroarch\\rpcs3\\log\\RPCS3.log", L"RPCS3.log");
+        if (game.system == L"SWITCH") copy(root + L"\\bios\\retroarch\\eden\\log\\eden_log.txt", L"eden_log.txt");
+        std::string summary = "Ranga " + InstalledVersionName(root) + " (" + InstalledUpdate(root) + ")\r\n";
+        summary += "Jogo: " + Utf8(game.title) + "\r\nConsole: " + SystemName(game.system) + "\r\n";
+        if (!game.serial.empty()) summary += "Serial: " + Utf8(game.serial) + "\r\n";
+        summary += "Emulador: " + HowItRuns(game.system) + "\r\n";
+        // The launcher log's last line says how the game ended ("ended, exit code ...").
+        const std::string launcherLog = ReadBytes(game.workspace + L"\\logs\\launcher.log");
+        if (const size_t ended = launcherLog.rfind("ended,"); ended != std::string::npos) {
+            const size_t lineStart = launcherLog.rfind('\n', ended);
+            const size_t lineEnd = launcherLog.find('\n', ended);
+            summary += "Última vez: " + launcherLog.substr(lineStart == std::string::npos ? 0 : lineStart + 1, (lineEnd == std::string::npos ? launcherLog.size() : lineEnd) - (lineStart == std::string::npos ? 0 : lineStart + 1)) + "\r\n";
+        }
+        if (FILE* file = _wfopen((folder + L"\\resumo.txt").c_str(), L"wb")) {
+            std::fwrite(summary.data(), 1, summary.size(), file);
+            std::fclose(file);
+        }
+        // Windows' own tar makes the .zip (-a picks the format by the name).
+        const std::wstring zip = folder + L".zip";
+        RunHidden(L"tar.exe -a -cf \"" + zip + L"\" -C \"" + folder + L"\" .", root + L"\\relatorios", L"");
+        if (Exists(zip)) {
+            std::error_code ignored;
+            std::filesystem::remove_all(folder, ignored);
+            ShellExecuteW(window, L"open", L"explorer.exe", (L"/select,\"" + zip + L"\"").c_str(), nullptr, SW_SHOWNORMAL);
+            Notify(L"Relatório pronto: " + zip + L"\nMande esse .zip para quem for ajudar.");
+        } else {
+            ShellExecuteW(window, L"open", folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+            Notify(L"Os logs estão em " + folder + L" (não deu para fazer o .zip).");
+        }
+    }
+
     void LogTab(const Game& game, float scale) {
         ImGui::Dummy(ImVec2(0, 4 * scale));
         ImGui::SetNextItemWidth(160 * scale);
@@ -4345,6 +4396,9 @@ struct Client {
         if (ImGui::Button("Atualizar")) logDirty = true;
         ImGui::SameLine();
         if (ImGui::Button("Abrir pasta de logs")) ShellExecuteW(window, L"open", (game.workspace + L"\\logs").c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        ImGui::SameLine();
+        if (ImGui::Button("Relatório de erro")) pending = [this, game] { MakeErrorReport(game); };
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Junta num .zip os logs deste jogo e do emulador, para mandar a quem for ajudar.");
         ImGui::SameLine();
         ImGui::Checkbox("Seguir o fim", &logFollow);
         // Re-read every second while this game runs, so the tab follows it live.
@@ -6768,6 +6822,8 @@ struct Client {
             for (size_t i = 0; i < library.Games().size(); ++i) {
                 if (library.Games()[i].titleId != startGame) continue;
                 OpenGame(static_cast<int>(i));
+                // RANGA_CLIENT_RELATORIO=1 (tests): makes that game's error report at once.
+                if (_wgetenv(L"RANGA_CLIENT_RELATORIO") != nullptr) MakeErrorReport(library.Games()[i]);
                 startGame.clear();
                 break;
             }
