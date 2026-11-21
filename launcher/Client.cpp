@@ -539,7 +539,7 @@ void ConsoleCard(ImDrawList* draw, ImFont* font, const Look& look, ImVec2 min, I
 // while a game runs, so the game's emulator has them to itself.
 class Gamepads {
 public:
-    enum Button { Left, Right, Up, Down, Accept, Back, Count };
+    enum Button { Left, Right, Up, Down, Accept, Back, Search, Count };
 
     ~Gamepads() { Stop(); }
 
@@ -598,12 +598,14 @@ public:
             // By position: Cross on a DualSense, A on an Xbox pad enters; Circle or B goes back.
             now[Accept] = now[Accept] || SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_A);
             now[Back] = now[Back] || SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_B);
+            // Triangle / Y: the search, with the keyboard on screen (a console's page).
+            now[Search] = now[Search] || SDL_GameControllerGetButton(pad, SDL_CONTROLLER_BUTTON_Y);
         }
-        // RANGA_CLIENT_TEST_INPUT=1: the number pad stands in for a gamepad (8 4 6 2 the d-pad, 5 A, 0 B), so the
+        // RANGA_CLIENT_TEST_INPUT=1: the number pad stands in for a gamepad (8 4 6 2 the d-pad, 5 A, 0 B, 7 Y), so the
         // interface tests go the gamepad's way.
         static const bool testPad = _wgetenv(L"RANGA_CLIENT_TEST_INPUT") != nullptr;
         if (testPad) {
-            const ImGuiKey keys[Count] = {ImGuiKey_Keypad4, ImGuiKey_Keypad6, ImGuiKey_Keypad8, ImGuiKey_Keypad2, ImGuiKey_Keypad5, ImGuiKey_Keypad0};
+            const ImGuiKey keys[Count] = {ImGuiKey_Keypad4, ImGuiKey_Keypad6, ImGuiKey_Keypad8, ImGuiKey_Keypad2, ImGuiKey_Keypad5, ImGuiKey_Keypad0, ImGuiKey_Keypad7};
             for (int b = 0; b < Count; ++b) now[b] = now[b] || ImGui::IsKeyDown(keys[b]);
         }
         const double time = ImGui::GetTime();
@@ -2203,7 +2205,7 @@ struct Client {
     // What the arrows, Enter and Esc, or a controller's d-pad, Cross/A and Circle/B, asked for this frame. Nothing while
     // the window is in the back, a popup is open or a field takes the keys.
     struct Nav {
-        bool left = false, right = false, up = false, down = false, accept = false, back = false, padAccept = false;
+        bool left = false, right = false, up = false, down = false, accept = false, back = false, padAccept = false, search = false;
     };
 
     Nav ReadNav() {
@@ -2223,6 +2225,7 @@ struct Client {
         nav.padAccept = gamepads.Pressed(Gamepads::Accept);
         nav.accept = ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false) || nav.padAccept;
         nav.back = ImGui::IsKeyPressed(ImGuiKey_Escape, false) || ImGui::IsKeyPressed(ImGuiKey_Backspace, false) || gamepads.Pressed(Gamepads::Back);
+        nav.search = gamepads.Pressed(Gamepads::Search);
         return nav;
     }
 
@@ -2268,6 +2271,7 @@ struct Client {
 
     void OpenConsole() {
         librarySearch.fill(0); // each console's page opens with every game
+        keyboardOpen = false;
         // What was dropped in the console's folder since the last look comes in now.
         const std::wstring keep = Current() != nullptr ? Current()->titleId : L"";
         library.ScanGamesFolders(console);
@@ -2808,6 +2812,56 @@ struct Client {
         for (int i = 0; i < 10; ++i) draw->AddTriangleFilled(c, points[i], points[(i + 1) % 10], color);
     }
 
+    // The keyboard on screen for the search, for the gamepad (Y / Triangle on a console's page): the d-pad picks a
+    // key, A types it, B closes. Mouse clicks work too. True while it is open (the page then ignores the d-pad).
+    bool keyboardOpen = false;
+    int keyFocus = 0;
+
+    bool SearchKeyboard(const Nav& nav, float scale) {
+        if (!keyboardOpen) return false;
+        static const char* keys[] = {"A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T",
+                                     "U", "V", "W", "X", "Y", "Z", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "Espaço", "Apagar", "Limpar", "Pronto"};
+        constexpr int count = IM_ARRAYSIZE(keys), columns = 10;
+        if (nav.left && keyFocus % columns > 0) --keyFocus;
+        if (nav.right && keyFocus % columns < columns - 1 && keyFocus + 1 < count) ++keyFocus;
+        if (nav.up && keyFocus >= columns) keyFocus -= columns;
+        if (nav.down) keyFocus = std::min(count - 1, keyFocus + columns);
+        int typed = nav.accept ? keyFocus : -1;
+        const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+        ImGui::SetNextWindowPos(ImVec2(center.x, ImGui::GetMainViewport()->Size.y - 30 * scale), ImGuiCond_Always, ImVec2(0.5f, 1.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18 * scale, 16 * scale));
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, Color(kSidebar));
+        ImGui::Begin("##teclado", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings);
+        ImGui::TextDisabled("Buscar:");
+        ImGui::SameLine();
+        ImGui::TextUnformatted(librarySearch[0] ? librarySearch.data() : "_");
+        const ImVec2 key(54 * scale, 44 * scale);
+        for (int k = 0; k < count; ++k) {
+            if (k % columns != 0) ImGui::SameLine(0, 6 * scale);
+            const bool wide = k >= 36;
+            if (ImGui::Button(keys[k], wide ? ImVec2(key.x * 2.4f, key.y) : key)) typed = k;
+            if (k == keyFocus) Focus(ImGui::GetWindowDrawList(), ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), scale, 6 * scale);
+        }
+        ImGui::TextDisabled("Direcional: escolher    A: digitar    B: fechar");
+        ImGui::End();
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar();
+        const size_t length = std::strlen(librarySearch.data());
+        if (typed >= 0 && typed < 36 && length + 1 < librarySearch.size()) {
+            librarySearch[length] = static_cast<char>(std::tolower(static_cast<unsigned char>(keys[typed][0])));
+            librarySearch[length + 1] = 0;
+        } else if (typed == 36 && length + 1 < librarySearch.size()) {
+            librarySearch[length] = ' ';
+            librarySearch[length + 1] = 0;
+        } else if (typed == 37 && length > 0) {
+            librarySearch[length - 1] = 0;
+        } else if (typed == 38) {
+            librarySearch.fill(0);
+        }
+        if (typed == 39 || nav.back) keyboardOpen = false;
+        return true;
+    }
+
     // Lower case without accents, for the search: "Pokémon" and "pokemon" meet.
     static std::wstring Plainer(std::wstring text) {
         static const std::wstring accented = L"àáâãäåçèéêëìíîïñòóôõöùúûüýÿ", plain = L"aaaaaaceeeeiiiinooooouuuuyy";
@@ -2823,8 +2877,14 @@ struct Client {
         ImDrawList* draw = ImGui::GetWindowDrawList();
         const ImVec2 origin = ImGui::GetWindowPos(), size = ImGui::GetWindowSize();
         // The top row here is Consoles, Adicionar jogo and Emuladores.
-        const bool inBar = TopBar(input, 5);
-        const Nav nav = inBar ? Nav{} : input;
+        // Y / Triangle opens the keyboard on screen for the search; while it is open the d-pad, A and B are its own.
+        if (!keyboardOpen && input.search && !games.empty()) {
+            keyboardOpen = true;
+            keyFocus = 0;
+        }
+        const bool typing = SearchKeyboard(input, scale);
+        const bool inBar = !typing && TopBar(input, 5);
+        const Nav nav = inBar || typing ? Nav{} : input;
         if (nav.back) {
             page = Page::Home;
             return;
