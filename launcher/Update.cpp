@@ -231,7 +231,7 @@ int HttpGet(const std::wstring& source, const std::wstring& request, std::string
 }
 
 // The lines of a signed list: its version, notes and files (only the safe paths).
-void ReadManifest(const std::string& manifest, std::string& version, std::string& notes, std::vector<UpdateFile>& files) {
+void ReadManifest(const std::string& manifest, std::string& version, std::string& notes, std::vector<UpdateFile>& files, std::string* name = nullptr) {
     size_t start = 0;
     while (start < manifest.size()) {
         size_t end = manifest.find('\n', start);
@@ -239,6 +239,7 @@ void ReadManifest(const std::string& manifest, std::string& version, std::string
         const std::string line = manifest.substr(start, end - start);
         start = end + 1;
         if (line.rfind("versao ", 0) == 0) version = line.substr(7);
+        else if (line.rfind("nome ", 0) == 0 && name != nullptr) *name = line.substr(5);
         else if (line.rfind("notas ", 0) == 0) notes = line.substr(6);
         else if (line.rfind("arquivo ", 0) == 0) {
             const size_t a = 8, b = line.find(' ', a), c = b == std::string::npos ? b : line.find(' ', b + 1);
@@ -345,7 +346,24 @@ std::string InstalledUpdate(const std::wstring& root) { return Utf8(ReadIni(Ini(
 
 bool CanPublishUpdate(const std::wstring& root) { return Exists(PrivateKey(root)); }
 
-std::wstring PublishUpdate(const std::wstring& root, const std::string& notes, std::string& version) {
+// "1.0.0": three numbers with dots, nothing else.
+bool VersionName(const std::string& text) {
+    int parts = 1;
+    if (text.empty() || text.front() == '.' || text.back() == '.') return false;
+    for (size_t i = 0; i < text.size(); ++i) {
+        if (text[i] == '.') {
+            if (text[i - 1] == '.') return false;
+            ++parts;
+        } else if (text[i] < '0' || text[i] > '9') {
+            return false;
+        }
+    }
+    return parts == 3;
+}
+
+std::string InstalledVersionName(const std::wstring& root) { return Utf8(ReadIni(Ini(root), L"Ranga", L"versao_nome", L"")); }
+
+std::wstring PublishUpdate(const std::wstring& root, const std::string& notes, std::string& version, const std::string& wanted) {
     const std::string key = ReadBytes(PrivateKey(root));
     if (key.empty()) return L"Falta a chave de assinatura (salas\\chave-atualizacao.bin).";
     // The files are copied first, so a build made later does not change what friends are downloading.
@@ -366,10 +384,25 @@ std::wstring PublishUpdate(const std::wstring& root, const std::string& notes, s
     char stamp[32];
     std::strftime(stamp, sizeof(stamp), "%Y.%m.%d-%H%M", &local);
     version = stamp;
+    // The number people see (1.0.0): the one asked for, else the last one with its last part one up; the first is
+    // 1.0.0. The date above stays the version Ranga compares, so a Ranga that knows no numbers still updates.
+    const std::wstring numberFile = root + L"\\salas\\versao.txt";
+    std::string number = VersionName(wanted) ? wanted : "";
+    if (number.empty()) {
+        std::string last = ReadBytes(numberFile);
+        while (!last.empty() && (last.back() == '\n' || last.back() == '\r' || last.back() == ' ')) last.pop_back();
+        if (VersionName(last)) {
+            const size_t dot = last.rfind('.');
+            number = last.substr(0, dot + 1) + std::to_string(std::atoi(last.c_str() + dot + 1) + 1);
+        } else {
+            number = "1.0.0";
+        }
+    }
     std::string oneLine = notes;
     std::replace(oneLine.begin(), oneLine.end(), '\n', ' ');
     std::replace(oneLine.begin(), oneLine.end(), '\r', ' ');
-    const std::string manifest = "ranga-atualizacao 1\nversao " + version + "\nnotas " + oneLine + "\n" + list;
+    oneLine.erase(std::remove(oneLine.begin(), oneLine.end(), '\t'), oneLine.end());
+    const std::string manifest = "ranga-atualizacao 1\nversao " + version + "\nnome " + number + "\nnotas " + oneLine + "\n" + list;
     std::string signature;
     if (!Sign(key, manifest, signature)) return L"A assinatura falhou (a chave está estragada?).";
     for (const auto& [name, bytes] : {std::pair<const wchar_t*, const std::string*>{L"\\manifest.txt", &manifest}, {L"\\manifest.sig", &signature}}) {
@@ -386,10 +419,15 @@ std::wstring PublishUpdate(const std::wstring& root, const std::string& notes, s
     RemoveTree(old);
     EnsureUnicodeIni(Ini(root));
     WritePrivateProfileStringW(L"Ranga", L"versao_atualizacao", Wide(version).c_str(), Ini(root).c_str());
-    // The news board (Novidades in every Ranga): one line per version, "version<TAB>notes", oldest first, kept on the
-    // hosting PC and sent to GitHub with each release (GitHub keeps only the newest three releases).
+    WritePrivateProfileStringW(L"Ranga", L"versao_nome", Wide(number).c_str(), Ini(root).c_str());
+    if (FILE* file = _wfopen(numberFile.c_str(), L"wb")) {
+        std::fwrite(number.data(), 1, number.size(), file);
+        std::fclose(file);
+    }
+    // The news board (Novidades in every Ranga): one line per version, "version<TAB>notes<TAB>number", oldest first,
+    // kept on the hosting PC and sent to GitHub with each release (GitHub keeps only the newest three releases).
     if (FILE* history = _wfopen((root + L"\\salas\\novidades.txt").c_str(), L"ab")) {
-        const std::string line = version + "\t" + oneLine + "\n";
+        const std::string line = version + "\t" + oneLine + "\t" + number + "\n";
         std::fwrite(line.data(), 1, line.size(), history);
         std::fclose(history);
     }
@@ -402,7 +440,7 @@ UpdateInfo CheckUpdate(const std::wstring& root) {
     info.error = FetchManifest(root, manifest, info.source);
     if (!info.error.empty()) return info;
     std::vector<UpdateFile> files;
-    ReadManifest(manifest, info.version, info.notes, files);
+    ReadManifest(manifest, info.version, info.notes, files, &info.name);
     for (const UpdateFile& file : files) {
         const std::wstring local = root + L"\\" + file.path;
         if (Exists(local) && static_cast<uint64_t>(FileSize(local)) == file.size && HashFile(local) == file.sha256) continue;
@@ -694,6 +732,7 @@ std::wstring ApplyUpdate(const std::wstring& root, const UpdateInfo& info) {
     }
     EnsureUnicodeIni(Ini(root));
     WritePrivateProfileStringW(L"Ranga", L"versao_atualizacao", Wide(info.version).c_str(), Ini(root).c_str());
+    WritePrivateProfileStringW(L"Ranga", L"versao_nome", info.name.empty() ? nullptr : Wide(info.name).c_str(), Ini(root).c_str());
     return L"";
 }
 

@@ -887,7 +887,7 @@ struct Client {
     // The history the hosting PC keeps (salas\novidades.txt, one "version<TAB>notes" line each, oldest first) and sends
     // with every release to GitHub; every other Ranga reads it there and keeps the last copy in perfil\novidades.txt.
     struct NewsItem {
-        std::string version, notes;
+        std::string version, notes, name; // name: the number (1.0.0), empty for the versions from before the numbers
     };
     std::vector<NewsItem> news; // newest first, under newsLock
     std::mutex newsLock;
@@ -907,7 +907,13 @@ struct Client {
             while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
             const size_t tab = line.find('\t');
             if (tab == std::string::npos || tab == 0 || line.rfind("20", 0) != 0) continue;
-            items.push_back({line.substr(0, tab), line.substr(tab + 1)});
+            NewsItem item{line.substr(0, tab), line.substr(tab + 1), ""};
+            // Since the numbers, a last field after another tab: "version<TAB>notes<TAB>1.0.0".
+            if (const size_t last = item.notes.rfind('\t'); last != std::string::npos && VersionName(item.notes.substr(last + 1))) {
+                item.name = item.notes.substr(last + 1);
+                item.notes.resize(last);
+            }
+            items.push_back(std::move(item));
         }
         std::reverse(items.begin(), items.end());
         return items;
@@ -1024,8 +1030,12 @@ struct Client {
             ImGui::SetCursorScreenPos(ImVec2(top.x + pad, top.y + pad));
             ImGui::BeginGroup();
             ImGui::PushFont(semibold, 18);
-            ImGui::TextUnformatted(NewsDate(item.version).c_str());
+            ImGui::TextUnformatted(item.name.empty() ? NewsDate(item.version).c_str() : ("Versão " + item.name).c_str());
             ImGui::PopFont();
+            if (!item.name.empty()) {
+                ImGui::SameLine(0, 12 * scale);
+                ImGui::TextDisabled("%s", NewsDate(item.version).c_str());
+            }
             if (fresh || item.version == installed) {
                 ImGui::SameLine(0, 12 * scale);
                 ImGui::PushStyleColor(ImGuiCol_Text, Color(fresh ? kAccent : kGreen));
@@ -2568,10 +2578,12 @@ struct Client {
         ImGui::TextUnformatted("Ranga Emu");
         ImGui::PopFont();
         // Which Ranga this is: the update it runs ("2026.11.21-0025", the same name as in Novidades and on GitHub).
+        // The number (1.0.0); a version from before the numbers shows its date.
         if (const std::string version = InstalledUpdate(library.Root()); !version.empty()) {
+            const std::string number = InstalledVersionName(library.Root());
             ImGui::SameLine(0, 10 * scale);
             ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 7 * scale);
-            ImGui::TextDisabled("versão %s", version.c_str());
+            ImGui::TextDisabled("versão %s", number.empty() ? version.c_str() : number.c_str());
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Publicada em %s", NewsDate(version).c_str());
         }
         TopButtons(scale, size.x - left, 0);
@@ -6745,18 +6757,24 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     // RangaEmu.exe --publicar "o que mudou": publishes this PC's Ranga for the friends without opening the window;
     // the result goes to salas\publicar.log.
     if (commandLine != nullptr && wcsstr(commandLine, L"--publicar") != nullptr) {
+        // --versao 1.1.0 (before --publicar) gives the number; without it the last part goes one up.
+        std::string wanted;
+        if (const wchar_t* at = wcsstr(commandLine, L"--versao "); at != nullptr && at < wcsstr(commandLine, L"--publicar")) {
+            for (at += 9; *at == L' '; ++at) {}
+            for (; *at != 0 && *at != L' '; ++at) wanted += static_cast<char>(*at);
+        }
         std::wstring notes = wcsstr(commandLine, L"--publicar") + 10;
         while (!notes.empty() && (notes.front() == L' ' || notes.front() == L'"')) notes.erase(0, 1);
         while (!notes.empty() && (notes.back() == L' ' || notes.back() == L'"')) notes.pop_back();
         std::string version;
-        const std::wstring error = PublishUpdate(root, Utf8(notes), version);
+        const std::wstring error = PublishUpdate(root, Utf8(notes), version, wanted);
         if (!error.empty()) {
             WriteTextLine(root + L"\\salas\\publicar.log", error);
             return 1;
         }
         std::string sent;
         const std::wstring github = wcsstr(commandLine, L"--sem-github") != nullptr ? L"GitHub: pulado" : PublishToGitHub(root, sent);
-        WriteTextLine(root + L"\\salas\\publicar.log", L"publicada " + Wide(version) + L" | " + (github.empty() ? L"GitHub: ok" : github));
+        WriteTextLine(root + L"\\salas\\publicar.log", L"publicada " + Wide(InstalledVersionName(root)) + L" (" + Wide(version) + L") | " + (github.empty() ? L"GitHub: ok" : github));
         return 0;
     }
     // RangaEmu.exe --servidor: this PC hosts rooms; the rooms section shows from now on.

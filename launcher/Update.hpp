@@ -24,6 +24,7 @@ struct UpdateFile {
 struct UpdateInfo {
     std::wstring source; // where the list came from (and where the files are fetched)
     std::string version, notes;
+    std::string name; // the number people see ("1.0.0"); empty for a version published before numbers
     std::vector<UpdateFile> changed; // the files that differ from this PC's
     uint64_t download = 0;           // their size together
     std::wstring error;              // why there is nothing (empty: checked fine)
@@ -39,7 +40,11 @@ std::string InstalledUpdate(const std::wstring& root);
 
 // The PC that hosts: whether it can sign (has the key), and publishing the programs as they are now.
 bool CanPublishUpdate(const std::wstring& root);
-std::wstring PublishUpdate(const std::wstring& root, const std::string& notes, std::string& version);
+// wanted: the number to give it ("1.1.0"); empty: the last one with its last part one up (the first is 1.0.0).
+std::wstring PublishUpdate(const std::wstring& root, const std::string& notes, std::string& version, const std::string& wanted = "");
+// This Ranga's number ("1.0.0"), empty when its version had none; true when text is such a number.
+std::string InstalledVersionName(const std::wstring& root);
+bool VersionName(const std::string& text);
 
 // Every other PC: what is newer there, if anything (network; run off the window's thread).
 UpdateInfo CheckUpdate(const std::wstring& root);
