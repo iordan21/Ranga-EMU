@@ -2567,6 +2567,13 @@ struct Client {
         ImGui::PushFont(semibold, 24);
         ImGui::TextUnformatted("Ranga Emu");
         ImGui::PopFont();
+        // Which Ranga this is: the update it runs ("2026.11.21-0025", the same name as in Novidades and on GitHub).
+        if (const std::string version = InstalledUpdate(library.Root()); !version.empty()) {
+            ImGui::SameLine(0, 10 * scale);
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 7 * scale);
+            ImGui::TextDisabled("versão %s", version.c_str());
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Publicada em %s", NewsDate(version).c_str());
+        }
         TopButtons(scale, size.x - left, 0);
 
         // The row of consoles slides so the chosen one stays in view.
