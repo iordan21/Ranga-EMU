@@ -64,6 +64,8 @@ struct PlayerCard {
     std::string account;  // Nome#1234, as the central names the account
     std::vector<PlayedGame> recent;
     std::vector<ShowcaseItem> showcase;
+    // The games in the player's library (console id, title), so friends see who has what; at most 400.
+    std::vector<std::pair<std::string, std::string>> owned;
     // The versions of the photo and cover the central has for this player (Media.hpp "RANI"); empty: none.
     std::string photoVersion, coverVersion;
 };
@@ -93,6 +95,8 @@ public:
     // The name shown: the account's (before the #) once signed in, else the one typed in Editar perfil.
     std::string ShownName() const;
     std::map<std::wstring, PlayedGame> games;
+    // This player's library (console id, title), kept up to date by the client; goes in the card as owned.
+    std::vector<std::pair<std::string, std::string>> owned;
     std::vector<RaGame> raGames;
     std::vector<RangaAchievement> achievements;
 

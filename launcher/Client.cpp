@@ -5987,6 +5987,28 @@ struct Client {
                 }
             }
         }
+        // A friend's library: what the friend has, the games both have first (those can be played together online).
+        if (!own && !card.owned.empty()) {
+            std::set<std::pair<std::string, std::string>> mine;
+            for (const auto& game : library.Games()) mine.insert({Utf8(game.system), Utf8(Plainer(game.title))});
+            std::vector<std::pair<std::string, std::string>> both, theirs;
+            for (const auto& item : card.owned) (mine.count({item.first, Utf8(Plainer(Wide(item.second)))}) ? both : theirs).push_back(item);
+            SectionTitle(("Jogos que tem (" + std::to_string(card.owned.size()) + ")").c_str(), scale);
+            ImGui::PushTextWrapPos(0);
+            if (!both.empty()) {
+                ImGui::PushStyleColor(ImGuiCol_Text, Color(kGreen));
+                ImGui::TextUnformatted("Vocês dois têm (dá para jogar juntos):");
+                ImGui::PopStyleColor();
+                for (const auto& [system, title] : both) ImGui::BulletText("%s  ·  %s", title.c_str(), SystemName(Wide(system)).c_str());
+            }
+            if (!theirs.empty()) {
+                if (!both.empty()) ImGui::Dummy(ImVec2(0, 4 * scale));
+                ImGui::TextDisabled("Só %s tem:", card.name.c_str());
+                for (const auto& [system, title] : theirs) ImGui::BulletText("%s  ·  %s", title.c_str(), SystemName(Wide(system)).c_str());
+            }
+            ImGui::PopTextWrapPos();
+            ImGui::Dummy(ImVec2(0, 8 * scale));
+        }
         SectionTitle("Jogos recentes", scale);
         if (card.recent.empty()) ImGui::TextDisabled("Nenhum jogo ainda.");
         for (const PlayedGame& game : card.recent) {
@@ -6977,6 +6999,15 @@ struct Client {
             }
         }
         TakePlayCheck();
+        // The library goes in the profile card (who has what), looked at again every 10 s.
+        if (static ULONGLONG ownedAt = 0; profileLoaded && GetTickCount64() - ownedAt > 10000) {
+            ownedAt = GetTickCount64();
+            profile.owned.clear();
+            for (const auto& game : library.Games()) {
+                if (game.titleId.size() > 8 && game.titleId.compare(game.titleId.size() - 8, 8, L"-SISTEMA") == 0) continue;
+                profile.owned.emplace_back(Utf8(game.system), Utf8(game.title));
+            }
+        }
         // Library changes asked for while drawing run here, before anything holds on to a game.
         if (pending) {
             auto action = std::move(pending);

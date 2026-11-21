@@ -517,6 +517,8 @@ PlayerCard PlayerProfile::Card(const std::string& playing, const std::string& pl
     if (card.showcase.size() > 8) card.showcase.resize(8);
     card.photoVersion = photoHash;
     card.coverVersion = coverHash;
+    card.owned = owned;
+    if (card.owned.size() > 400) card.owned.resize(400);
     return card;
 }
 
@@ -541,6 +543,8 @@ std::string WriteCard(const PlayerCard& card) {
         put("vitrine\t" + std::string(item.ra ? "1" : "0") + "\t" + std::to_string(item.when) + "\t" + std::to_string(item.points) + "\t" + Clean(item.badge, 64) +
             "\t" + Clean(item.title) + "\t" + Clean(item.description, 300));
     }
+    // Who has what: the library's games (a Ranga from before 1.1.1 skips these lines).
+    for (const auto& [system, title] : card.owned) put("tem\t" + Clean(system, 20) + "\t" + Clean(title, 80));
 
     return text;
 }
@@ -578,6 +582,8 @@ std::vector<PlayerCard> ReadCards(const std::string& text) {
             game.last = Number(parts[3]);
             game.title = Wide(parts[4]);
             if (card->recent.size() < 8) card->recent.push_back(game);
+        } else if (key == "tem" && parts.size() >= 3) {
+            if (card->owned.size() < 400) card->owned.emplace_back(parts[1], parts[2]);
         } else if (key == "vitrine" && parts.size() >= 7) {
             if (card->showcase.size() < 8) card->showcase.push_back({parts[1] == "1", Number(parts[2]), static_cast<int>(Number(parts[3])), parts[4], parts[5], parts[6]});
         } else if (key == "midia" && parts.size() >= 3) {
