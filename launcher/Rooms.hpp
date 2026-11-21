@@ -56,6 +56,10 @@ bool ExtraLan(const std::wstring& root, Extra extra);
 void SetExtraLan(const std::wstring& root, Extra extra, bool on);
 // The Xbox's System Link hub (UDP), run by the classics' server (salas.ini [Classicos] hub_xbox, 24875).
 int XboxHubPort(const std::wstring& root);
+// Whether a room answers, in milliseconds (-1: no answer in 3 s). address is "host:port" or "host" (then
+// defaultPort). Switch and 3DS rooms (ENet, UDP) get a connection request, which a room answers at once; the classics'
+// server (tcp) a connection. Blocks: run it off the drawing thread.
+int ProbeRoom(const std::string& address, int defaultPort, bool tcp);
 // This PC's addresses on home networks (192.168.x, 10.x, 172.16-31.x), for the friends in the same house.
 std::vector<std::wstring> LanAddresses();
 bool ExtraRunning(const std::wstring& root, Extra extra);

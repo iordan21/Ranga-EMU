@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <cwchar>
 
 namespace Ranga {
@@ -226,6 +227,65 @@ bool ExtraLan(const std::wstring& root, Extra extra) { return ReadNumber(Ini(roo
 void SetExtraLan(const std::wstring& root, Extra extra, bool on) {
     EnsureUnicodeIni(Ini(root));
     WritePrivateProfileStringW(Info(extra).section, L"lan", on ? L"1" : L"0", Ini(root).c_str());
+}
+
+int ProbeRoom(const std::string& address, int defaultPort, bool tcp) {
+    std::string host = address;
+    int port = defaultPort;
+    if (const size_t colon = host.rfind(':'); colon != std::string::npos) {
+        port = std::atoi(host.c_str() + colon + 1);
+        host.resize(colon);
+    }
+    while (!host.empty() && host.front() == ' ') host.erase(0, 1);
+    while (!host.empty() && host.back() == ' ') host.pop_back();
+    if (host.empty() || port <= 0 || port > 65535) return -1;
+    WSADATA wsa;
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return -1;
+    addrinfo hints{};
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = tcp ? SOCK_STREAM : SOCK_DGRAM;
+    addrinfo* found = nullptr;
+    int result = -1;
+    if (getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &found) == 0 && found != nullptr) {
+        const SOCKET sock = socket(found->ai_family, found->ai_socktype, found->ai_protocol);
+        if (sock != INVALID_SOCKET) {
+            const ULONGLONG started = GetTickCount64();
+            if (tcp) {
+                u_long nonBlocking = 1;
+                ioctlsocket(sock, FIONBIO, &nonBlocking);
+                connect(sock, found->ai_addr, static_cast<int>(found->ai_addrlen));
+                fd_set writes, errors;
+                FD_ZERO(&writes);
+                FD_ZERO(&errors);
+                FD_SET(sock, &writes);
+                FD_SET(sock, &errors);
+                timeval wait{3, 0};
+                if (select(0, nullptr, &writes, &errors, &wait) > 0 && FD_ISSET(sock, &writes)) result = static_cast<int>(GetTickCount64() - started);
+            } else {
+                // ENet's connect command (no checksum, as Eden's and Azahar's rooms run): peer 0x0FFF with the sent
+                // time, command 2 with "acknowledge", then the connect fields. Any datagram back is an answer.
+                unsigned char packet[4 + 4 + 44] = {};
+                const unsigned short sent = static_cast<unsigned short>(GetTickCount64() & 0xFFFF);
+                const unsigned char head[] = {0x8F, 0xFF, static_cast<unsigned char>(sent >> 8), static_cast<unsigned char>(sent), 0x82, 0xFF, 0x00, 0x01};
+                std::memcpy(packet, head, sizeof(head));
+                const unsigned char body[] = {0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x05, 0x78, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x01,
+                                              0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x13, 0x88, 0x00, 0x00, 0x00, 0x02,
+                                              0x00, 0x00, 0x00, 0x02, 0x12, 0x34, 0xAB, 0xCD, 0x00, 0x00, 0x00, 0x00};
+                std::memcpy(packet + 8, body, sizeof(body));
+                sendto(sock, reinterpret_cast<const char*>(packet), static_cast<int>(sizeof(packet)), 0, found->ai_addr, static_cast<int>(found->ai_addrlen));
+                fd_set reads;
+                FD_ZERO(&reads);
+                FD_SET(sock, &reads);
+                timeval wait{3, 0};
+                char answer[512];
+                if (select(0, &reads, nullptr, nullptr, &wait) > 0 && recv(sock, answer, sizeof(answer), 0) > 0) result = static_cast<int>(GetTickCount64() - started);
+            }
+            closesocket(sock);
+        }
+        freeaddrinfo(found);
+    }
+    WSACleanup();
+    return result;
 }
 
 std::vector<std::wstring> LanAddresses() {

@@ -2695,6 +2695,44 @@ struct Client {
 
     std::array<char, 64> librarySearch{}; // what was typed in the console page's search
 
+    // "Testar": asks the room at the address whether it answers (ProbeRoom, in the background) and shows how long it
+    // took, beside the address field; id tells the fields apart.
+    std::mutex probeLock;
+    std::map<std::string, std::string> probeResults; // id -> what to show ("" while testing)
+
+    void ProbeButton(const char* id, const std::string& address, int defaultPort, bool tcp, float scale) {
+        ImGui::SameLine(0, 8 * scale);
+        std::string shown;
+        bool testing = false;
+        {
+            std::lock_guard guard(probeLock);
+            if (const auto found = probeResults.find(id); found != probeResults.end()) {
+                shown = found->second;
+                testing = shown.empty();
+            }
+        }
+        ImGui::BeginDisabled(testing || address.empty());
+        if (ImGui::Button((std::string(testing ? "Testando..." : "Testar") + "###probe" + id).c_str())) {
+            {
+                std::lock_guard guard(probeLock);
+                probeResults[id].clear();
+            }
+            std::thread([this, key = std::string(id), address, defaultPort, tcp] {
+                const int ms = ProbeRoom(address, defaultPort, tcp);
+                std::lock_guard guard(probeLock);
+                probeResults[key] = ms >= 0 ? "respondeu em " + std::to_string(ms) + " ms" : "não respondeu (endereço, porta, túnel ou servidor desligado)";
+            }).detach();
+        }
+        ImGui::EndDisabled();
+        if (!shown.empty()) {
+            ImGui::SameLine(0, 8 * scale);
+            ImGui::AlignTextToFramePadding();
+            ImGui::PushStyleColor(ImGuiCol_Text, Color(shown.rfind("respondeu em", 0) == 0 ? kGreen : kAmber));
+            ImGui::TextUnformatted(shown.c_str());
+            ImGui::PopStyleColor();
+        }
+    }
+
     // Favorites: engines.ini [Favoritos] <titleId>=1. They come first on their console's page, with a star.
     bool IsFavorite(const Game& game) const { return ReadIni(library.Root() + L"\\engines.ini", L"Favoritos", game.titleId.c_str(), L"") == L"1"; }
     void SetFavorite(const Game& game, bool on) {
@@ -3041,7 +3079,10 @@ struct Client {
                     }
                 };
                 const bool typed = !(roomMode == 1 && roomPublic);
-                if (roomMode == 1 && typed) field("Endereço", "##roomAddress", roomAddress, "eden_sala_endereco", L"sala_endereco");
+                if (roomMode == 1 && typed) {
+                    field("Endereço", "##roomAddress", roomAddress, "eden_sala_endereco", L"sala_endereco");
+                    ProbeButton("switch", roomAddress.data(), std::atoi(roomPort.data()) > 0 ? std::atoi(roomPort.data()) : 24872, false, scale);
+                }
                 // Joining with "address:port" (as playit shows it), that port is the one used: the field is not shown,
                 // so a leftover 24872 there can no longer look like it matters.
                 const std::string address = roomAddress.data();
@@ -3257,6 +3298,7 @@ struct Client {
                 }
             };
             field("Endereço da sala", "##onlineAddress", onlineAddress, "ranga_online_endereco", L"online_endereco");
+            ProbeButton("classicos", onlineAddress.data(), 24873, true, scale);
             field("Seu nome", "##onlineName", onlineName, "ranga_online_nome", L"online_nome");
             label("Atraso");
             if (ImGui::Checkbox("Automático##onlineDelayAuto", &onlineDelayAuto))
@@ -3316,6 +3358,7 @@ struct Client {
                 WriteCoreOption(game, "citra_sala_endereco", room3dsAddress.data());
                 RememberOnline(L"sala3ds_endereco", room3dsAddress.data());
             }
+            ProbeButton("3ds", room3dsAddress.data(), 24874, false, scale);
             label("Seu nome");
             ImGui::InputText("##room3dsName", room3dsName.data(), 32);
             if (ImGui::IsItemDeactivatedAfterEdit()) {
