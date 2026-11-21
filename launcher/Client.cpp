@@ -3557,11 +3557,11 @@ struct Client {
                 ImGui::PushStyleColor(ImGuiCol_Text, Color(account.empty() ? kAmber : kGreen));
                 ImGui::TextUnformatted(account.empty() ? "nenhuma ainda" : account.c_str());
                 ImGui::PopStyleColor();
-                const std::wstring rpcs3 = library.Root() + L"\emuladores\rpcs3\rpcs3.exe";
+                const std::wstring rpcs3 = library.Root() + L"\\emuladores\\rpcs3\\rpcs3.exe";
                 if (Exists(rpcs3)) {
                     ImGui::SetCursorPosX(labelWidth);
                     if (ImGui::Button(account.empty() ? "Abrir o RPCS3 para criar a conta" : "Abrir o RPCS3 (conta do RPCN)")) {
-                        ShellExecuteW(nullptr, L"open", rpcs3.c_str(), nullptr, (library.Root() + L"\emuladores\rpcs3").c_str(), SW_SHOWNORMAL);
+                        ShellExecuteW(nullptr, L"open", rpcs3.c_str(), nullptr, (library.Root() + L"\\emuladores\\rpcs3").c_str(), SW_SHOWNORMAL);
                     }
                 }
                 ImGui::SetCursorPosX(labelWidth);
@@ -4872,6 +4872,7 @@ struct Client {
         Game game;
         long long started = 0, seconds = 0;
         bool online = false;
+        unsigned long code = 0; // how the game's process ended
     };
     std::mutex endedLock;
     std::vector<Ended> endedQueue;
@@ -5045,9 +5046,9 @@ struct Client {
     void InitProfile() {
         profileLoaded = true;
         profile.Load(library.Root());
-        runner.ended = [this](const Game& game, long long started, long long seconds) {
+        runner.ended = [this](const Game& game, long long started, long long seconds, unsigned long code) {
             std::lock_guard guard(endedLock);
-            endedQueue.push_back({game, started, seconds, playOnline.load()});
+            endedQueue.push_back({game, started, seconds, playOnline.load(), code});
         };
         ScanProfileRa();
         for (const auto& title : profile.Evaluate(LibraryCount())) AddToast("Conquista desbloqueada", title, "");
@@ -5100,6 +5101,15 @@ struct Client {
             // The console's own menu (StartSystem) is no game.
             if (key.size() > 8 && key.compare(key.size() - 8, 8, L"-SISTEMA") == 0) continue;
             profile.RecordSession(key, ended.game.system, ended.game.title, ended.started, ended.seconds, ended.online);
+            // A crash (an NTSTATUS error such as 0xC0000005): the report, which keeps the logs of this very run, is
+            // offered at once, before another start writes over them.
+            if ((ended.code & 0xF0000000u) == 0xC0000000u && ended.code != 0xCFFFFFFFu) {
+                wchar_t hex[16];
+                std::swprintf(hex, 16, L"0x%lX", ended.code);
+                Confirm(ended.game.title + L" fechou com erro (código " + hex + L") depois de " + std::to_wstring(ended.seconds) +
+                            L" s.\n\nQuer gerar o relatório de erro (um .zip com os logs) para mandar a quem for ajudar?",
+                        [this, game = ended.game] { MakeErrorReport(game); });
+            }
         }
         ScanProfileRa();
         for (const auto& title : profile.Evaluate(LibraryCount())) AddToast("Conquista desbloqueada", title, "");

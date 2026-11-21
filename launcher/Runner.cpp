@@ -232,7 +232,7 @@ void Runner::Await(PROCESS_INFORMATION& process, const std::wstring& logs, const
         if (journal != INVALID_HANDLE_VALUE) { DWORD put = 0; WriteFile(journal, line, static_cast<DWORD>(length), &put, nullptr); CloseHandle(journal); }
         if (code != 0) CopyFileW((logs + L"\\" + errorLog).c_str(), (logs + L"\\" + errorLog + L".last-error").c_str(), FALSE);
     }
-    if (ended) ended(game, static_cast<long long>(std::time(nullptr)) - seconds, seconds);
+    if (ended) ended(game, static_cast<long long>(std::time(nullptr)) - seconds, seconds, code);
     const bool crashed = (code & 0xf0000000u) == 0xc0000000u && code != 0xcfffffffu;
     wchar_t hex[16];
     std::swprintf(hex, 16, L"0x%lx", code);
@@ -242,7 +242,7 @@ void Runner::Await(PROCESS_INFORMATION& process, const std::wstring& logs, const
 }
 
 std::string PlayerRpcnName(const std::wstring& root) {
-    const std::wstring ini = root + L"\engines.ini";
+    const std::wstring ini = root + L"\\engines.ini";
     std::wstring wanted = ReadIni(ini, L"Ranga", L"online_nome", L"");
     if (wanted.empty()) wanted = ReadIni(ini, L"SWITCH", L"jogador", L"");
     const auto keep = [](const std::wstring& from) {

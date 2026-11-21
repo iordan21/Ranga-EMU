@@ -28,7 +28,8 @@ public:
     void StartSystem(const std::wstring& root, const std::wstring& system);
 
     // Told on the runner's thread when a game closes: the game, when it started (Unix time) and for how many seconds.
-    std::function<void(const Game&, long long, long long)> ended;
+    // started, seconds played, and the exit code (0xC0000005 and the like: it crashed).
+    std::function<void(const Game&, long long, long long, unsigned long)> ended;
 
 private:
     void Run(std::wstring root, Game game, Options options);
