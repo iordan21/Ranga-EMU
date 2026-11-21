@@ -866,12 +866,8 @@ struct Client {
         // RANGA_CLIENT_PAGE=novidades (tests): opens on the news board.
         if (const wchar_t* start = _wgetenv(L"RANGA_CLIENT_PAGE"); start != nullptr && std::wstring(start) == L"novidades") newsOpen = true;
         // RANGA_CLIENT_PAGE=jogo:<titleId> (tests): opens on that game's page.
-        if (const wchar_t* start = _wgetenv(L"RANGA_CLIENT_PAGE"); start != nullptr && std::wstring(start).rfind(L"jogo:", 0) == 0) {
-            const std::wstring id = std::wstring(start).substr(5);
-            for (size_t i = 0; i < library.Games().size(); ++i) {
-                if (library.Games()[i].titleId == id) pending = [this, index = static_cast<int>(i)] { OpenGame(index); };
-            }
-        }
+        // (The library fills in later, so the game is looked for in the first frames, OpenStartGame.)
+        if (const wchar_t* start = _wgetenv(L"RANGA_CLIENT_PAGE"); start != nullptr && std::wstring(start).rfind(L"jogo:", 0) == 0) startGame = std::wstring(start).substr(5);
     }
     ~Client() {
         if (updateThread.joinable()) updateThread.join();
@@ -3313,6 +3309,19 @@ struct Client {
         if (running) ImGui::TextDisabled("Feche o jogo para mudar o online.");
     }
 
+    // Whether the PS3 game's code was compiled once to the end (the core leaves cache\<serial>\ranga-pronto.txt);
+    // looked at again every few seconds, since it appears while the game runs.
+    bool Ps3Compiled(const Game& game) {
+        if (game.serial.empty()) return true;
+        static std::map<std::wstring, std::pair<ULONGLONG, bool>> known;
+        auto& [at, ready] = known[game.serial];
+        if (!ready && GetTickCount64() - at > 5000) {
+            at = GetTickCount64();
+            ready = Exists(library.Root() + L"\\bios\\retroarch\\rpcs3\\cache\\" + game.serial + L"\\ranga-pronto.txt");
+        }
+        return ready;
+    }
+
     // The PS3's online through RPCN, RPCS3's own free server (rpcs3.net): the game logs in with the player's RPCN
     // account and finds the others there, as on the PSN. The account lives in the core's rpcn.yml; it is created in
     // RPCS3's own window (Configuração > RPCN, with an e-mail for the token), and Ranga takes it from there.
@@ -4496,6 +4505,15 @@ struct Client {
             ImGui::SameLine();
             ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 12 * scale);
             ImGui::TextDisabled("Outro jogo está aberto.");
+        } else if (game->system == L"PS3" && EngineFor(L"PS3").native && !Ps3Compiled(*game)) {
+            // The first boot of a PS3 game compiles its code for this processor (the PS3 core marks the end in the
+            // cache, MarkCompiled): closing it before that throws the work away and it starts over.
+            ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
+            ImGui::PushTextWrapPos(width - pad);
+            ImGui::TextWrapped("Primeira vez: o jogo é preparado para o seu processador (pode levar uns 10 minutos, com a CPU no máximo). "
+                               "Espere a barra \"Compilando os módulos PPU\" terminar; se fechar antes, começa do zero.");
+            ImGui::PopTextWrapPos();
+            ImGui::PopStyleColor();
         }
         ImGui::EndGroup();
 
@@ -6577,7 +6595,17 @@ struct Client {
         lastState = state;
     }
 
+    std::wstring startGame; // RANGA_CLIENT_PAGE=jogo:<titleId> (tests), until the library has it
+
     void Frame(float scale) {
+        if (!startGame.empty()) {
+            for (size_t i = 0; i < library.Games().size(); ++i) {
+                if (library.Games()[i].titleId != startGame) continue;
+                OpenGame(static_cast<int>(i));
+                startGame.clear();
+                break;
+            }
+        }
         // Library changes asked for while drawing run here, before anything holds on to a game.
         if (pending) {
             auto action = std::move(pending);
@@ -6739,7 +6767,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
         const DWORD waited = WaitForSingleObject(single, 10000);
         if (waited == WAIT_OBJECT_0 || waited == WAIT_ABANDONED) SetLastError(0);
     }
-    if (single != nullptr && GetLastError() == ERROR_ALREADY_EXISTS && _wgetenv(L"RANGA_CLIENT_TEST_INPUT") == nullptr) {
+    // Publishing opens no window, so it runs beside an open Ranga instead of only bringing that one to the front (it
+    // used to end there, saying nothing, and nothing was published). It reads the installed files, which an open
+    // Ranga does not lock.
+    const bool publishing = commandLine != nullptr && wcsstr(commandLine, L"--publicar") != nullptr;
+    if (single != nullptr && GetLastError() == ERROR_ALREADY_EXISTS && _wgetenv(L"RANGA_CLIENT_TEST_INPUT") == nullptr && !publishing) {
         if (HWND existing = FindWindowW(kWindowClass, nullptr)) {
             ShowWindow(existing, SW_RESTORE);
             SetForegroundWindow(existing);
