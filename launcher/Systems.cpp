@@ -1168,15 +1168,18 @@ std::vector<std::pair<std::wstring, std::wstring>> GameFileFilters() {
 }
 
 void ExtractArt(const std::wstring& system, const std::wstring& path, const std::wstring& folder) {
-    if (system != L"PSP" || IsDirectory(path)) return;
+    // A PSP or PS3 disc carries its own art (ICON0, PIC1), the one the console's menu shows; libretro's box art has
+    // only a few dozen PS3 games, so for the PS3 this is the cover.
+    if ((system != L"PSP" && system != L"PS3") || IsDirectory(path)) return;
     Iso iso(path);
     if (!iso.Valid()) return;
     // folder is games\<key>\art; the workspace above it may not exist yet.
     CreateDirectoryW(ParentFolder(ParentFolder(folder)).c_str(), nullptr);
     CreateDirectoryW(ParentFolder(folder).c_str(), nullptr);
     CreateDirectoryW(folder.c_str(), nullptr);
+    const std::string root = system == L"PS3" ? "PS3_GAME/" : "PSP_GAME/";
     for (const char* name : {"ICON0.PNG", "PIC1.PNG"}) {
-        const std::string data = iso.ReadFile(std::string("PSP_GAME/") + name, 8 << 20);
+        const std::string data = iso.ReadFile(root + name, 8 << 20);
         if (data.empty()) continue;
         FILE* file = nullptr;
         if (_wfopen_s(&file, (folder + L"\\" + Wide(name)).c_str(), L"wb") != 0 || file == nullptr) continue;

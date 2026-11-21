@@ -1812,6 +1812,13 @@ struct Client {
             const std::wstring base = IsDirectory(game.folder + L"\\PS3_GAME") ? game.folder + L"\\PS3_GAME" : game.folder;
             files.push_back(base + (icon ? L"\\ICON0.PNG" : L"\\PIC1.PNG"));
         }
+        if (game.system == L"PS3" && !IsDirectory(game.folder)) {
+            // A PS3 ISO's own art, taken out of the disc the first time it is asked for (games added before this).
+            static std::set<std::wstring> taken;
+            const std::wstring wanted = art + (icon ? L"\\ICON0.PNG" : L"\\PIC1.PNG");
+            if (!Exists(wanted) && taken.insert(game.titleId).second) ExtractArt(game.system, game.folder, art);
+            files.push_back(wanted);
+        }
         if (game.system == L"PSP") files.push_back(art + (icon ? L"\\ICON0.PNG" : L"\\PIC1.PNG"));
         // The Switch core keeps the game's own icon here the first time the game runs: no box art server has the Switch.
         if (game.system == L"SWITCH" && icon) files.push_back(art + L"\\icon.jpg");
