@@ -9,6 +9,9 @@
 #include <ctime>
 #include <cwchar>
 #include <cwctype>
+#include <algorithm>
+#include <cctype>
+#include <bcrypt.h>
 #include <utility>
 #include <vector>
 
@@ -238,6 +241,29 @@ void Runner::Await(PROCESS_INFORMATION& process, const std::wstring& logs, const
     else Report(State::Finished, L"Jogo fechado depois de " + std::to_wstring(seconds / 60) + L" min " + std::to_wstring(seconds % 60) + L" s.");
 }
 
+std::string PlayerRpcnName(const std::wstring& root) {
+    const std::wstring ini = root + L"\engines.ini";
+    std::wstring wanted = ReadIni(ini, L"Ranga", L"online_nome", L"");
+    if (wanted.empty()) wanted = ReadIni(ini, L"SWITCH", L"jogador", L"");
+    const auto keep = [](const std::wstring& from) {
+        std::string name;
+        for (const wchar_t c : from) {
+            if ((c < 128 && std::isalnum(static_cast<int>(c))) || c == L'-' || c == L'_') name += static_cast<char>(c);
+            if (name.size() == 16) break;
+        }
+        return name;
+    };
+    std::string name = keep(wanted);
+    if (name.size() < 3) {
+        wchar_t computer[MAX_COMPUTERNAME_LENGTH + 1] = {};
+        DWORD size = MAX_COMPUTERNAME_LENGTH + 1;
+        GetComputerNameW(computer, &size);
+        name = keep(computer);
+    }
+    if (name.size() < 3) name = "JogadorRanga";
+    return name;
+}
+
 namespace {
 
 // Turns the PS3 core's network on (internet, RPCN, UPnP for the games' direct links) or off, in its config.yml's Net
@@ -279,6 +305,46 @@ void SetPs3Network(const std::wstring& root, bool on) {
     if (file == INVALID_HANDLE_VALUE) return;
     DWORD put = 0;
     WriteFile(file, out.data(), static_cast<DWORD>(out.size()), &put, nullptr);
+    CloseHandle(file);
+}
+
+// This PC's password on Ranga's RPCN servers: made once (24 random hex digits) and kept in engines.ini; nobody types it.
+std::string RpcnPassword(const std::wstring& root) {
+    const std::wstring ini = root + L"\\engines.ini";
+    std::string password = Utf8(ReadIni(ini, L"Ranga", L"rpcn_senha", L""));
+    if (password.size() >= 16) return password;
+    unsigned char bytes[12] = {};
+    if (BCryptGenRandom(nullptr, bytes, sizeof(bytes), BCRYPT_USE_SYSTEM_PREFERRED_RNG) != 0) return "";
+    static const char hex[] = "0123456789abcdef";
+    password.clear();
+    for (const unsigned char b : bytes) password += hex[b >> 4], password += hex[b & 15];
+    EnsureUnicodeIni(ini);
+    WritePrivateProfileStringW(L"Ranga", L"rpcn_senha", Wide(password).c_str(), ini.c_str());
+    return password;
+}
+
+// The PS3 core's account (rpcn.yml, beside its config.yml): on Ranga's server, this player's name and this PC's
+// password at the address the game asked for (the core makes the account there on first use); on the official RPCN,
+// the account made in RPCS3's own window, copied over when there is one.
+void WriteRpcnAccount(const std::wstring& root, const Game& game) {
+    const std::wstring folder = root + L"\\bios\\retroarch\\rpcs3\\config";
+    CreateDirectoryW(folder.c_str(), nullptr);
+    if (ReadCoreOption(game, "rpcs3_servidor") == "oficial") {
+        const std::wstring standalone = root + L"\\emuladores\\rpcs3\\config\\rpcn.yml";
+        if (Exists(standalone)) CopyFileW(standalone.c_str(), (folder + L"\\rpcn.yml").c_str(), FALSE);
+        return;
+    }
+    std::string host = ReadCoreOption(game, "rpcs3_servidor_endereco");
+    host.erase(std::remove_if(host.begin(), host.end(), [](char c) { return c == '"' || c == ' ' || c == '\r' || c == '\n'; }), host.end());
+    const std::string password = RpcnPassword(root);
+    if (host.empty() || password.empty()) return;
+    if (host.find(':') == std::string::npos) host += ":31313";
+    const std::string text = "Version: 2\nHost: \"" + host + "\"\nNPID: " + PlayerRpcnName(root) + "\nPassword: " + password +
+                             "\nToken: \"\"\nHosts: \"Ranga|" + host + "\"\nExperimental IPv6 support: false\n";
+    const HANDLE file = CreateFileW((folder + L"\\rpcn.yml").c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) return;
+    DWORD put = 0;
+    WriteFile(file, text.data(), static_cast<DWORD>(text.size()), &put, nullptr);
     CloseHandle(file);
 }
 
@@ -436,7 +502,11 @@ void Runner::RunExternal(const std::wstring& root, const Game& game, const Optio
     }
     // The PS3's network is in the core's own config.yml (Net), read when the game boots: on for a game with online
     // (RPCN) chosen, off otherwise, so a game without it never tries to log in.
-    if (engine.native && game.system == L"PS3") SetPs3Network(root, ReadCoreOption(game, "rpcs3_online") == "ligado");
+    if (engine.native && game.system == L"PS3") {
+        const bool online = ReadCoreOption(game, "rpcs3_online") == "ligado";
+        SetPs3Network(root, online);
+        if (online) WriteRpcnAccount(root, game);
+    }
     std::wstring command = EngineCommand(engine, coreRom, options.borderless && !engine.embed, game.title, workspace);
     if (noGame) {
         if (const size_t at = command.find(L"--rom \"\""); at != std::wstring::npos) command.replace(at, 8, L"--no-game");
@@ -462,6 +532,12 @@ void Runner::RunExternal(const std::wstring& root, const Game& game, const Optio
             if (local == nullptr && running.size() == 1) local = &running.front();
             if (local != nullptr) command += L" --option \"eden_sala_endereco=127.0.0.1:" + std::to_wstring(local->port) + L"\"";
         }
+    }
+    // The PC that runs the Xbox hub reaches it here too, not through its own tunnel.
+    if (engine.native && game.system == L"XBOX" && ReadCoreOption(game, "xemu_network_backend") == "udp") {
+        const std::string hub = ReadCoreOption(game, "xemu_network_udp_remote");
+        if (!hub.empty() && hub.rfind("127.0.0.1", 0) != 0 && RoomServerEnabled(root) && ExtraRunning(root, Extra::Classics))
+            command += L" --option \"xemu_network_udp_remote=127.0.0.1:" + std::to_wstring(XboxHubPort(root)) + L"\"";
     }
     {
         // The exact command goes to the log first, so a wrong argument shows there.

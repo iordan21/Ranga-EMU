@@ -44,7 +44,9 @@ void StartRoomsOn(const std::wstring& root);
 //   Classics  [Classicos] tools\ranga-sala.exe: the table server of online play for the consoles whose cores have none
 //             (NES to PS2, launcher/net), TCP 24873, one for every game.
 //   Rooms3ds  [Sala3DS] tools\azahar-room.exe: Azahar's room server for the 3DS's local wireless, UDP 24874.
-enum class Extra { Classics, Rooms3ds };
+//   Ps3       [ServidorPS3] tools\rpcn\rpcn.exe: RPCN, the PS3's online server (RPCS3's, open source), TCP 31313 and
+//             UDP 3657, without e-mail: the PS3 core makes each player's account on first use. Off unless turned on.
+enum class Extra { Classics, Rooms3ds, Ps3 };
 int ExtraPort(const std::wstring& root, Extra extra);
 void SetExtraPort(const std::wstring& root, Extra extra, int port);
 bool ExtraOn(const std::wstring& root, Extra extra);
@@ -52,6 +54,8 @@ bool ExtraOn(const std::wstring& root, Extra extra);
 // tunnel only. The 3DS's and the Switch's rooms always listen on every network.
 bool ExtraLan(const std::wstring& root, Extra extra);
 void SetExtraLan(const std::wstring& root, Extra extra, bool on);
+// The Xbox's System Link hub (UDP), run by the classics' server (salas.ini [Classicos] hub_xbox, 24875).
+int XboxHubPort(const std::wstring& root);
 // This PC's addresses on home networks (192.168.x, 10.x, 172.16-31.x), for the friends in the same house.
 std::vector<std::wstring> LanAddresses();
 bool ExtraRunning(const std::wstring& root, Extra extra);

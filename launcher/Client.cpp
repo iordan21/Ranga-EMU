@@ -770,13 +770,15 @@ struct Client {
     int onlineDelay = 4;
     bool onlineDelayAuto = true;
     // The servers beside the Switch's rooms (Rooms.hpp Extra), by kind: the port typed, whether it runs, why not.
-    std::array<char, 8> serverPort[2]{};
-    bool serverRunning[2] = {};
-    ULONGLONG serverCheckedAt[2] = {};
+    std::array<char, 8> serverPort[3]{};
+    bool serverRunning[3] = {};
+    ULONGLONG serverCheckedAt[3] = {};
     std::vector<std::wstring> lanAddresses; // this PC on the home network, looked up every 10 s while shown
     ULONGLONG lanCheckedAt = 0;
     std::array<char, 64> pspLanAddress{}; // the PSP host's address typed on a PSP game's page
-    std::wstring serverProblem[2];
+    std::array<char, 128> xboxHubAddress{}; // the System Link hub typed on an Xbox game's page
+    std::array<char, 128> ps3ServerAddress{}; // Ranga's RPCN server typed on a PS3 game's page
+    std::wstring serverProblem[3];
     // The 3DS's room: this game's choice.
     bool room3dsOn = false;
     std::array<char, 128> room3dsAddress{}, room3dsName{};
@@ -1265,7 +1267,7 @@ struct Client {
     }
 
     void LoadServerPorts() {
-        for (const Extra extra : {Extra::Classics, Extra::Rooms3ds}) {
+        for (const Extra extra : {Extra::Classics, Extra::Rooms3ds, Extra::Ps3}) {
             const std::string port = std::to_string(ExtraPort(library.Root(), extra));
             auto& field = serverPort[static_cast<int>(extra)];
             field.fill(0);
@@ -1297,6 +1299,8 @@ struct Client {
         logDirty = true;
         addons.clear();
         pspLanAddress.fill(0);
+        xboxHubAddress.fill(0);
+        ps3ServerAddress.fill(0);
         if (Game* game = Current()) {
             options = LoadOptions(*game);
             addons = LoadAddons(*game);
@@ -2705,6 +2709,7 @@ struct Client {
         if (game.system == L"PSP" && EngineFor(game.system).native) PspOnlineSection(game, label, scale);
         if (game.system == L"3DS" && EngineFor(game.system).native) Room3dsSection(game, label, labelWidth, scale);
         if (game.system == L"PS3" && EngineFor(game.system).native) Ps3OnlineSection(game, label, labelWidth, scale);
+        if (game.system == L"XBOX" && EngineFor(game.system).native) XboxOnlineSection(game, label, labelWidth, scale);
         if (game.system == L"SWITCH" && EngineFor(game.system).native) {
             // Eden's multiplayer rooms: the game's local wireless / LAN mode goes through a room over UDP. The core
             // joins or hosts the room when the game starts, so nothing here changes a game that is already open.
@@ -3032,6 +3037,50 @@ struct Client {
         ServerSection(Extra::Rooms3ds, label, labelWidth, scale);
     }
 
+    // The Xbox's System Link (its LAN play) over the internet or the house: xemu sends the Xbox's network frames to
+    // the hub of the PC that hosts (ranga-sala --hub-xbox, UDP 24875 beside the classics' server) and the hub passes
+    // them to the others. A playit UDP tunnel to that port carries it to friends far away.
+    template <typename Label> void XboxOnlineSection(const Game& game, Label& label, float labelWidth, float scale) {
+        ImGui::Dummy(ImVec2(0, 6 * scale));
+        ImGui::Separator();
+        ImGui::Dummy(ImVec2(0, 2 * scale));
+        const bool running = runner.Busy() && runner.TitleId() == game.titleId;
+        ImGui::BeginDisabled(running);
+        bool on = ReadCoreOption(game, "xemu_network_backend") == "udp";
+        label("System Link (online)");
+        if (ImGui::Checkbox("##xboxOnline", &on)) {
+            WriteCoreOption(game, "xemu_network_backend", on ? "udp" : "disabled");
+            if (on && ReadCoreOption(game, "xemu_network_udp_remote").empty()) {
+                const std::string remembered = Utf8(RememberedOnline(L"xbox_hub"));
+                WriteCoreOption(game, "xemu_network_udp_remote", remembered.empty() ? "127.0.0.1:" + std::to_string(XboxHubPort(library.Root())) : remembered);
+            }
+            xboxHubAddress.fill(0);
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled(on ? "ligado: o Xbox entra na rede do hub quando o jogo abrir" : "desligado");
+        if (on) {
+            if (xboxHubAddress[0] == 0) {
+                const std::string current = ReadCoreOption(game, "xemu_network_udp_remote");
+                current.copy(xboxHubAddress.data(), xboxHubAddress.size() - 1);
+            }
+            label("Endereço do hub");
+            ImGui::InputText("##xboxHub", xboxHubAddress.data(), xboxHubAddress.size());
+            if (ImGui::IsItemDeactivatedAfterEdit()) {
+                WriteCoreOption(game, "xemu_network_udp_remote", xboxHubAddress.data());
+                RememberOnline(L"xbox_hub", xboxHubAddress.data());
+            }
+            ImGui::SetCursorPosX(labelWidth);
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextDisabled("Para jogos com System Link no menu (Halo, por exemplo). Todos põem o "
+                                "mesmo endereço: o do túnel UDP do playit para a porta %d do PC que hospeda (ou, na mesma casa, o "
+                                "192.168... desse PC com a porta %d). No jogo, escolha System Link. O hub roda junto com a sala dos "
+                                "clássicos.", XboxHubPort(library.Root()), XboxHubPort(library.Root()));
+            ImGui::PopTextWrapPos();
+        }
+        ImGui::EndDisabled();
+        if (running) ImGui::TextDisabled("Feche o jogo para mudar o online.");
+    }
+
     // The PS3's online through RPCN, RPCS3's own free server (rpcs3.net): the game logs in with the player's RPCN
     // account and finds the others there, as on the PSN. The account lives in the core's rpcn.yml; it is created in
     // RPCS3's own window (Configuração > RPCN, with an e-mail for the token), and Ranga takes it from there.
@@ -3076,43 +3125,54 @@ struct Client {
         ImGui::SameLine();
         ImGui::TextDisabled(on ? "ligado: o jogo entra no RPCN quando abrir" : "desligado");
         if (on) {
-            const auto [account, kept] = RpcnAccount(RpcnFile());
-            const auto [standalone, standaloneKept] = RpcnAccount(StandaloneRpcnFile());
-            label("Conta");
-            if (!account.empty()) {
-                ImGui::PushStyleColor(ImGuiCol_Text, Color(kGreen));
-                ImGui::Text("%s", account.c_str());
-                ImGui::PopStyleColor();
-            } else {
-                ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
-                ImGui::TextUnformatted("nenhuma ainda");
-                ImGui::PopStyleColor();
-            }
-            if (!standalone.empty() && standalone != account) {
-                ImGui::SetCursorPosX(labelWidth);
-                if (ImGui::Button(("Usar a conta " + standalone + " do RPCS3").c_str())) {
-                    CreateDirectoryW((library.Root() + L"\\bios\\retroarch\\rpcs3\\config").c_str(), nullptr);
-                    CopyFileW(StandaloneRpcnFile().c_str(), RpcnFile().c_str(), FALSE);
-                }
-            }
-            const std::wstring rpcs3 = library.Root() + L"\\emuladores\\rpcs3\\rpcs3.exe";
-            if (Exists(rpcs3)) {
-                ImGui::SetCursorPosX(labelWidth);
-                if (ImGui::Button(account.empty() ? "Abrir o RPCS3 para criar a conta" : "Abrir o RPCS3 (conta do RPCN)")) {
-                    ShellExecuteW(nullptr, L"open", rpcs3.c_str(), nullptr, (library.Root() + L"\\emuladores\\rpcs3").c_str(), SW_SHOWNORMAL);
-                }
-            }
+            // Where: the RPCN server of the PC that hosts (Ranga's: no sign-up, the PS3 core makes the account), or the
+            // official one at rpcs3.net, with an account made in RPCS3's own window.
+            static const char* where[] = {"Servidor do Ranga (sem cadastro)", "RPCN oficial (conta sua no rpcs3.net)"};
+            int mode = ReadCoreOption(game, "rpcs3_servidor") == "oficial" ? 1 : 0;
+            label("Servidor");
+            if (ImGui::Combo("##ps3where", &mode, where, 2)) WriteCoreOption(game, "rpcs3_servidor", mode == 1 ? "oficial" : "ranga");
             ImGui::SetCursorPosX(labelWidth);
             ImGui::PushTextWrapPos(0);
-            ImGui::TextDisabled("O RPCN é o servidor online grátis do RPCS3 (rpcs3.net), no lugar da PSN. Cada jogador cria a "
-                                "própria conta uma vez: no RPCS3, em Configuração > RPCN, crie a conta com seu e-mail, cole o "
-                                "token que chega por e-mail e volte aqui para usar a conta. No jogo, entre no modo online "
-                                "dele. O roteador de cada um precisa deixar o jogo passar (UPnP ligado); o túnel do playit "
-                                "não serve para o PS3.");
+            if (mode == 0) {
+                if (ps3ServerAddress[0] == 0) {
+                    std::string current = ReadCoreOption(game, "rpcs3_servidor_endereco");
+                    if (current.empty()) current = Utf8(RememberedOnline(L"ps3_servidor"));
+                    current.copy(ps3ServerAddress.data(), ps3ServerAddress.size() - 1);
+                }
+                label("Endereço do servidor");
+                ImGui::InputTextWithHint("##ps3server", "192.168.0.10:31313", ps3ServerAddress.data(), ps3ServerAddress.size());
+                if (ImGui::IsItemDeactivatedAfterEdit()) {
+                    WriteCoreOption(game, "rpcs3_servidor_endereco", ps3ServerAddress.data());
+                    RememberOnline(L"ps3_servidor", ps3ServerAddress.data());
+                }
+                ImGui::SetCursorPosX(labelWidth);
+                const std::string name = PlayerRpcnName(library.Root());
+                ImGui::TextDisabled("Seu nome no PS3: %s (o mesmo do online do Ranga; a conta é criada sozinha na primeira vez). "
+                                    "O endereço é o do PC que liga o servidor do PS3: na mesma casa, o 192.168... dele com :31313; "
+                                    "pela internet, o IP público dele com :31313, com as portas abertas no roteador dele. Os PS3 se "
+                                    "ligam direto um no outro, então cada roteador precisa de UPnP ligado.", name.c_str());
+            } else {
+                const auto [account, kept] = RpcnAccount(StandaloneRpcnFile());
+                label("Conta");
+                ImGui::PushStyleColor(ImGuiCol_Text, Color(account.empty() ? kAmber : kGreen));
+                ImGui::TextUnformatted(account.empty() ? "nenhuma ainda" : account.c_str());
+                ImGui::PopStyleColor();
+                const std::wstring rpcs3 = library.Root() + L"\emuladores\rpcs3\rpcs3.exe";
+                if (Exists(rpcs3)) {
+                    ImGui::SetCursorPosX(labelWidth);
+                    if (ImGui::Button(account.empty() ? "Abrir o RPCS3 para criar a conta" : "Abrir o RPCS3 (conta do RPCN)")) {
+                        ShellExecuteW(nullptr, L"open", rpcs3.c_str(), nullptr, (library.Root() + L"\emuladores\rpcs3").c_str(), SW_SHOWNORMAL);
+                    }
+                }
+                ImGui::SetCursorPosX(labelWidth);
+                ImGui::TextDisabled("A conta do RPCN oficial é feita no RPCS3, em Configuração > RPCN, com seu e-mail e o token que chega "
+                                    "por e-mail; o Ranga usa a mesma conta quando o jogo abrir. Cada roteador precisa de UPnP ligado.");
+            }
             ImGui::PopTextWrapPos();
         }
         ImGui::EndDisabled();
         if (running) ImGui::TextDisabled("Feche o jogo para mudar o online.");
+        ServerSection(Extra::Ps3, label, labelWidth, scale);
     }
 
     // The PSP's own online: its local wireless (ad hoc), through a public PRO ad hoc server kept by fans. PPSSPP's
@@ -3237,19 +3297,27 @@ struct Client {
         ImGui::Dummy(ImVec2(0, 6 * scale));
         ImGui::SetCursorPosX(labelWidth);
         ImGui::PushStyleColor(ImGuiCol_Text, Color(kText));
-        ImGui::TextUnformatted(classics ? "Sala dos clássicos deste PC (servidor)" : "Sala do 3DS deste PC (servidor)");
+        const bool ps3 = extra == Extra::Ps3;
+        ImGui::TextUnformatted(classics ? "Sala dos clássicos deste PC (servidor)" : ps3 ? "Servidor do PS3 deste PC (RPCN)" : "Sala do 3DS deste PC (servidor)");
         ImGui::PopStyleColor();
         ImGui::SetCursorPosX(labelWidth);
         ImGui::PushTextWrapPos(0);
         if (classics)
             ImGui::TextDisabled("Uma sala só serve para todos os jogos clássicos. Precisa de um túnel TCP do playit para 127.0.0.1 nesta porta; "
-                                "o endereço do túnel é o que todos (você também, ou 127.0.0.1:porta) põem em \"Endereço da sala\".");
+                                "o endereço do túnel é o que todos (você também, ou 127.0.0.1:porta) põem em \"Endereço da sala\". "
+                                "O hub do System Link do Xbox roda junto, na porta UDP %d (túnel UDP do playit para ela).", XboxHubPort(library.Root()));
+        else if (ps3)
+            ImGui::TextDisabled("O RPCN deste PC, sem e-mail e sem cadastro: cada PS3 cria a própria conta ao entrar. Na mesma casa, todos põem "
+                                "o 192.168... deste PC com a porta 31313. Pela internet, os PS3 se ligam direto um no outro, então o túnel do "
+                                "playit não serve: o roteador deste PC precisa abrir TCP 31313 e UDP 3657 (ou UPnP ligado), e o de cada "
+                                "jogador precisa de UPnP. O endereço, então, é o IP público deste PC com :31313.");
         else
             ImGui::TextDisabled("Uma sala serve para todos os jogos de 3DS. Precisa de um túnel UDP do playit para 127.0.0.1 nesta porta; "
                                 "o endereço do túnel é o que todos (você também, ou 127.0.0.1:porta) põem em \"Endereço da sala\".");
         ImGui::PopTextWrapPos();
         label("Porta");
-        ImGui::BeginDisabled(serverRunning[k]);
+        // RPCN's port is the one in its rpcn.cfg (31313).
+        ImGui::BeginDisabled(serverRunning[k] || ps3);
         ImGui::InputText("##serverPort", serverPort[k].data(), serverPort[k].size(), ImGuiInputTextFlags_CharsDecimal);
         if (ImGui::IsItemDeactivatedAfterEdit()) SetExtraPort(library.Root(), extra, std::atoi(serverPort[k].data()));
         ImGui::EndDisabled();
@@ -4462,7 +4530,7 @@ struct Client {
     static bool OnlineChosen(const Game& game) {
         const std::string room = ReadCoreOption(game, "eden_sala");
         return ReadCoreOption(game, "ranga_online") == "ligado" || ReadCoreOption(game, "citra_sala") == "entrar" ||
-               ReadCoreOption(game, "rpcs3_online") == "ligado" ||
+               ReadCoreOption(game, "rpcs3_online") == "ligado" || ReadCoreOption(game, "xemu_network_backend") == "udp" ||
                ReadCoreOption(game, "ppsspp_enable_wlan") == "enabled" || (!room.empty() && room != "desligada");
     }
 

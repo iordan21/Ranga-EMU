@@ -183,7 +183,7 @@ void StartRoomsOn(const std::wstring& root) {
     for (const Room& room : LoadRooms(root)) {
         if (room.on) StartRoomServer(root, room);
     }
-    for (const Extra extra : {Extra::Classics, Extra::Rooms3ds}) {
+    for (const Extra extra : {Extra::Classics, Extra::Rooms3ds, Extra::Ps3}) {
         if (ExtraOn(root, extra)) StartExtra(root, extra);
     }
 }
@@ -203,6 +203,7 @@ const ExtraInfo& Info(Extra extra) {
     static const ExtraInfo infos[] = {
         {L"Classicos", L"ranga-sala.exe", L"o servidor dos clássicos", L"classicos.log", 24873},
         {L"Sala3DS", L"azahar-room.exe", L"a sala do 3DS", L"sala-3ds.log", 24874},
+        {L"ServidorPS3", L"rpcn\\rpcn.exe", L"o servidor do PS3", L"servidor-ps3.log", 31313},
     };
     return infos[static_cast<int>(extra)];
 }
@@ -217,6 +218,8 @@ void SetExtraPort(const std::wstring& root, Extra extra, int port) {
     EnsureUnicodeIni(Ini(root));
     WritePrivateProfileStringW(Info(extra).section, L"porta", std::to_wstring(std::clamp(port, 1, 65535)).c_str(), Ini(root).c_str());
 }
+
+int XboxHubPort(const std::wstring& root) { return std::clamp(ReadNumber(Ini(root), L"Classicos", L"hub_xbox", 24875), 1, 65535); }
 
 bool ExtraLan(const std::wstring& root, Extra extra) { return ReadNumber(Ini(root), Info(extra).section, L"lan", 0) != 0; }
 
@@ -250,7 +253,7 @@ std::vector<std::wstring> LanAddresses() {
     return found;
 }
 
-bool ExtraOn(const std::wstring& root, Extra extra) { return ReadNumber(Ini(root), Info(extra).section, L"ligada", 1) != 0; }
+bool ExtraOn(const std::wstring& root, Extra extra) { return ReadNumber(Ini(root), Info(extra).section, L"ligada", extra == Extra::Ps3 ? 0 : 1) != 0; }
 
 bool ExtraRunning(const std::wstring& root, Extra extra) {
     const unsigned long pid = static_cast<unsigned long>(ReadNumber(Ini(root), Info(extra).section, L"pid", 0));
@@ -271,15 +274,25 @@ std::wstring StartExtra(const std::wstring& root, Extra extra) {
     const int port = ExtraPort(root, extra);
     const std::wstring log = Folder(root) + L"\\" + info.log;
     std::wstring command = L"\"" + ExtraExe(root, extra) + L"\" --port " + std::to_wstring(port);
+    // RPCN works in its own folder (rpcn.cfg, its database in db\, its TLS certificate), with the port in rpcn.cfg.
+    // The certificate is made here the first time (self-signed; RPCS3 doesn't check it), and never leaves this PC.
+    std::wstring folder = Folder(root);
+    if (extra == Extra::Ps3) {
+        folder = ExtraExe(root, extra).substr(0, ExtraExe(root, extra).find_last_of(L'\\'));
+        command = L"\"" + ExtraExe(root, extra) + L"\"";
+        if (!Exists(folder + L"\\cert.pem") || !Exists(folder + L"\\key.pem")) RunHidden(command + L" --cert-gen", folder, log);
+    }
     if (extra == Extra::Classics) {
         // Open to the home network too when asked (lan=1); otherwise only this PC and its playit tunnel reach it.
         if (ExtraLan(root, extra)) command += L" --lan";
+        // The Xbox's System Link hub rides along, on its own UDP port.
+        command += L" --hub-xbox " + std::to_wstring(XboxHubPort(root));
         command += L" --log \"" + log + L"\" --atualizacao \"" + root + L"\\salas\\atualizacao\" --perfis \"" + root + L"\\salas\\perfis\"";
         // The group's code, when the friends set one (letters and digits only, see PlayerProfile.hpp GroupCode).
         std::wstring group;
         for (const wchar_t c : ReadIni(root + L"\\engines.ini", L"Ranga", L"grupo", L"")) if (iswalnum(c) || c == L'-' || c == L'_') group += c;
         if (!group.empty()) command += L" --grupo " + group;
-    } else {
+    } else if (extra == Extra::Rooms3ds) {
         // Azahar's room: like Eden's, its ban list is read only when the file starts with its own header.
         const std::wstring bans = Folder(root) + L"\\sala-3ds-banidos.txt";
         if (!Exists(bans)) {
@@ -296,7 +309,7 @@ std::wstring StartExtra(const std::wstring& root, Extra extra) {
     startup.wShowWindow = SW_HIDE;
     PROCESS_INFORMATION process{};
     if (!CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW | DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP, nullptr,
-                        Folder(root).c_str(), &startup, &process)) {
+                        folder.c_str(), &startup, &process)) {
         return std::wstring(info.label) + L" não abriu (erro " + std::to_wstring(GetLastError()) + L").";
     }
     if (WaitForSingleObject(process.hProcess, 800) == WAIT_OBJECT_0) {

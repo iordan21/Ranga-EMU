@@ -4,6 +4,11 @@
 // (slot 0); when it leaves, the table ends.
 //
 //   ranga-sala [--port 24873] [--log file] [--lan] [--atualizacao <pasta>] [--perfis <pasta>] [--grupo <codigo>]
+//              [--hub-xbox <porta UDP>]
+//
+// --hub-xbox: the Xbox's System Link hub, on UDP. Each player's xemu (its udp network backend) sends the Xbox's
+// Ethernet frames here and the hub passes every frame to all the others it heard from in the last minute, as a
+// network switch would; the reply goes back to where each frame came from, so a playit UDP tunnel carries it.
 //
 // On the same port it answers plain HTTP too:
 //   --atualizacao  hands out Ranga's published update (Update.hpp): GET /ranga/manifest, /ranga/manifest.sig, /ranga/f/...
@@ -517,7 +522,7 @@ bool StartsHttp(const std::vector<uint8_t>& in) {
 }
 
 int main(int argc, char** argv) {
-    int port = RangaNet::kDefaultPort;
+    int port = RangaNet::kDefaultPort, hubPort = 0;
     bool lan = false;
     for (int i = 1; i + 1 < argc; ++i) {
         if (std::strcmp(argv[i], "--port") == 0) port = std::atoi(argv[++i]);
@@ -525,6 +530,7 @@ int main(int argc, char** argv) {
         else if (std::strcmp(argv[i], "--atualizacao") == 0) g_updates = argv[++i];
         else if (std::strcmp(argv[i], "--perfis") == 0) g_dataFolder = argv[++i];
         else if (std::strcmp(argv[i], "--grupo") == 0) g_group = argv[++i];
+        else if (std::strcmp(argv[i], "--hub-xbox") == 0) hubPort = std::atoi(argv[++i]);
     }
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--lan") == 0) lan = true;
@@ -560,6 +566,29 @@ int main(int argc, char** argv) {
     NonBlocking(listener);
     Log("sala do Ranga (jogos clássicos) aberta na porta TCP %d%s%s", port, lan ? ", para todas as redes" : "", g_group.empty() ? "" : ", com código do grupo");
 
+    // The Xbox hub: who sent frames lately (address and port as seen), and when.
+    Socket hub = INVALID_SOCKET;
+    struct HubPeer {
+        sockaddr_in address;
+        time_t seen;
+    };
+    std::vector<HubPeer> hubPeers;
+    if (hubPort > 0 && hubPort < 65536) {
+        hub = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        sockaddr_in hubAddress{};
+        hubAddress.sin_family = AF_INET;
+        hubAddress.sin_port = htons(static_cast<uint16_t>(hubPort));
+        hubAddress.sin_addr.s_addr = htonl(lan ? INADDR_ANY : INADDR_LOOPBACK);
+        if (hub == INVALID_SOCKET || bind(hub, reinterpret_cast<sockaddr*>(&hubAddress), sizeof(hubAddress)) != 0) {
+            Log("a porta UDP %d do hub do Xbox está em uso (erro %d); sigo sem ele", hubPort, LastError());
+            if (hub != INVALID_SOCKET) CloseSocket(hub);
+            hub = INVALID_SOCKET;
+        } else {
+            NonBlocking(hub);
+            Log("hub do Xbox (System Link) aberto na porta UDP %d", hubPort);
+        }
+    }
+
     std::vector<uint8_t> buffer(256 * 1024);
     for (;;) {
         fd_set reads, writes;
@@ -567,6 +596,10 @@ int main(int argc, char** argv) {
         FD_ZERO(&writes);
         FD_SET(listener, &reads);
         Socket highest = listener;
+        if (hub != INVALID_SOCKET) {
+            FD_SET(hub, &reads);
+            highest = std::max(highest, hub);
+        }
         for (auto& player : g_players) {
             FD_SET(player->socket, &reads);
             if (player->outAt < player->out.size()) FD_SET(player->socket, &writes);
@@ -577,6 +610,35 @@ int main(int argc, char** argv) {
             Log("select falhou (erro %d)", LastError());
             Pause(100);
             continue;
+        }
+        if (hub != INVALID_SOCKET && FD_ISSET(hub, &reads)) {
+            for (;;) {
+                sockaddr_in from{};
+                socklen_t fromSize = sizeof(from);
+                const int got = static_cast<int>(recvfrom(hub, reinterpret_cast<char*>(buffer.data()), static_cast<int>(buffer.size()), 0,
+                                                          reinterpret_cast<sockaddr*>(&from), &fromSize));
+                if (got <= 0) break;
+                const time_t now = std::time(nullptr);
+                bool known = false;
+                for (auto& peer : hubPeers) {
+                    if (peer.address.sin_addr.s_addr == from.sin_addr.s_addr && peer.address.sin_port == from.sin_port) {
+                        peer.seen = now;
+                        known = true;
+                    }
+                }
+                if (!known && hubPeers.size() < 16) {
+                    hubPeers.push_back({from, now});
+                    char text[64] = {};
+                    inet_ntop(AF_INET, &from.sin_addr, text, sizeof(text));
+                    Log("hub do Xbox: entrou %s:%d (%zu no hub)", text, ntohs(from.sin_port), hubPeers.size());
+                }
+                hubPeers.erase(std::remove_if(hubPeers.begin(), hubPeers.end(), [&](const HubPeer& peer) { return now - peer.seen > 60; }),
+                               hubPeers.end());
+                for (const auto& peer : hubPeers) {
+                    if (peer.address.sin_addr.s_addr == from.sin_addr.s_addr && peer.address.sin_port == from.sin_port) continue;
+                    sendto(hub, reinterpret_cast<const char*>(buffer.data()), got, 0, reinterpret_cast<const sockaddr*>(&peer.address), sizeof(peer.address));
+                }
+            }
         }
         if (FD_ISSET(listener, &reads)) {
             sockaddr_in from{};

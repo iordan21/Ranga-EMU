@@ -47,6 +47,10 @@ private:
     std::thread worker;
 };
 
+// The player's name on Ranga's own RPCN server (the PS3's online): the online name typed in Ranga (else the Switch
+// player's), kept to RPCN's rule (letters, digits, - and _, 3 to 16), or this PC's name when nothing is left of it.
+std::string PlayerRpcnName(const std::wstring& root);
+
 }
 
 #endif
