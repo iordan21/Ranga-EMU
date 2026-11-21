@@ -2468,6 +2468,7 @@ struct Client {
             draw->AddText(semibold, 15 * scale, ImVec2(textX, min.y + 15 * scale), Packed(kText), title.c_str(), nullptr, 0, &clip);
             std::string line = SystemName(game.system);
             if (const auto found = profile.games.find(game.titleId); found != profile.games.end()) line += "  ·  " + PlayedWhen(found->second.last);
+            if (const std::string played = PlayedTime(game); !played.empty()) line += "  ·  " + played;
             draw->AddText(nullptr, 13 * scale, ImVec2(textX, min.y + 39 * scale), Packed(LookFor(game.system).name), line.c_str(), nullptr, 0, &clip);
             y += card + gap;
         }
