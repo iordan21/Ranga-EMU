@@ -2695,6 +2695,34 @@ struct Client {
 
     std::array<char, 64> librarySearch{}; // what was typed in the console page's search
 
+    // Favorites: engines.ini [Favoritos] <titleId>=1. They come first on their console's page, with a star.
+    bool IsFavorite(const Game& game) const { return ReadIni(library.Root() + L"\\engines.ini", L"Favoritos", game.titleId.c_str(), L"") == L"1"; }
+    void SetFavorite(const Game& game, bool on) {
+        const std::wstring ini = library.Root() + L"\\engines.ini";
+        EnsureUnicodeIni(ini);
+        WritePrivateProfileStringW(L"Favoritos", game.titleId.c_str(), on ? L"1" : nullptr, ini.c_str());
+    }
+
+    // "3 h 20 min", "45 min" or empty: how long the game was played, from the profile.
+    std::string PlayedTime(const Game& game) const {
+        const auto found = profile.games.find(game.titleId);
+        if (found == profile.games.end() || found->second.seconds < 60) return "";
+        const int64_t minutes = found->second.seconds / 60;
+        if (minutes < 60) return std::to_string(minutes) + " min";
+        return std::to_string(minutes / 60) + " h" + (minutes % 60 ? " " + std::to_string(minutes % 60) + " min" : "");
+    }
+
+    // A small five-pointed star, filled, centered on c.
+    static void DrawStar(ImDrawList* draw, ImVec2 c, float radius, ImU32 color) {
+        ImVec2 points[10];
+        for (int i = 0; i < 10; ++i) {
+            const float angle = -1.5707963f + i * 0.6283185f, r = i % 2 == 0 ? radius : radius * 0.45f;
+            points[i] = ImVec2(c.x + std::cos(angle) * r, c.y + std::sin(angle) * r);
+        }
+        // Not convex: the star is drawn as triangles from its center.
+        for (int i = 0; i < 10; ++i) draw->AddTriangleFilled(c, points[i], points[(i + 1) % 10], color);
+    }
+
     // Lower case without accents, for the search: "Pokémon" and "pokemon" meet.
     static std::wstring Plainer(std::wstring text) {
         static const std::wstring accented = L"àáâãäåçèéêëìíîïñòóôõöùúûüýÿ", plain = L"aaaaaaceeeeiiiinooooouuuuyy";
@@ -2784,6 +2812,7 @@ struct Client {
                 return;
             }
         }
+        std::stable_partition(games.begin(), games.end(), [&](int index) { return IsFavorite(library.Games()[static_cast<size_t>(index)]); });
         const float tile = 168 * scale, gap = 22 * scale, label = ImGui::GetFontSize() * 2.7f;
         ImGui::SetCursorPos(ImVec2(left, 80 * scale));
         ImGui::BeginChild("##grid", ImVec2(size.x - left, 0), ImGuiChildFlags_None);
@@ -2833,7 +2862,15 @@ struct Client {
             const std::string title = Utf8(game.title);
             ImGui::PushClipRect(ImVec2(min.x, max.y), ImVec2(max.x, max.y + label - 4 * scale), true);
             grid->AddText(semibold, ImGui::GetFontSize(), ImVec2(min.x + 2 * scale, max.y + 8 * scale), Packed(k == gridFocus ? 0xffffff : kText), title.c_str(), nullptr, tile - 4 * scale);
+            if (const std::string played = PlayedTime(game); !played.empty())
+                grid->AddText(nullptr, ImGui::GetFontSize() * 0.85f, ImVec2(min.x + 2 * scale, max.y + 8 * scale + ImGui::GetFontSize() * 1.35f), Packed(kDim), played.c_str());
             ImGui::PopClipRect();
+            if (IsFavorite(game)) {
+                // On the cover's top right corner, on a dark round so it shows on any art.
+                const ImVec2 corner(max.x - 18 * scale, min.y + 18 * scale);
+                grid->AddCircleFilled(corner, 14 * scale, Packed(0x000000, 0.6f), 24);
+                DrawStar(grid, corner, 10 * scale, Packed(kAmber));
+            }
         }
         ImGui::Dummy(ImVec2(0, 30 * scale));
         ImGui::EndChild();
@@ -4483,6 +4520,7 @@ struct Client {
         const std::wstring id = External(*game) || game->system == L"PS3" ? game->serial : game->titleId;
         if (!id.empty()) meta += "   ·   " + Utf8(id);
         if (!game->version.empty()) meta += "   ·   v" + Utf8(game->version);
+        if (const std::string played = PlayedTime(*game); !played.empty()) meta += "   ·   " + played + " jogadas";
         ImGui::TextDisabled("%s", meta.c_str());
         ImGui::SameLine();
         std::string tag = profile.bloodborne ? "experimento" : profile.tested ? "testado" : "experimental";
@@ -4522,6 +4560,14 @@ struct Client {
         ImGui::EndDisabled();
         ImGui::PopFont();
         ImGui::PopStyleColor(4);
+        {
+            // Favorite: it comes first on its console's page, with a star.
+            const bool favorite = IsFavorite(*game);
+            ImGui::SameLine(0, 10 * scale);
+            const ImVec2 at = ImGui::GetCursorScreenPos();
+            if (ImGui::Button(favorite ? "      Favorito###favorito" : "      Favoritar###favorito", ImVec2(0, 44 * scale))) SetFavorite(*game, !favorite);
+            DrawStar(ImGui::GetWindowDrawList(), ImVec2(at.x + 20 * scale, at.y + 22 * scale), 9 * scale, favorite ? Packed(kAmber) : Packed(kDim));
+        }
         if (thisGame && runner.Current() != Runner::State::Idle) {
             ImGui::SameLine();
             ImGui::AlignTextToFramePadding();
