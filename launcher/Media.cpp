@@ -205,6 +205,20 @@ bool ImportMedia(const std::wstring& path, int width, int height, Media& out, st
     return ReadPicture(bytes, width, height, out, error);
 }
 
+bool ImportPicture(const std::wstring& path, int maxSide, Media& out, std::string& error) {
+    out = Media{};
+    const std::string bytes = ReadBytes(path);
+    int w = 0, h = 0, channels = 0;
+    if (bytes.empty() || !stbi_info_from_memory(reinterpret_cast<const stbi_uc*>(bytes.data()), static_cast<int>(bytes.size()), &w, &h, &channels) || w <= 0 || h <= 0) {
+        error = "Não deu para ler essa imagem (aceita PNG, JPG, BMP ou GIF).";
+        return false;
+    }
+    const double shrink = std::min(1.0, static_cast<double>(maxSide) / std::max(w, h));
+    out.width = std::max(1, static_cast<int>(w * shrink));
+    out.height = std::max(1, static_cast<int>(h * shrink));
+    return ReadPicture(bytes, out.width, out.height, out, error);
+}
+
 std::string EncodeMedia(const Media& media, size_t maxBytes) {
     if (media.frames.empty()) return "";
     // Fewer frames (every other one, then one in three...) until it fits; a still picture fits by lowering quality.

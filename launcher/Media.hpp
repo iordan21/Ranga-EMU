@@ -26,6 +26,8 @@ inline constexpr int kPhotoSide = 128, kCoverWidth = 720, kCoverHeight = 144;
 
 // Reads path (PNG, JPG, BMP, GIF, MP4, MOV, WMV, AVI, M4V) into width x height frames; false and why when it cannot.
 bool ImportMedia(const std::wstring& path, int width, int height, Media& out, std::string& error);
+// A picture or GIF whole, in its own shape, shrunk so its longer side is at most maxSide (the chat's images).
+bool ImportPicture(const std::wstring& path, int maxSide, Media& out, std::string& error);
 // The frames as "RANI": JPEG frames, fewer of them when the whole would pass maxBytes.
 std::string EncodeMedia(const Media& media, size_t maxBytes = 900 * 1024);
 bool DecodeMedia(const std::string& bytes, Media& out);

@@ -71,7 +71,8 @@ if(WIN32)
         ${IMGUI_DIR}/imgui.cpp ${IMGUI_DIR}/imgui_draw.cpp ${IMGUI_DIR}/imgui_tables.cpp ${IMGUI_DIR}/imgui_widgets.cpp
         ${IMGUI_DIR}/backends/imgui_impl_win32.cpp ${IMGUI_DIR}/backends/imgui_impl_dx11.cpp)
     target_include_directories(RangaEmu PRIVATE ${IMGUI_DIR} ${IMGUI_DIR}/backends ${CMAKE_SOURCE_DIR}/3rdparty/stb)
-    target_compile_definitions(RangaEmu PRIVATE UNICODE _UNICODE)
+    # IMGUI_USE_WCHAR32: characters past 0xFFFF, the chat's emoji among them.
+    target_compile_definitions(RangaEmu PRIVATE UNICODE _UNICODE IMGUI_USE_WCHAR32)
     target_link_options(RangaEmu PRIVATE -municode -static)
     target_link_libraries(RangaEmu PRIVATE SDL2-static d3d11 d3dcompiler dxgi dwmapi ole32 shell32 shlwapi uuid gdi32 comctl32 winhttp bcrypt ws2_32 iphlpapi mfplat mfreadwrite mfuuid)
     # Ranga Retro: libretro cores inside Ranga's own window (launcher/retro).

@@ -86,3 +86,24 @@ CREATE TABLE IF NOT EXISTS midia (
   dados TEXT NOT NULL,
   PRIMARY KEY (conta, tipo)
 );
+
+-- O estado de cada conversa visto por uma conta: até quando ela está digitando para a outra e até que mensagem da
+-- outra ela já leu (o "visto" e o "digitando..." do chat).
+CREATE TABLE IF NOT EXISTS conversas (
+  conta TEXT NOT NULL,
+  com TEXT NOT NULL,
+  digitando INTEGER NOT NULL DEFAULT 0,
+  lido INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (conta, com)
+);
+CREATE INDEX IF NOT EXISTS conversas_com ON conversas (com);
+
+-- As imagens mandadas no chat (o "RANI" do Ranga em base64), só para quem mandou e quem recebeu; saem após 30 dias.
+CREATE TABLE IF NOT EXISTS imagens (
+  id TEXT PRIMARY KEY,
+  de TEXT NOT NULL,
+  para TEXT NOT NULL,
+  quando INTEGER NOT NULL,
+  dados TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS imagens_quando ON imagens (quando);

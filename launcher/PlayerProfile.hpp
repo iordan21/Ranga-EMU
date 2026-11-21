@@ -60,6 +60,8 @@ struct PlayerCard {
     int64_t seconds = 0, seen = 0;
     int xp = 0, games = 0, consoles = 0, achievements = 0, raPoints = 0;
     std::string playing, playingSystem;
+    // Playing online: the invite to the same game and room ("[[convite|...]]", Client.cpp), for "Entrar no jogo".
+    std::string invite;
     bool closed = false; // its Ranga said it was closing
     std::string account;  // Nome#1234, as the central names the account
     std::vector<PlayedGame> recent;

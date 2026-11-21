@@ -39,6 +39,8 @@ int Unread(const std::string& friendId); // arrived since the game opened and no
 void MarkSeen(const std::string& friendId);
 // Sends in the background; the answer (or why not) comes back as a notice.
 void Send(const std::string& to, const std::string& text);
+// How a message reads: an invite ("[[convite|...]]") or a picture ("[[imagem|...]]") by what it is.
+std::wstring Shown(const std::string& text);
 // Something changed since the last call (for the menu to repaint).
 bool Changed();
 // Every turn of the game's loop: the notices over the game.

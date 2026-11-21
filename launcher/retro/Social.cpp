@@ -205,7 +205,7 @@ void Work() {
                 }
                 s->messages.push_back(m);
                 s->changed = true;
-                if (m.from != s->me && m.when >= s->startedAt) s->notices.push_back({L"Mensagem de " + Wide(NameOf(m.from)), Wide(m.text)});
+                if (m.from != s->me && m.when >= s->startedAt) s->notices.push_back({L"Mensagem de " + Wide(NameOf(m.from)), Shown(m.text)});
             }
             if (s->messages.size() > 1000) s->messages.erase(s->messages.begin(), s->messages.end() - 1000);
         }
@@ -289,6 +289,15 @@ void Start(const std::wstring& programFolder, HWND window) {
     s->window = window;
     s->startedAt = static_cast<long long>(std::time(nullptr)) - 5;
     s->worker = std::thread(Work);
+}
+
+std::wstring Shown(const std::string& text) {
+    if (text.rfind("[[convite|", 0) == 0 && text.size() > 12) {
+        const size_t bar = text.rfind('|');
+        return L"Convite para jogar " + Wide(text.substr(bar + 1, text.size() - bar - 3));
+    }
+    if (text.rfind("[[imagem|", 0) == 0) return L"Imagem (abra no Ranga para ver)";
+    return Wide(text);
 }
 
 bool Active() { return s != nullptr; }

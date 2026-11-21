@@ -15,6 +15,10 @@
 #include "Netplay.hpp"
 #include "Achievements.hpp"
 #include "Social.hpp"
+// The captures' PNG (F12), kept to this file.
+#define STB_IMAGE_WRITE_STATIC
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
 
 #ifndef UNICODE
 #define UNICODE
@@ -420,6 +424,58 @@ bool AskText(ranga_text_request& request);
 void ShowMessage(const std::wstring& text, unsigned frames) {
     g.message = text;
     g.messageUntil = GetTickCount64() + std::max(1500u, frames * 17u);
+}
+
+// F12: the window's picture (whatever draws it: Ranga's video, OpenGL, Vulkan or the core's own renderer) as a PNG in
+// the game's captures folder, which Ranga's game page (Capturas) lists. Ranga says where (RANGA_CAPTURAS); started
+// otherwise, capturas\ beside the program.
+void SaveCapture() {
+    RECT client{};
+    if (g_window == nullptr || !GetClientRect(g_window, &client) || client.right <= 0 || client.bottom <= 0) return;
+    const int width = client.right, height = client.bottom;
+    HDC screen = GetDC(g_window);
+    HDC memory = CreateCompatibleDC(screen);
+    HBITMAP bitmap = CreateCompatibleBitmap(screen, width, height);
+    HGDIOBJ old = SelectObject(memory, bitmap);
+    // PW_CLIENTONLY | PW_RENDERFULLCONTENT: the composed picture, GPU swapchains included.
+    const bool printed = PrintWindow(g_window, memory, 0x1 | 0x2) != FALSE;
+    std::vector<unsigned char> pixels(static_cast<size_t>(width) * height * 4);
+    BITMAPINFO info{};
+    info.bmiHeader = {sizeof(BITMAPINFOHEADER), width, -height, 1, 32, BI_RGB};
+    const bool read = printed && GetDIBits(memory, bitmap, 0, static_cast<UINT>(height), pixels.data(), &info, DIB_RGB_COLORS) == height;
+    SelectObject(memory, old);
+    DeleteObject(bitmap);
+    DeleteDC(memory);
+    ReleaseDC(g_window, screen);
+    if (!read) {
+        ShowMessage(L"Não deu para tirar a captura", 120);
+        return;
+    }
+    for (size_t i = 0; i < pixels.size(); i += 4) {
+        std::swap(pixels[i], pixels[i + 2]);
+        pixels[i + 3] = 255;
+    }
+    std::string png;
+    stbi_write_png_to_func([](void* context, void* data, int size) { static_cast<std::string*>(context)->append(static_cast<const char*>(data), static_cast<size_t>(size)); },
+                           &png, width, height, 4, pixels.data(), width * 4);
+    std::wstring folder;
+    if (const wchar_t* asked = _wgetenv(L"RANGA_CAPTURAS"); asked != nullptr && asked[0] != L'\0') {
+        folder = asked;
+    } else {
+        wchar_t program[MAX_PATH] = {};
+        GetModuleFileNameW(nullptr, program, MAX_PATH);
+        folder = program;
+        folder = folder.substr(0, folder.find_last_of(L"\\/")) + L"\\capturas";
+    }
+    for (size_t at = folder.find(L'\\', 3); at != std::wstring::npos; at = folder.find(L'\\', at + 1)) CreateDirectoryW(folder.substr(0, at).c_str(), nullptr);
+    CreateDirectoryW(folder.c_str(), nullptr);
+    SYSTEMTIME now;
+    GetLocalTime(&now);
+    wchar_t name[64];
+    swprintf(name, 64, L"\\%04u-%02u-%02u %02u-%02u-%02u.png", now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond);
+    const bool saved = !png.empty() && WriteFile(folder + name, png.data(), png.size());
+    Log("[retro] captura %ls: %s\n", (folder + name).c_str(), saved ? "salva" : "falhou");
+    ShowMessage(saved ? L"Captura salva (veja em Capturas, na página do jogo)" : L"Não deu para salvar a captura", 150);
 }
 
 bool RETRO_CALLCONV Environment(unsigned command, void* data) {
@@ -1158,7 +1214,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
         case WM_SYSKEYDOWN:
             if ((lParam & (1 << 30)) != 0) break;
             if (wParam == VK_F11 || (wParam == VK_RETURN && (GetKeyState(VK_MENU) & 0x8000))) { ToggleFullscreen(); return 0; }
-            if (wParam == VK_F5 || wParam == VK_F7 || wParam == VK_ESCAPE) { g_hotkey = static_cast<int>(wParam); return 0; }
+            if (wParam == VK_F5 || wParam == VK_F7 || wParam == VK_F12 || wParam == VK_ESCAPE) { g_hotkey = static_cast<int>(wParam); return 0; }
             if (message == WM_SYSKEYDOWN) break;
             return 0;
         case WM_RBUTTONUP:
@@ -1329,6 +1385,15 @@ struct Row {
 };
 
 // The quick answers of the chat page, for the gamepad (the PC's keyboard can also write one).
+// The invite to this game Ranga left for the menu (RANGA_CONVITE, "[[convite|...]]"); empty when started otherwise.
+const std::string& GameInvite() {
+    static const std::string invite = [] {
+        const wchar_t* value = _wgetenv(L"RANGA_CONVITE");
+        return value != nullptr ? Utf8(value) : std::string();
+    }();
+    return invite;
+}
+
 const wchar_t* const kReplies[] = {L"gg", L"kkkkk", L"bora!", L"pera aí", L"já volto", L"partiu outra?"};
 
 struct MenuState {
@@ -1408,10 +1473,12 @@ std::vector<Row> Rows() {
         const std::string me = Social::Me();
         const auto messages = Social::Conversation(s.chatWith, 6);
         if (messages.empty()) rows.push_back({L"Nenhuma mensagem ainda.", L"", false, true});
-        for (const auto& m : messages) rows.push_back({(m.from == me ? std::wstring(L"Você") : s.chatName) + L":  " + Wide(m.text), L"", false, true});
+        for (const auto& m : messages) rows.push_back({(m.from == me ? std::wstring(L"Você") : s.chatName) + L":  " + Social::Shown(m.text), L"", false, true});
         s.answersAt = static_cast<int>(rows.size());
         rows.push_back({L"Escrever mensagem...", L""});
         for (const wchar_t* reply : kReplies) rows.push_back({L"Mandar \"" + std::wstring(reply) + L"\"", L""});
+        // The invite to this very game (and its room, when online), made by Ranga when it opened the game.
+        if (!GameInvite().empty()) rows.push_back({L"Convidar para este jogo", L""});
         return rows;
     }
     if (s.page == 4) {
@@ -1494,6 +1561,10 @@ void Answer(int which) {
         request.result_size = sizeof(typed);
         if (!AskText(request) || !request.accepted) return;
         text = typed;
+    } else if (which >= static_cast<int>(std::size(kReplies))) {
+        text = GameInvite();
+        if (text.empty()) return;
+        ShowMessage(L"Convite mandado para " + s.chatName, 180);
     } else {
         text = Utf8(kReplies[which]);
     }
@@ -2667,6 +2738,16 @@ int RetroMain(int argc, wchar_t** argv) {
             audio.Clear();
             last = std::chrono::steady_clock::now();
             accumulator = 0;
+        }
+        // F12: from this window's own messages, or asked of the keyboard itself while a core's window of its own (inside
+        // this one) has the focus and takes the key's messages.
+        {
+            static bool f12Held = false;
+            const bool f12 = (GetAsyncKeyState(VK_F12) & 0x8000) != 0;
+            const HWND front = GetForegroundWindow();
+            if (g_hotkey == VK_F12) SaveCapture();
+            else if (f12 && !f12Held && front != g_window && IsChild(g_window, front)) SaveCapture();
+            f12Held = f12;
         }
         if ((g_hotkey == VK_F5 || g_hotkey == VK_F7) && Netplay::Active()) ShowMessage(L"Online: estados ficam desligados enquanto joga com amigos", 0);
         else if (g_hotkey == VK_F5) saves.SaveState();

@@ -18,7 +18,13 @@
 //   POST /amigos/responder conta, aceitar (1 ou 0)
 //   POST /amigos/remover   conta
 //   POST /mensagem         para (conta), texto            (só entre amigos; uma por segundo)
-//   GET  /mensagens?desde=N                               as conversas desta conta depois da mensagem N
+//   GET  /mensagens?desde=N                               as conversas desta conta depois da mensagem N, e depois
+//                                                         delas "d<TAB>conta" (está digitando para mim) e
+//                                                         "l<TAB>conta<TAB>N" (leu minhas mensagens até a N)
+//   POST /digitando        para (conta)                   (vale por 6 segundos)
+//   POST /lido             de (conta), numero             (li até essa mensagem dela)
+//   POST /imagem           para (conta), dados (base64 do "RANI") -> id; a mensagem leva "[[imagem|id]]"
+//   GET  /imagem?id=X                                     a imagem (só para quem mandou e quem recebeu)
 //   POST /midia            tipo (foto ou capa), dados (base64 do "RANI"; vazio tira)
 //   GET  /midia?conta=X&tipo=foto                         a foto ou a capa de um amigo (ou a própria)
 //   POST /bloquear         conta                          (desfaz a amizade; o bloqueado não pede nem fala mais)
@@ -41,6 +47,9 @@ const MAX_BODY = 64 * 1024;
 // A foto ou a capa: o Ranga já manda com no máximo ~900 KB (Media.cpp), em base64.
 const MAX_MEDIA = 1300 * 1024;
 const MAX_TEXT = 500;
+// Uma imagem do chat: o Ranga manda no máximo ~350 KB, em base64.
+const MAX_IMAGE = 500 * 1024;
+const IMAGE_DAYS = 30;
 const SESSION_DAYS = 365;
 const hex32 = /^[0-9a-f]{32}$/;
 
@@ -460,7 +469,58 @@ async function messages(env, me, after) {
   const { results } = await env.DB.prepare(
     "SELECT numero, de, para, quando, texto FROM mensagens WHERE (para = ?1 OR de = ?1) AND numero > ?2 ORDER BY numero LIMIT 300"
   ).bind(me.id, after).all();
-  return answer(200, null, results.map((m) => `m\t${m.numero}\t${m.quando}\t${m.de}\t${m.para}\t${m.texto}\n`).join(""));
+  let out = results.map((m) => `m\t${m.numero}\t${m.quando}\t${m.de}\t${m.para}\t${m.texto}\n`).join("");
+  // Quem está digitando para mim e até onde leu o que eu mandei (um Ranga antigo ignora essas linhas).
+  const { results: states } = await env.DB.prepare("SELECT conta, digitando, lido FROM conversas WHERE com = ?").bind(me.id).all();
+  for (const row of states) {
+    if (row.digitando > now()) out += `d\t${row.conta}\n`;
+    if (row.lido > 0) out += `l\t${row.conta}\t${row.lido}\n`;
+  }
+  return answer(200, null, out);
+}
+
+async function typing(env, me, fields) {
+  const other = fields.para || "";
+  if (!hex32.test(other)) return answer(400);
+  await env.DB.prepare("INSERT INTO conversas (conta, com, digitando) VALUES (?1, ?2, ?3) ON CONFLICT(conta, com) DO UPDATE SET digitando = ?3")
+    .bind(me.id, other, now() + 6).run();
+  return answer(200, { ok: 1 });
+}
+
+async function read(env, me, fields) {
+  const other = fields.de || "";
+  const number = Math.floor(Number(fields.numero || "0"));
+  if (!hex32.test(other) || !Number.isFinite(number) || number <= 0) return answer(400);
+  // Ler também encerra o "digitando" de quem leu e não respondeu.
+  await env.DB.prepare(
+    "INSERT INTO conversas (conta, com, lido) VALUES (?1, ?2, ?3) ON CONFLICT(conta, com) DO UPDATE SET lido = MAX(lido, ?3)"
+  ).bind(me.id, other, number).run();
+  return answer(200, { ok: 1 });
+}
+
+async function storeImage(env, me, fields) {
+  const other = fields.para || "";
+  const data = (fields.dados || "").trim();
+  if (!hex32.test(other) || data === "") return answer(400, { erro: "Imagem vazia." });
+  if (data.length > MAX_IMAGE || !/^[A-Za-z0-9+/=]+$/.test(data)) return answer(400, { erro: "Imagem grande demais ou inválida." });
+  const known = await friendship(env, me.id, other);
+  if (!known || !known.aceita) return answer(403, { erro: "Só dá para mandar para amigos." });
+  if (!(await allowed(env, "imagem:" + me.id, 30, 3600))) return answer(429, { erro: "Muitas imagens nesta hora. Espere um pouco." });
+  const id = randomHex(16);
+  await env.DB.prepare("INSERT INTO imagens (id, de, para, quando, dados) VALUES (?, ?, ?, ?, ?)").bind(id, me.id, other, now(), data).run();
+  await env.DB.prepare("INSERT INTO mensagens (de, para, quando, texto) VALUES (?, ?, ?, ?)").bind(me.id, other, now(), `[[imagem|${id}]]`).run();
+  return answer(200, { id });
+}
+
+async function readImage(env, me, id) {
+  if (!hex32.test(id || "")) return answer(400);
+  const row = await env.DB.prepare("SELECT de, para, dados FROM imagens WHERE id = ?").bind(id).first();
+  if (!row || (row.de !== me.id && row.para !== me.id)) return answer(404);
+  return new Response(row.dados, { status: 200, headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" } });
+}
+
+async function cleanImages(env) {
+  await env.DB.prepare("DELETE FROM imagens WHERE quando < ?").bind(now() - IMAGE_DAYS * 86400).run();
 }
 
 // ---- Entrada ----
@@ -471,9 +531,10 @@ export default {
     const path = url.pathname;
     const ip = request.headers.get("CF-Connecting-IP") || "?";
     if (Math.random() < 0.01) ctx.waitUntil(cleanLimits(env).catch(() => {}));
+    if (Math.random() < 0.002) ctx.waitUntil(cleanImages(env).catch(() => {}));
     let fields = {}, body = "";
     if (request.method === "POST") {
-      const limit = path === "/midia" ? MAX_MEDIA + 1024 : MAX_BODY;
+      const limit = path === "/midia" ? MAX_MEDIA + 1024 : path === "/imagem" ? MAX_IMAGE + 1024 : MAX_BODY;
       if (Number(request.headers.get("Content-Length") || "0") > limit) return answer(400, { erro: "Pedido grande demais." });
       body = await request.text();
       if (body.length > limit) return answer(400, { erro: "Pedido grande demais." });
@@ -512,11 +573,15 @@ export default {
       if (path === "/amigos/remover") return unfriend(env, me, fields);
       if (path === "/mensagem") return send(env, me, fields);
       if (path === "/midia") return storeMedia(env, me, fields);
+      if (path === "/digitando") return typing(env, me, fields);
+      if (path === "/lido") return read(env, me, fields);
+      if (path === "/imagem") return storeImage(env, me, fields);
       if (path === "/bloquear") return block(env, me, fields, true);
       if (path === "/desbloquear") return block(env, me, fields, false);
     } else {
       if (path === "/amigos") return friends(env, me);
       if (path === "/midia") return readMedia(env, me, url.searchParams.get("conta"), url.searchParams.get("tipo"));
+      if (path === "/imagem") return readImage(env, me, url.searchParams.get("id"));
       if (path === "/mensagens") return messages(env, me, Math.max(0, Number(url.searchParams.get("desde") || "0") || 0));
     }
     return answer(404);

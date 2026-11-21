@@ -2332,7 +2332,7 @@ struct Client {
     // Adicionar jogo and Emuladores; first is Adicionar jogo's place on the top row (TopBar).
     void TopButtons(float scale, float right, int first) {
         const float wide = 170 * scale, narrow = 130 * scale, height = 36 * scale;
-        ImGui::SetCursorPos(ImVec2(right - wide - 3 * narrow - 30 * scale, 22 * scale));
+        ImGui::SetCursorPos(ImVec2(right - wide - 4 * narrow - 40 * scale, 22 * scale));
         if (ImGui::Button("+  Adicionar jogo", ImVec2(wide, height)) || barPress == first) ImGui::OpenPopup("##add");
         FocusLast(barFocus == first, scale);
         AddMenu(scale);
@@ -2368,6 +2368,14 @@ struct Client {
         const std::string profileLabel = chatUnread > 0 ? "Perfil (" + std::to_string(chatUnread) + ")###perfil" : "Perfil###perfil";
         if (ImGui::Button(profileLabel.c_str(), ImVec2(narrow, height)) || barPress == first + 3) OpenProfile();
         FocusLast(barFocus == first + 3, scale);
+        ImGui::SameLine(0, 10 * scale);
+        // Amigos: the list at the right, with how many are online.
+        const int online = profile.session.empty() ? 0 : FriendsOnline();
+        const std::string friendsLabel = online > 0 ? "Amigos (" + std::to_string(online) + ")###amigos" : "Amigos###amigos";
+        if (online > 0) ImGui::PushStyleColor(ImGuiCol_Text, Color(kGreen));
+        if (ImGui::Button(friendsLabel.c_str(), ImVec2(narrow, height)) || barPress == first + 4) friendsPanel = !friendsPanel;
+        if (online > 0) ImGui::PopStyleColor();
+        FocusLast(barFocus == first + 4, scale);
     }
 
     // The art of a game in a box: its own square art fills it; box art of another shape sits whole on the console's
@@ -2505,7 +2513,7 @@ struct Client {
 
     void Home(float scale, const Nav& input) {
         // On the top row (Adicionar jogo, Emuladores) the gamepad moves nothing else; up from the consoles reaches it.
-        const bool inBar = TopBar(input, 4);
+        const bool inBar = TopBar(input, 5);
         const Nav nav = inBar ? Nav{} : input;
         if (!inBar && homeRow == 0 && input.up) barFocus = 0;
         const auto shelves = Shelves();
@@ -2526,6 +2534,8 @@ struct Client {
         const auto games = ConsoleGames(console);
         const auto recent = RecentGames(4);
         const bool hasRecent = !recent.empty();
+        // The column at the right: Continuar jogando and, under it, the friends' activity; either one keeps it.
+        const bool sideColumn = hasRecent || (!profile.session.empty() && !FriendActivity(1).empty());
         // Down goes from the consoles to the buttons under them and on to the games; up and back return. Right past
         // the last button or game reaches Continuar jogando, at the right; there up and down go along, left comes back.
         bool openLibrary = false, openSystem = false;
@@ -2664,7 +2674,7 @@ struct Client {
         if (!missing.empty()) {
             ImGui::Dummy(ImVec2(0, 4 * scale));
             ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
-            ImGui::PushTextWrapPos(size.x - left - (hasRecent ? RecentPanelWidth(scale) + 30 * scale : 0));
+            ImGui::PushTextWrapPos(size.x - left - (sideColumn ? RecentPanelWidth(scale) + 30 * scale : 0));
             ImGui::TextWrapped("%s", Utf8(missing).c_str());
             ImGui::PopTextWrapPos();
             ImGui::PopStyleColor();
@@ -2672,7 +2682,7 @@ struct Client {
         ImGui::EndGroup();
 
         // A few of its games, straight to their page, each with its name under it.
-        const float rowRight = origin.x + size.x - left - (hasRecent ? RecentPanelWidth(scale) + 30 * scale : 0);
+        const float rowRight = origin.x + size.x - left - (sideColumn ? RecentPanelWidth(scale) + 30 * scale : 0);
         y = ImGui::GetItemRectMax().y + 28 * scale;
         const float cover = 140 * scale, coverGap = 18 * scale, caption = 26 * scale;
         homeGamesShown = 0;
@@ -2697,6 +2707,12 @@ struct Client {
         }
 
         if (hasRecent) RecentPanel(draw, recent, ImVec2(origin.x + size.x - left - RecentPanelWidth(scale), rowY + big + 30 * scale), scale);
+        // Under it, what the friends played and unlocked lately.
+        if (sideColumn) {
+            const float panelX = origin.x + size.x - left - RecentPanelWidth(scale);
+            const float panelY = rowY + big + 30 * scale + (hasRecent ? 32 * scale + recent.size() * 82 * scale + 18 * scale : 0.0f);
+            ActivityPanel(draw, ImVec2(panelX, panelY), RecentPanelWidth(scale), origin.y + size.y - 40 * scale, scale);
+        }
         const char* hint = "Setas ou direcional: escolher    Enter, X ou A: abrir    Esc, O ou B: voltar";
         if (gamepads.Connected()) draw->AddText(nullptr, ImGui::GetFontSize() * 0.9f, ImVec2(origin.x + left, origin.y + size.y - 30 * scale), Packed(kDim), hint);
     }
@@ -2885,7 +2901,7 @@ struct Client {
             keyFocus = 0;
         }
         const bool typing = SearchKeyboard(input, scale);
-        const bool inBar = !typing && TopBar(input, 5);
+        const bool inBar = !typing && TopBar(input, 6);
         const Nav nav = inBar || typing ? Nav{} : input;
         if (nav.back) {
             page = Page::Home;
@@ -4810,6 +4826,12 @@ struct Client {
         playOnline = OnlineChosen(game);
         playingTitle = Utf8(game.title);
         playingSystem = SystemName(game.system);
+        // Playing online, the card carries the way in ("Entrar no jogo" for the friends).
+        const Invite invite = InviteFor(game);
+        playingInvite = playOnline && !invite.mode.empty() ? InviteText(invite) : "";
+        // For Ranga Retro: where F12 keeps the captures, and the invite its menu sends to friends.
+        SetEnvironmentVariableW(L"RANGA_CAPTURAS", CapturesFolder(game).c_str());
+        SetEnvironmentVariableW(L"RANGA_CONVITE", Wide(InviteText(invite)).c_str());
         runner.Start(library.Root(), game, options);
         logDirty = true;
     }
@@ -4984,6 +5006,13 @@ struct Client {
                 ImGui::EndChild();
                 ImGui::EndTabItem();
             }
+            if (EngineFor(game->system).native && ImGui::BeginTabItem("Capturas")) {
+                ImGui::BeginChild("##captures", ImVec2(0, 0), ImGuiChildFlags_NavFlattened);
+                ImGui::Dummy(ImVec2(0, 6 * scale));
+                CapturesSection(*game, scale);
+                ImGui::EndChild();
+                ImGui::EndTabItem();
+            }
             if (Current() != nullptr && ImGui::BeginTabItem("Log")) {
                 LogTab(*Current(), scale);
                 ImGui::EndTabItem();
@@ -5009,10 +5038,12 @@ struct Client {
     std::mutex endedLock;
     std::vector<Ended> endedQueue;
     std::atomic<bool> playOnline{false};
-    std::string playingTitle, playingSystem;
+    std::string playingTitle, playingSystem, playingInvite;
     struct Toast {
         std::string title, text, badge;
         double until = 0, start = 0;
+        std::string friendId;          // a friend's notice shows their photo
+        std::function<void()> action;  // what a click on it does (open the chat, join the game)
     };
     std::vector<Toast> toasts;
     // The friends (the central's /amigos, PlayerProfile.hpp ReadFriends): their cards, the requests received and sent,
@@ -5196,16 +5227,19 @@ struct Client {
         profile.ScanRetroAchievements(spaces, info);
     }
 
-    void AddToast(const std::string& title, const std::string& text, const std::string& badge) {
+    void AddToast(const std::string& title, const std::string& text, const std::string& badge, const std::string& friendId = "",
+                  std::function<void()> action = nullptr, bool flash = true) {
         // Minimized or covered, no frames run and ImGui's clock stands still, then jumps on coming back: such a
         // notice starts its seven seconds when it is first drawn, and the taskbar button blinks meanwhile.
         if (background) {
-            toasts.push_back({title, text, badge, 0.0, 0.0});
-            FLASHWINFO flash{sizeof(FLASHWINFO), window, FLASHW_TRAY | FLASHW_TIMERNOFG, 3, 0};
-            FlashWindowEx(&flash);
+            toasts.push_back({title, text, badge, 0.0, 0.0, friendId, std::move(action)});
+            if (flash) {
+                FLASHWINFO blink{sizeof(FLASHWINFO), window, FLASHW_TRAY | FLASHW_TIMERNOFG, 3, 0};
+                FlashWindowEx(&blink);
+            }
             return;
         }
-        toasts.push_back({title, text, badge, ImGui::GetTime() + 7.0, ImGui::GetTime()});
+        toasts.push_back({title, text, badge, ImGui::GetTime() + 7.0, ImGui::GetTime(), friendId, std::move(action)});
     }
 
     // Whether the game was set to play online when it started (any of the online choices on its page).
@@ -5221,6 +5255,7 @@ struct Client {
         if (!runner.Busy() && !playingTitle.empty()) {
             playingTitle.clear();
             playingSystem.clear();
+            playingInvite.clear();
         }
         std::vector<Ended> done;
         {
@@ -5297,7 +5332,7 @@ struct Client {
     void SyncProfiles(bool force) {
         if (!profileLoaded || profileBusy || profile.session.empty()) return;
         const ULONGLONG now = GetTickCount64();
-        const std::string playing = playingTitle.empty() ? "" : playingTitle + "\t" + playingSystem;
+        const std::string playing = playingTitle.empty() ? "" : playingTitle + "\t" + playingSystem + "\t" + playingInvite;
         const bool changed = profile.Revision() != sentRevision || playing != sentPlaying;
         // Between cards only the friends are asked for: every five seconds on screen, every minute minimized or covered.
         bool friendsOnly = false;
@@ -5336,7 +5371,9 @@ struct Client {
         profileSyncedAt = now;
         sentRevision = profile.Revision();
         sentPlaying = playing;
-        const std::string body = WriteCard(profile.Card(playingTitle, playingSystem));
+        PlayerCard ownCard = profile.Card(playingTitle, playingSystem);
+        ownCard.invite = playingInvite;
+        const std::string body = WriteCard(ownCard);
         const std::wstring root = library.Root();
         const std::string session = profile.session;
         // The photo and cover go only when they changed since the central got them (empty removes them there).
@@ -5727,7 +5764,9 @@ struct Client {
                 const std::wstring file = folder + L"\\" + Wide(item[0]) + L"-" + Wide(item[1]) + L"-" + Wide(item[2]) + L".rani";
                 std::string bytes = ReadBytes(file);
                 if (bytes.compare(0, 4, "RANI") != 0) {
-                    const HttpResult got = CentralCall(root, "GET", "/midia?conta=" + item[0] + "&tipo=" + item[1], "", session, 30000);
+                    // A chat picture by its id; a photo or cover by its owner and kind.
+                    const std::string path = item[1] == "imagem" ? "/imagem?id=" + item[0] : "/midia?conta=" + item[0] + "&tipo=" + item[1];
+                    const HttpResult got = CentralCall(root, "GET", path, "", session, 30000);
                     if (got.status != 200) continue;
                     bytes = Unbase64(got.body);
                     if (bytes.compare(0, 4, "RANI") != 0) continue;
@@ -6250,6 +6289,8 @@ struct Client {
             }
             const HttpResult got = CentralCall(root, "GET", "/mensagens?desde=" + std::to_string(after), "", session, 8000);
             std::vector<DirectMessage> fresh;
+            std::set<std::string> typing;
+            std::map<std::string, long long> reads;
             for (size_t at = 0; got.status == 200 && at < got.body.size();) {
                 size_t end = got.body.find('\n', at);
                 if (end == std::string::npos) end = got.body.size();
@@ -6263,9 +6304,13 @@ struct Client {
                     from = tab + 1;
                 }
                 if (parts.size() == 6 && parts[0] == "m") fresh.push_back({std::atoll(parts[1].c_str()), std::atoll(parts[2].c_str()), parts[3], parts[4], parts[5]});
+                else if (parts.size() == 2 && parts[0] == "d") typing.insert(parts[1]);
+                else if (parts.size() == 3 && parts[0] == "l") reads[parts[1]] = std::atoll(parts[2].c_str());
             }
             std::lock_guard guard(chatLock);
             if (got.status == 200) {
+                chatTyping = std::move(typing);
+                for (const auto& [id, number] : reads) chatReadBy[id] = std::max(chatReadBy[id], number);
                 for (auto& message : fresh) {
                     if (message.number <= chatLast) continue;
                     chatLast = message.number;
@@ -6336,7 +6381,15 @@ struct Client {
             }
         }
         if (waiting > 0) AddToast("Enquanto o Ranga estava fechado", waiting == 1 ? "1 mensagem nova" : std::to_string(waiting) + " mensagens novas", "");
-        for (const auto& message : fresh) AddToast("Mensagem de " + FriendName(message.from), message.text, "");
+        for (const auto& message : fresh) {
+            Invite invite;
+            if (ReadInvite(message.text, invite)) {
+                AddToast(FriendName(message.from) + " te convidou para jogar", invite.title + "  ·  clique para entrar", "", message.from,
+                         [this, invite] { pending = [this, invite] { JoinInvite(invite); }; });
+            } else {
+                AddToast("Mensagem de " + FriendName(message.from), ShownText(message.text), "", message.from, [this, id = message.from] { OpenChatWith(id); });
+            }
+        }
     }
 
     // The way in, shown where an account is needed.
@@ -6354,6 +6407,528 @@ struct Client {
         ImGui::SameLine();
         if (ImGui::Button("Entrar", ImVec2(130 * scale, 36 * scale))) OpenAccount(0);
     }
+
+    // ---- Playing together: invites, "Entrar no jogo", pictures, "digitando..." and "visto" ----
+
+    // A game invite travels as a chat message: "[[convite|<console>|<titleId>|<modo>|<endereço>|<título>]]". modo is the
+    // online the game was set to (classicos, switch or 3ds) and endereço its room; empty: just the game. A Ranga from
+    // before this shows it as text. The same text goes in the card ("sala") while playing online.
+    struct Invite {
+        std::string system, titleId, mode, address, title;
+    };
+    static std::string NoBars(std::string text) {
+        for (char& c : text) if (c == '|' || c == '\t' || c == '\n' || c == '\r' || c == '[' || c == ']') c = ' ';
+        return text;
+    }
+    static std::string InviteText(const Invite& invite) {
+        return "[[convite|" + NoBars(invite.system) + "|" + NoBars(invite.titleId) + "|" + NoBars(invite.mode) + "|" + NoBars(invite.address) + "|" +
+               NoBars(invite.title.substr(0, 120)) + "]]";
+    }
+    static bool ReadInvite(const std::string& text, Invite& out) {
+        if (text.size() < 12 || text.rfind("[[convite|", 0) != 0 || text.compare(text.size() - 2, 2, "]]") != 0) return false;
+        const std::string inner = text.substr(10, text.size() - 12);
+        std::vector<std::string> parts;
+        for (size_t from = 0;;) {
+            const size_t bar = inner.find('|', from);
+            parts.push_back(inner.substr(from, bar == std::string::npos ? std::string::npos : bar - from));
+            if (bar == std::string::npos) break;
+            from = bar + 1;
+        }
+        if (parts.size() != 5) return false;
+        out = {parts[0], parts[1], parts[2], parts[3], parts[4]};
+        return !out.system.empty() && !out.title.empty();
+    }
+    // A picture sent in the chat: "[[imagem|<id>]]" (the central keeps it 30 days).
+    static std::string ImageId(const std::string& text) {
+        if (text.size() == 43 && text.rfind("[[imagem|", 0) == 0 && text.compare(41, 2, "]]") == 0) return text.substr(9, 32);
+        return "";
+    }
+    // How a message reads in a list or a notice.
+    static std::string ShownText(const std::string& text) {
+        Invite invite;
+        if (ReadInvite(text, invite)) return "Convite para jogar " + invite.title;
+        if (!ImageId(text).empty()) return "Imagem";
+        return text;
+    }
+
+    // The invite to a game as this PC has it set: its room when it plays online.
+    Invite InviteFor(const Game& game) {
+        Invite invite{Utf8(game.system), Utf8(game.titleId), "", "", Utf8(game.title)};
+        if (game.system == L"SWITCH" && ReadCoreOption(game, "eden_sala") == "entrar") {
+            invite.mode = "switch";
+            const std::string port = ReadCoreOption(game, "eden_sala_porta");
+            invite.address = ReadCoreOption(game, "eden_sala_endereco");
+            if (!invite.address.empty() && !port.empty()) invite.address += ":" + port;
+        } else if (game.system == L"3DS" && ReadCoreOption(game, "citra_sala") == "entrar") {
+            invite.mode = "3ds";
+            invite.address = ReadCoreOption(game, "citra_sala_endereco");
+        } else if (ClassicOnline(game.system) && ReadCoreOption(game, "ranga_online") == "ligado") {
+            invite.mode = "classicos";
+            invite.address = ReadCoreOption(game, "ranga_online_endereco");
+        }
+        if (invite.address.empty()) invite.mode.clear();
+        return invite;
+    }
+
+    // The game of an invite in this library: same console and title id, else same console and name; -1 none.
+    int InviteGame(const Invite& invite) {
+        const std::wstring system = Wide(invite.system), titleId = Wide(invite.titleId), title = Lower(Wide(invite.title));
+        int byName = -1;
+        for (size_t i = 0; i < library.Games().size(); ++i) {
+            const Game& game = library.Games()[i];
+            if (game.system != system) continue;
+            if (!titleId.empty() && game.titleId == titleId) return static_cast<int>(i);
+            if (byName < 0 && Lower(game.title) == title) byName = static_cast<int>(i);
+        }
+        return byName;
+    }
+
+    // Accepting an invite: the game set to the same room, then opened (the room is tested first, Play).
+    void JoinInvite(const Invite& invite) {
+        const int index = InviteGame(invite);
+        if (index < 0) {
+            Notify(L"Você não tem " + Wide(invite.title) + L" (" + Wide(SystemName(Wide(invite.system))) + L") na sua biblioteca. Adicione o jogo para jogar junto.");
+            return;
+        }
+        if (runner.Busy()) {
+            Notify(L"Feche o jogo que está aberto antes de entrar em outro.");
+            return;
+        }
+        Game& game = library.Games()[static_cast<size_t>(index)];
+        if (invite.mode == "switch") {
+            std::string host = invite.address, port;
+            if (const size_t colon = host.rfind(':'); colon != std::string::npos) port = host.substr(colon + 1), host.resize(colon);
+            WriteCoreOption(game, "eden_sala", "entrar");
+            WriteCoreOption(game, "eden_sala_endereco", host);
+            if (!port.empty()) WriteCoreOption(game, "eden_sala_porta", port);
+        } else if (invite.mode == "3ds") {
+            WriteCoreOption(game, "citra_sala", "entrar");
+            WriteCoreOption(game, "citra_sala_endereco", invite.address);
+        } else if (invite.mode == "classicos") {
+            WriteCoreOption(game, "ranga_online", "ligado");
+            WriteCoreOption(game, "ranga_online_endereco", invite.address);
+        }
+        Play(game);
+    }
+
+    // The profile's Chat tab with that friend, from anywhere.
+    void OpenChatWith(const std::string& id) {
+        OpenProfile();
+        chatPeer = id;
+        openChatTab = true;
+    }
+
+    // Messages written wait here for the chat's turn (a fetch may be running); one goes each frame the chat is free.
+    std::deque<std::pair<std::string, std::string>> chatOutbox;
+    void QueueChat(const std::string& to, const std::string& text) { chatOutbox.emplace_back(to, text); }
+    void SendQueuedChat() {
+        if (chatOutbox.empty() || chatBusy || !profileLoaded || profile.session.empty()) {
+            PollChat();
+            return;
+        }
+        const auto [to, text] = chatOutbox.front();
+        chatOutbox.pop_front();
+        PollChat(to, text);
+    }
+
+    // A small call to the central that nobody waits for ("digitando", "lido").
+    void Signal(const std::string& path, const std::string& body) {
+        if (profile.session.empty()) return;
+        std::thread([root = library.Root(), session = profile.session, path, body] { CentralCall(root, "POST", path, body, session, 6000); }).detach();
+    }
+
+    // Who is typing to this account now and, per friend, up to which of this account's messages they read (PollChat).
+    std::set<std::string> chatTyping;
+    std::map<std::string, long long> chatReadBy, chatReadSent;
+    ULONGLONG typingSentAt = 0;
+    std::atomic<bool> imageBusy{false};
+    std::string imageShown; // the picture open big ("" none)
+
+    // A picture to a friend: shrunk to 960 at most, ~340 KB, sent as an image message.
+    void SendChatImage(const std::string& to, const std::wstring& path) {
+        if (imageBusy || profile.session.empty()) return;
+        imageBusy = true;
+        std::thread([this, to, path, root = library.Root(), session = profile.session] {
+            Media media;
+            std::string error;
+            std::string bytes;
+            if (ImportPicture(path, 960, media, error)) bytes = EncodeMedia(media, 340 * 1024);
+            std::string problem;
+            if (bytes.empty()) {
+                problem = error.empty() ? "Não deu para converter essa imagem." : error;
+            } else {
+                const HttpResult sent = CentralCall(root, "POST", "/imagem", "para\t" + to + "\ndados\t" + Base64(bytes) + "\n", session, 60000);
+                if (sent.status == 0) problem = "A imagem não foi: o servidor do Ranga não respondeu.";
+                else if (sent.status == 404) problem = "O servidor do Ranga ainda não recebe imagens (falta atualizar a central).";
+                else if (sent.status != 200) problem = ReplyField(sent.body, "erro");
+            }
+            {
+                std::lock_guard guard(chatLock);
+                chatProblem = problem;
+            }
+            chatAt = 0;
+            imageBusy = false;
+        }).detach();
+    }
+
+    // A chat picture as a texture (downloaded and decoded by the media thread); null while it comes.
+    const AnimTexture* ChatImage(const std::string& id) {
+        CachedMedia& cached = mediaCache[id + "|imagem"];
+        cached.usedAt = ImGui::GetTime();
+        if (cached.version != id && mediaAsked.insert(id + "|imagem|" + id).second) {
+            {
+                std::lock_guard guard(mediaLock);
+                mediaQueue.push_back({id, "imagem", id});
+            }
+            StartMediaDownloads();
+        }
+        if (cached.anim.frames.size() > 1) animating = true;
+        return cached.anim.frames.empty() ? nullptr : &cached.anim;
+    }
+
+    // ---- Friends coming online and starting games: a notice each ----
+
+    std::map<std::string, std::pair<bool, std::string>> friendState; // online, playing
+    long long friendStateAt = 0;
+    bool friendStatePrimed = false;
+
+    static bool FriendOnline(const PlayerCard& card) { return !card.closed && static_cast<long long>(std::time(nullptr)) - card.seen < 300; }
+
+    void NoticeFriends() {
+        std::vector<PlayerCard> list;
+        {
+            std::lock_guard guard(friendsLock);
+            if (friendsAt == friendStateAt) return;
+            friendStateAt = friendsAt;
+            list = friends;
+        }
+        for (const auto& card : list) {
+            const bool online = FriendOnline(card);
+            auto& known = friendState[card.id];
+            if (friendStatePrimed) {
+                Invite invite;
+                const bool joinable = ReadInvite(card.invite, invite) && !invite.mode.empty();
+                const std::function<void()> open = [this, id = card.id] { OpenChatWith(id); };
+                const std::function<void()> join = [this, invite] { pending = [this, invite] { JoinInvite(invite); }; };
+                if (online && !card.playing.empty() && card.playing != known.second) {
+                    AddToast(card.name + (joinable ? " está jogando online" : " começou a jogar"), card.playing, "", card.id, joinable ? join : open, false);
+                } else if (online && !known.first) {
+                    AddToast(card.name + " está online", "Clique para conversar", "", card.id, open, false);
+                }
+            }
+            known = {online, online ? card.playing : std::string()};
+        }
+        friendStatePrimed = true;
+    }
+
+    // ---- Amigos: the list at the right, over any page (the top bar's Amigos) ----
+
+    bool friendsPanel = false;
+
+    int FriendsOnline() {
+        std::lock_guard guard(friendsLock);
+        return static_cast<int>(std::count_if(friends.begin(), friends.end(), [](const PlayerCard& card) { return FriendOnline(card); }));
+    }
+
+    void FriendsPanel(float scale) {
+        if (!friendsPanel) return;
+        const ImGuiViewport* viewport = ImGui::GetMainViewport();
+        const float width = 330 * scale, top = 70 * scale;
+        ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x - width - 12 * scale, viewport->WorkPos.y + top));
+        ImGui::SetNextWindowSize(ImVec2(width, viewport->WorkSize.y - top - 12 * scale));
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, Color(kSidebar, 0.98f));
+        ImGui::PushStyleColor(ImGuiCol_Border, Color(kSelected));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 14 * scale);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14 * scale, 14 * scale));
+        ImGui::Begin("##friendsPanel", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+        ImGui::PushFont(semibold, 20);
+        ImGui::TextUnformatted("Amigos");
+        ImGui::PopFont();
+        ImGui::SameLine(ImGui::GetContentRegionAvail().x + ImGui::GetCursorPosX() - 30 * scale);
+        if (ImGui::Button("X##fecharAmigos", ImVec2(30 * scale, 0))) friendsPanel = false;
+        ImGui::Dummy(ImVec2(0, 4 * scale));
+        if (profile.session.empty()) {
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextDisabled("Entre na sua conta do Ranga para ver seus amigos aqui.");
+            ImGui::PopTextWrapPos();
+            if (ImGui::Button("Entrar ou criar conta", ImVec2(-1, 36 * scale))) {
+                friendsPanel = false;
+                OpenProfile();
+            }
+        } else {
+            std::vector<PlayerCard> list;
+            {
+                std::lock_guard guard(friendsLock);
+                list = friends;
+            }
+            std::map<std::string, int> unread;
+            {
+                std::lock_guard guard(chatLock);
+                for (const auto& message : chat) if (message.from != profile.accountId && message.number > chatSeen[message.from]) ++unread[message.from];
+            }
+            std::vector<const PlayerCard*> playing, online, offline;
+            for (const auto& card : list) (FriendOnline(card) ? (card.playing.empty() ? online : playing) : offline).push_back(&card);
+            std::sort(offline.begin(), offline.end(), [](const PlayerCard* a, const PlayerCard* b) { return a->seen > b->seen; });
+            ImGui::BeginChild("##friendsPanelList", ImVec2(0, -46 * scale), ImGuiChildFlags_None);
+            ImDrawList* draw = ImGui::GetWindowDrawList();
+            const float listWidth = ImGui::GetContentRegionAvail().x;
+            const auto group = [&](const char* name, const std::vector<const PlayerCard*>& cards) {
+                if (cards.empty()) return;
+                ImGui::Dummy(ImVec2(0, 4 * scale));
+                ImGui::TextDisabled("%s  (%zu)", name, cards.size());
+                ImGui::Dummy(ImVec2(0, 2 * scale));
+                for (const PlayerCard* card : cards) {
+                    const bool on = FriendOnline(*card);
+                    Invite invite;
+                    const bool joinable = on && ReadInvite(card->invite, invite) && !invite.mode.empty();
+                    const float row = 54 * scale, side = 36 * scale;
+                    const ImVec2 min = ImGui::GetCursorScreenPos(), max(min.x + listWidth, min.y + row);
+                    ImGui::PushID(card->id.c_str());
+                    const float buttonWidth = joinable ? 64 * scale : 0.0f;
+                    if (ImGui::InvisibleButton("##amigo", ImVec2(listWidth - buttonWidth, row))) {
+                        friendsPanel = false;
+                        pending = [this, id = card->id] { OpenChatWith(id); };
+                    }
+                    if (ImGui::IsItemHovered()) draw->AddRectFilled(min, max, Packed(kHover), 10 * scale);
+                    DrawAvatar(draw, ImVec2(min.x + 8 * scale, min.y + (row - side) / 2), side, *card, scale);
+                    const ImVec2 dot(min.x + 8 * scale + side - 1 * scale, min.y + (row + side) / 2 - 1 * scale);
+                    draw->AddCircleFilled(dot, 6 * scale, Packed(kSidebar), 16);
+                    draw->AddCircleFilled(dot, 4.5f * scale, Packed(on ? kGreen : kDim), 16);
+                    const float textX = min.x + side + 22 * scale;
+                    const ImVec4 clip(textX, min.y, max.x - buttonWidth - 8 * scale, max.y);
+                    draw->AddText(semibold, 15 * scale, ImVec2(textX, min.y + 9 * scale), Packed(on ? kText : kDim), card->name.c_str(), nullptr, 0, &clip);
+                    const std::string status = !on ? "Visto " + FormatAgo(card->seen) : card->playing.empty() ? "Online" : card->playing;
+                    draw->AddText(nullptr, 13 * scale, ImVec2(textX, min.y + 29 * scale), Packed(on && !card->playing.empty() ? kGreen : kDim), status.c_str(), nullptr, 0, &clip);
+                    if (const int count = unread[card->id]; count > 0) {
+                        const std::string number = std::to_string(count);
+                        const ImVec2 center(max.x - buttonWidth - 16 * scale, min.y + row / 2);
+                        draw->AddCircleFilled(center, 10 * scale, Packed(kAccent), 20);
+                        const ImVec2 size = ImGui::CalcTextSize(number.c_str());
+                        draw->AddText(ImVec2(center.x - size.x / 2, center.y - size.y / 2), Packed(0xffffff), number.c_str());
+                    }
+                    if (joinable) {
+                        ImGui::SameLine(0, 0);
+                        ImGui::SetCursorScreenPos(ImVec2(max.x - buttonWidth, min.y + (row - 28 * scale) / 2));
+                        ImGui::PushStyleColor(ImGuiCol_Button, Color(kGreen));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Color(kGreen, 0.85f));
+                        if (ImGui::Button("Entrar", ImVec2(buttonWidth, 28 * scale))) {
+                            friendsPanel = false;
+                            pending = [this, invite] { JoinInvite(invite); };
+                        }
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Abrir %s na mesma sala", invite.title.c_str());
+                        ImGui::PopStyleColor(2);
+                        ImGui::SetCursorScreenPos(ImVec2(min.x, max.y));
+                    }
+                    ImGui::PopID();
+                    ImGui::Dummy(ImVec2(0, 2 * scale));
+                }
+            };
+            group("Jogando", playing);
+            group("Online", online);
+            group("Offline", offline);
+            if (list.empty()) {
+                ImGui::PushTextWrapPos(0);
+                ImGui::TextDisabled("Nenhum amigo ainda. Adicione pelo Nome#1234 na aba Amigos do Perfil.");
+                ImGui::PopTextWrapPos();
+            }
+            ImGui::EndChild();
+            if (ImGui::Button("Adicionar amigo", ImVec2(-1, 36 * scale))) {
+                friendsPanel = false;
+                pending = [this] { OpenProfile(); };
+            }
+        }
+        ImGui::End();
+        ImGui::PopStyleVar(3);
+        ImGui::PopStyleColor(2);
+    }
+
+    // ---- Atividade dos amigos (the home page): what they played and unlocked lately ----
+
+    struct Activity {
+        long long when = 0;
+        std::string id, what, detail;
+    };
+
+    std::vector<Activity> FriendActivity(size_t count) {
+        std::vector<Activity> out;
+        const long long since = static_cast<long long>(std::time(nullptr)) - 14 * 86400;
+        std::lock_guard guard(friendsLock);
+        for (const auto& card : friends) {
+            for (const auto& game : card.recent) {
+                if (game.last < since) continue;
+                out.push_back({game.last, card.id, card.name + " jogou " + Utf8(game.title), SystemName(game.system)});
+            }
+            for (const auto& item : card.showcase) {
+                if (item.when < since) continue;
+                out.push_back({item.when, card.id, card.name + " desbloqueou " + item.title, item.ra ? "RetroAchievements" : "Conquista do Ranga"});
+            }
+        }
+        std::sort(out.begin(), out.end(), [](const Activity& a, const Activity& b) { return a.when > b.when; });
+        if (out.size() > count) out.resize(count);
+        return out;
+    }
+
+    // Under Continuar jogando, as far as the page goes.
+    void ActivityPanel(ImDrawList* draw, ImVec2 at, float width, float bottom, float scale) {
+        if (profile.session.empty() || bottom - at.y < 110 * scale) return;
+        const float row = 50 * scale;
+        const size_t fits = static_cast<size_t>(std::max(0.0f, (bottom - at.y - 34 * scale) / row));
+        const auto items = FriendActivity(std::min<size_t>(fits, 6));
+        if (items.empty()) return;
+        draw->AddText(semibold, 18 * scale, at, Packed(kText), "Atividade dos amigos");
+        float y = at.y + 32 * scale;
+        std::map<std::string, PlayerCard> cards;
+        {
+            std::lock_guard guard(friendsLock);
+            for (const auto& card : friends) cards[card.id] = card;
+        }
+        for (size_t k = 0; k < items.size(); ++k) {
+            const Activity& item = items[k];
+            const ImVec2 min(at.x, y), max(at.x + width, y + row - 6 * scale);
+            ImGui::SetCursorScreenPos(min);
+            ImGui::PushID(static_cast<int>(k) + 200000);
+            if (ImGui::InvisibleButton("##atividade", ImVec2(width, row - 6 * scale))) pending = [this, id = item.id] { OpenProfile(); profileViewing = id; };
+            const bool lit = ImGui::IsItemHovered();
+            ImGui::PopID();
+            draw->AddRectFilled(min, max, Packed(lit ? kSelected : kSurface, 0.85f), 10 * scale);
+            const float side = 30 * scale;
+            if (const auto found = cards.find(item.id); found != cards.end()) DrawAvatar(draw, ImVec2(min.x + 8 * scale, min.y + (max.y - min.y - side) / 2), side, found->second, scale);
+            const float textX = min.x + side + 18 * scale;
+            const ImVec4 clip(textX, min.y, max.x - 8 * scale, max.y);
+            draw->AddText(nullptr, 14 * scale, ImVec2(textX, min.y + 5 * scale), Packed(kText), item.what.c_str(), nullptr, 0, &clip);
+            const std::string line = item.detail + "  ·  " + FormatAgo(item.when);
+            draw->AddText(nullptr, 12 * scale, ImVec2(textX, min.y + 24 * scale), Packed(kDim), line.c_str(), nullptr, 0, &clip);
+            y += row;
+        }
+    }
+
+    // ---- Capturas (F12 in the game, RangaRetro): <Ranga>\capturas\<game>\*.png ----
+
+    std::wstring CapturesFolder(const Game& game) const {
+        std::wstring name = game.title;
+        for (wchar_t& c : name) if (wcschr(L"\\/:*?\"<>|", c) != nullptr || c < 32) c = L'_';
+        while (!name.empty() && (name.back() == L' ' || name.back() == L'.')) name.pop_back();
+        if (name.empty()) name = game.titleId;
+        return library.Root() + L"\\capturas\\" + name;
+    }
+
+    struct Capture {
+        std::wstring path;
+        long long when = 0;
+    };
+    std::vector<Capture> Captures(const Game& game) {
+        std::vector<Capture> out;
+        WIN32_FIND_DATAW found;
+        HANDLE search = FindFirstFileW((CapturesFolder(game) + L"\\*.png").c_str(), &found);
+        if (search == INVALID_HANDLE_VALUE) return out;
+        do {
+            ULARGE_INTEGER time;
+            time.LowPart = found.ftLastWriteTime.dwLowDateTime;
+            time.HighPart = found.ftLastWriteTime.dwHighDateTime;
+            out.push_back({CapturesFolder(game) + L"\\" + found.cFileName, static_cast<long long>(time.QuadPart / 10000000ULL) - 11644473600LL});
+        } while (FindNextFileW(search, &found));
+        FindClose(search);
+        std::sort(out.begin(), out.end(), [](const Capture& a, const Capture& b) { return a.when > b.when; });
+        return out;
+    }
+
+    // Thumbnails of the captures, read once (a new file gets its own).
+    std::map<std::wstring, Texture> captureThumbs;
+    std::wstring captureShown; // the capture open big
+    std::map<std::wstring, std::vector<Capture>> capturesListed;
+    double capturesListedAt = -10;
+
+    const Texture& CaptureThumb(const std::wstring& path) {
+        auto found = captureThumbs.find(path);
+        if (found == captureThumbs.end()) found = captureThumbs.emplace(path, LoadTexture(path, 480)).first;
+        return found->second;
+    }
+
+    // The game page's Capturas: the newest, a click opens one big, to send to a friend.
+    void CapturesSection(const Game& game, float scale) {
+        if (ImGui::GetTime() - capturesListedAt > 3.0) {
+            capturesListed.clear();
+            capturesListedAt = ImGui::GetTime();
+        }
+        auto listed = capturesListed.find(game.titleId);
+        if (listed == capturesListed.end()) listed = capturesListed.emplace(game.titleId, Captures(game)).first;
+        const auto& shots = listed->second;
+        SectionTitle("Capturas", scale);
+        if (shots.empty()) {
+            ImGui::TextDisabled("Aperte F12 durante o jogo para tirar uma captura de tela. Elas aparecem aqui.");
+            return;
+        }
+        ImGui::TextDisabled("%zu captura%s  ·  F12 no jogo tira mais", shots.size(), shots.size() == 1 ? "" : "s");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Abrir pasta")) ShellExecuteW(nullptr, L"open", CapturesFolder(game).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        ImGui::Dummy(ImVec2(0, 4 * scale));
+        const float thumbW = 192 * scale, thumbH = 108 * scale, gap = 12 * scale;
+        const float width = ImGui::GetContentRegionAvail().x;
+        ImDrawList* draw = ImGui::GetWindowDrawList();
+        const ImVec2 start = ImGui::GetCursorScreenPos();
+        size_t shown = 0;
+        for (const auto& shot : shots) {
+            const float x = start.x + shown * (thumbW + gap);
+            if (x + thumbW > start.x + width || shown >= 8) break;
+            const ImVec2 min(x, start.y), max(x + thumbW, start.y + thumbH);
+            const Texture& thumb = CaptureThumb(shot.path);
+            if (thumb.view != nullptr) draw->AddImageRounded(thumb.Ref(), min, max, ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, 8 * scale);
+            else draw->AddRectFilled(min, max, Packed(kSurface), 8 * scale);
+            ImGui::SetCursorScreenPos(min);
+            ImGui::PushID(static_cast<int>(shown) + 300000);
+            if (ImGui::InvisibleButton("##captura", ImVec2(thumbW, thumbH))) {
+                captureShown = shot.path;
+                ImGui::OpenPopup("##capturaGrande");
+            }
+            if (ImGui::IsItemHovered()) draw->AddRect(min, max, Packed(kAccent), 8 * scale, 0, 2 * scale);
+            ImGui::PopID();
+            ++shown;
+        }
+        ImGui::SetCursorScreenPos(ImVec2(start.x, start.y + thumbH));
+        ImGui::Dummy(ImVec2(0, 4 * scale));
+        CaptureViewer(scale);
+    }
+
+    void CaptureViewer(float scale) {
+        const ImGuiViewport* viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x / 2, viewport->WorkPos.y + viewport->WorkSize.y / 2), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        if (!ImGui::BeginPopup("##capturaGrande")) return;
+        const Texture& thumb = CaptureThumb(captureShown);
+        const float maxW = viewport->WorkSize.x * 0.75f, maxH = viewport->WorkSize.y * 0.7f;
+        if (thumb.view != nullptr) {
+            float w = maxW, h = w * thumb.height / std::max(1, thumb.width);
+            if (h > maxH) h = maxH, w = h * thumb.width / std::max(1, thumb.height);
+            ImGui::Image(thumb.Ref(), ImVec2(w, h));
+        }
+        if (ImGui::Button("Abrir o arquivo")) ShellExecuteW(nullptr, L"open", captureShown.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        ImGui::SameLine();
+        std::vector<PlayerCard> list;
+        {
+            std::lock_guard guard(friendsLock);
+            list = friends;
+        }
+        ImGui::BeginDisabled(list.empty() || imageBusy);
+        if (ImGui::Button(imageBusy ? "Mandando..." : "Mandar para um amigo")) ImGui::OpenPopup("##capturaPara");
+        ImGui::EndDisabled();
+        if (ImGui::BeginPopup("##capturaPara")) {
+            for (const auto& card : list) {
+                if (ImGui::Selectable(card.name.c_str())) {
+                    SendChatImage(card.id, captureShown);
+                    AddToast("Captura", "Mandando para " + card.name + "...", "");
+                }
+            }
+            ImGui::EndPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Fechar")) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    // The emoji the chat's button offers (Segoe UI Emoji, merged into the fonts).
+    static constexpr const char* kEmoji[] = {
+        "😀", "😂", "🤣", "😅", "😊", "😍", "😎", "🤔", "😴", "😭", "😡", "🤯", "🥳", "😱", "🙄", "😏",
+        "👍", "👎", "👏", "🙏", "💪", "🤝", "👀", "🔥", "💯", "❤", "💀", "🎮", "🕹", "🏆", "⭐", "🎉"};
 
     void ProfileChat(float scale) {
         chatTabOpen = true;
@@ -6374,6 +6949,8 @@ struct Client {
         std::vector<DirectMessage> messages;
         std::map<std::string, int> unread;
         std::string problem;
+        long long seenNow = 0, readByPeer = 0;
+        bool peerTyping = false;
         {
             std::lock_guard guard(chatLock);
             if (std::none_of(list.begin(), list.end(), [&](const PlayerCard& c) { return c.id == chatPeer; })) chatPeer = list.front().id;
@@ -6385,6 +6962,14 @@ struct Client {
             for (const auto& message : messages) if (message.from == chatPeer) chatSeen[chatPeer] = std::max(chatSeen[chatPeer], message.number);
             unread[chatPeer] = 0;
             problem = chatProblem;
+            seenNow = chatSeen[chatPeer];
+            peerTyping = chatTyping.count(chatPeer) > 0;
+            readByPeer = chatReadBy[chatPeer];
+        }
+        // The friend learns how far this side read ("Visto"), once per new message.
+        if (seenNow > chatReadSent[chatPeer]) {
+            chatReadSent[chatPeer] = seenNow;
+            Signal("/lido", "de\t" + chatPeer + "\nnumero\t" + std::to_string(seenNow) + "\n");
         }
         if (messages.size() != chatShown) {
             chatShown = messages.size();
@@ -6441,7 +7026,11 @@ struct Client {
             listDraw->AddText(semibold, 16 * scale, ImVec2(textX, rowMin.y + 13 * scale), Packed(kText), card.name.c_str(), nullptr, 0, &clip);
             std::string preview = statusOf(card);
             if (const auto found = lastWith.find(card.id); found != lastWith.end() && found->second.number > 0)
-                preview = (found->second.from == profile.accountId ? "Você: " : "") + found->second.text;
+                preview = (found->second.from == profile.accountId ? "Você: " : "") + ShownText(found->second.text);
+            {
+                std::lock_guard guard(chatLock);
+                if (chatTyping.count(card.id) > 0) preview = "digitando...";
+            }
             listDraw->AddText(nullptr, 13 * scale, ImVec2(textX, rowMin.y + 35 * scale), Packed(count > 0 ? kText : kDim), preview.c_str(), nullptr, 0, &clip);
             if (count > 0) {
                 const std::string number = count > 99 ? "99+" : std::to_string(count);
@@ -6473,6 +7062,39 @@ struct Client {
             head->AddText(semibold, 18 * scale, ImVec2(at.x + side + 28 * scale, at.y + 11 * scale), Packed(kText), peer->name.c_str());
             head->AddCircleFilled(ImVec2(at.x + side + 33 * scale, at.y + 42 * scale), 4 * scale, Packed(isOnline(*peer) ? kGreen : kDim), 12);
             head->AddText(nullptr, 13 * scale, ImVec2(at.x + side + 42 * scale, at.y + 34 * scale), Packed(kDim), statusOf(*peer).c_str());
+            // Joining what the friend plays online, and inviting them to a game of this library.
+            float buttonsX = right - 16 * scale;
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8 * scale);
+            buttonsX -= 190 * scale;
+            ImGui::SetCursorScreenPos(ImVec2(at.x + buttonsX, at.y + (headerHeight - 34 * scale) / 2));
+            if (ImGui::Button("Convidar para jogar", ImVec2(190 * scale, 34 * scale))) ImGui::OpenPopup("##convidar");
+            Invite theirs;
+            if (isOnline(*peer) && ReadInvite(peer->invite, theirs) && !theirs.mode.empty()) {
+                buttonsX -= 150 * scale;
+                ImGui::SetCursorScreenPos(ImVec2(at.x + buttonsX, at.y + (headerHeight - 34 * scale) / 2));
+                ImGui::PushStyleColor(ImGuiCol_Button, Color(kGreen));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Color(kGreen, 0.85f));
+                if (ImGui::Button("Entrar no jogo", ImVec2(140 * scale, 34 * scale))) pending = [this, theirs] { JoinInvite(theirs); };
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s, na mesma sala", theirs.title.c_str());
+                ImGui::PopStyleColor(2);
+            }
+            ImGui::PopStyleVar();
+            if (ImGui::BeginPopup("##convidar")) {
+                ImGui::TextDisabled("Convidar %s para:", peer->name.c_str());
+                ImGui::Separator();
+                const auto recent = RecentGames(12);
+                if (recent.empty()) ImGui::TextDisabled("Jogue algum jogo primeiro: os últimos aparecem aqui.");
+                for (const int index : recent) {
+                    const Game& game = library.Games()[static_cast<size_t>(index)];
+                    const Invite invite = InviteFor(game);
+                    const std::string label = Utf8(game.title) + "  (" + SystemName(game.system) + (invite.mode.empty() ? ")" : ", online)") + "##" + Utf8(game.titleId);
+                    if (ImGui::Selectable(label.c_str())) {
+                        QueueChat(chatPeer, InviteText(invite));
+                        chatScroll = true;
+                    }
+                }
+                ImGui::EndPopup();
+            }
         }
         ImGui::EndChild();
         ImGui::Dummy(ImVec2(0, 4 * scale));
@@ -6495,6 +7117,8 @@ struct Client {
             return local.tm_year * 1000 + local.tm_yday;
         };
         int lastDay = -1;
+        long long lastMine = 0;
+        for (const auto& message : messages) if (message.from == profile.accountId) lastMine = message.number;
         for (size_t i = 0; i < messages.size(); ++i) {
             const auto& message = messages[i];
             const bool mine = message.from == profile.accountId;
@@ -6518,24 +7142,116 @@ struct Client {
             // Messages from the same person a few minutes apart sit together; the time goes under the last one.
             const bool groupEnds = i + 1 == messages.size() || messages[i + 1].from != message.from || messages[i + 1].when - message.when > 300 ||
                                    dayOf(messages[i + 1].when) != dayOf(message.when);
-            const ImVec2 text = ImGui::GetFont()->CalcTextSizeA(textSize, FLT_MAX, bubbleMax - 2 * pad, message.text.c_str());
-            const float width = std::max(text.x + 2 * pad, 48 * scale), height = text.y + 2 * pad * 0.8f;
             const ImVec2 at = ImGui::GetCursorScreenPos();
-            const float x = mine ? at.x + logWidth - width - 16 * scale : at.x + 16 * scale;
-            const ImVec2 min(x, at.y), max(x + width, at.y + height);
-            log->AddRectFilled(min, max, Packed(mine ? kAccent : kSelected, mine ? 0.9f : 1.0f), 14 * scale);
-            log->AddText(ImGui::GetFont(), textSize, ImVec2(min.x + pad, min.y + pad * 0.8f), Packed(mine ? 0xffffff : kText), message.text.c_str(), nullptr, bubbleMax - 2 * pad);
-            ImGui::Dummy(ImVec2(0, height + (groupEnds ? 2 : 4) * scale));
+            Invite invite;
+            const std::string imageId = ImageId(message.text);
+            ImVec2 min, max;
+            if (ReadInvite(message.text, invite)) {
+                // An invite: a card with the game's art, its name and, for whoever got it, Entrar.
+                const float width = std::min(360 * scale, bubbleMax), height = 96 * scale, art = 72 * scale;
+                const float x = mine ? at.x + logWidth - width - 16 * scale : at.x + 16 * scale;
+                min = ImVec2(x, at.y), max = ImVec2(x + width, at.y + height);
+                log->AddRectFilled(min, max, Packed(kSurface), 14 * scale);
+                log->AddRect(min, max, Packed(mine ? kAccent : kGreen, 0.8f), 14 * scale, 0, 1.5f * scale);
+                const int index = InviteGame(invite);
+                const ImVec2 artMin(min.x + 12 * scale, min.y + (height - art) / 2);
+                if (index >= 0) GameArt(log, library.Games()[static_cast<size_t>(index)], artMin, ImVec2(artMin.x + art, artMin.y + art), scale * 0.7f);
+                else log->AddRectFilled(artMin, ImVec2(artMin.x + art, artMin.y + art), Packed(kSelected), 8 * scale);
+                const float textX = artMin.x + art + 12 * scale;
+                const ImVec4 clip(textX, min.y, max.x - 10 * scale, max.y);
+                log->AddText(nullptr, 12 * scale, ImVec2(textX, min.y + 12 * scale), Packed(kDim), mine ? "Você convidou para jogar" : "Convite para jogar", nullptr, 0, &clip);
+                log->AddText(semibold, 16 * scale, ImVec2(textX, min.y + 28 * scale), Packed(kText), invite.title.c_str(), nullptr, 0, &clip);
+                const std::string where = SystemName(Wide(invite.system)) + (invite.mode.empty() ? "" : "  ·  online");
+                log->AddText(nullptr, 12 * scale, ImVec2(textX, min.y + 48 * scale), Packed(LookFor(Wide(invite.system)).name), where.c_str(), nullptr, 0, &clip);
+                if (!mine) {
+                    ImGui::SetCursorScreenPos(ImVec2(textX, max.y - 30 * scale));
+                    ImGui::PushID(static_cast<int>(message.number));
+                    ImGui::PushStyleColor(ImGuiCol_Button, Color(index >= 0 ? kGreen : kSelected));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Color(index >= 0 ? kGreen : kHover, 0.85f));
+                    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6 * scale);
+                    if (ImGui::Button(index >= 0 ? "Entrar" : "Não tenho esse jogo", ImVec2(0, 24 * scale)) && index >= 0) pending = [this, invite] { JoinInvite(invite); };
+                    ImGui::PopStyleVar();
+                    ImGui::PopStyleColor(2);
+                    ImGui::PopID();
+                }
+                ImGui::SetCursorScreenPos(at);
+                ImGui::Dummy(ImVec2(0, height + (groupEnds ? 2 : 4) * scale));
+            } else if (!imageId.empty()) {
+                // A picture: its own shape, 300 x 240 at most; a click shows it big.
+                const AnimTexture* anim = ChatImage(imageId);
+                const Texture* frame = anim != nullptr ? anim->Now() : nullptr;
+                float w = 240 * scale, h = 135 * scale;
+                if (frame != nullptr) {
+                    w = std::min(300 * scale, bubbleMax);
+                    h = w * frame->height / std::max(1, frame->width);
+                    if (h > 240 * scale) h = 240 * scale, w = h * frame->width / std::max(1, frame->height);
+                }
+                const float x = mine ? at.x + logWidth - w - 16 * scale : at.x + 16 * scale;
+                min = ImVec2(x, at.y), max = ImVec2(x + w, at.y + h);
+                if (frame != nullptr) {
+                    log->AddImageRounded(frame->Ref(), min, max, ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, 12 * scale);
+                    ImGui::SetCursorScreenPos(min);
+                    ImGui::PushID(static_cast<int>(message.number));
+                    if (ImGui::InvisibleButton("##imagem", ImVec2(w, h))) {
+                        imageShown = imageId;
+                        ImGui::OpenPopup("##imagemGrande");
+                    }
+                    ImGui::PopID();
+                } else {
+                    log->AddRectFilled(min, max, Packed(kSelected), 12 * scale);
+                    const char* waiting = "Carregando imagem...";
+                    const ImVec2 size = ImGui::CalcTextSize(waiting);
+                    log->AddText(ImVec2(min.x + (w - size.x) / 2, min.y + (h - size.y) / 2), Packed(kDim), waiting);
+                }
+                ImGui::SetCursorScreenPos(at);
+                ImGui::Dummy(ImVec2(0, h + (groupEnds ? 2 : 4) * scale));
+            } else {
+                const ImVec2 text = ImGui::GetFont()->CalcTextSizeA(textSize, FLT_MAX, bubbleMax - 2 * pad, message.text.c_str());
+                const float width = std::max(text.x + 2 * pad, 48 * scale), height = text.y + 2 * pad * 0.8f;
+                const float x = mine ? at.x + logWidth - width - 16 * scale : at.x + 16 * scale;
+                min = ImVec2(x, at.y), max = ImVec2(x + width, at.y + height);
+                log->AddRectFilled(min, max, Packed(mine ? kAccent : kSelected, mine ? 0.9f : 1.0f), 14 * scale);
+                log->AddText(ImGui::GetFont(), textSize, ImVec2(min.x + pad, min.y + pad * 0.8f), Packed(mine ? 0xffffff : kText), message.text.c_str(), nullptr, bubbleMax - 2 * pad);
+                ImGui::Dummy(ImVec2(0, height + (groupEnds ? 2 : 4) * scale));
+            }
             if (groupEnds) {
                 const time_t when = static_cast<time_t>(message.when);
                 tm local{};
                 localtime_s(&local, &when);
-                char hour[8];
+                char hour[24];
                 std::snprintf(hour, sizeof(hour), "%02d:%02d", local.tm_hour, local.tm_min);
-                const ImVec2 size = ImGui::CalcTextSize(hour);
+                // Under this side's last message: whether the friend read it.
+                std::string stamp = hour;
+                if (mine && message.number == lastMine && readByPeer >= message.number) stamp += "  ·  Visto";
+                const ImVec2 size = ImGui::CalcTextSize(stamp.c_str());
                 const ImVec2 under = ImGui::GetCursorScreenPos();
-                log->AddText(nullptr, 12 * scale, ImVec2(mine ? max.x - size.x * 0.85f - 4 * scale : min.x + 4 * scale, under.y), Packed(kDim), hour);
+                log->AddText(nullptr, 12 * scale, ImVec2(mine ? max.x - size.x * 0.85f - 4 * scale : min.x + 4 * scale, under.y), Packed(kDim), stamp.c_str());
                 ImGui::Dummy(ImVec2(0, 18 * scale));
+            }
+        }
+        // "digitando...", with dots that come and go.
+        if (peerTyping) {
+            const int dots = static_cast<int>(ImGui::GetTime() * 3) % 3 + 1;
+            const std::string typingText = FriendName(chatPeer) + " está digitando" + std::string(static_cast<size_t>(dots), '.');
+            const ImVec2 at = ImGui::GetCursorScreenPos();
+            log->AddText(nullptr, 13 * scale, ImVec2(at.x + 20 * scale, at.y), Packed(kDim), typingText.c_str());
+            ImGui::Dummy(ImVec2(0, 22 * scale));
+            animating = true;
+        }
+        // A picture open big.
+        {
+            const ImGuiViewport* viewport = ImGui::GetMainViewport();
+            ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x / 2, viewport->WorkPos.y + viewport->WorkSize.y / 2), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+            if (ImGui::BeginPopup("##imagemGrande")) {
+                const AnimTexture* anim = ChatImage(imageShown);
+                if (const Texture* frame = anim != nullptr ? anim->Now() : nullptr) {
+                    const float maxW = viewport->WorkSize.x * 0.75f, maxH = viewport->WorkSize.y * 0.75f;
+                    float w = static_cast<float>(frame->width) * scale, h = static_cast<float>(frame->height) * scale;
+                    const float fit = std::min({1.0f, maxW / w, maxH / h});
+                    ImGui::Image(frame->Ref(), ImVec2(w * fit, h * fit));
+                }
+                if (ImGui::Button("Fechar")) ImGui::CloseCurrentPopup();
+                ImGui::EndPopup();
             }
         }
         if (chatScroll) {
@@ -6549,24 +7265,56 @@ struct Client {
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 22 * scale);
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(18 * scale, 14 * scale));
         ImGui::PushStyleColor(ImGuiCol_FrameBg, Color(kSelected));
-        ImGui::SetNextItemWidth(right - 140 * scale);
+        // Emoji and a picture, beside the box.
+        const float small = 50 * scale;
+        if (ImGui::Button("😀##emoji", ImVec2(small, 0))) ImGui::OpenPopup("##emojis");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Emoji");
+        if (ImGui::BeginPopup("##emojis")) {
+            for (size_t e = 0; e < std::size(kEmoji); ++e) {
+                if (e % 8 != 0) ImGui::SameLine(0, 4 * scale);
+                ImGui::PushID(static_cast<int>(e));
+                if (ImGui::Button(kEmoji[e], ImVec2(40 * scale, 40 * scale))) {
+                    const std::string now2 = std::string(chatInput.data()) + kEmoji[e];
+                    if (now2.size() + 1 < chatInput.size()) std::snprintf(chatInput.data(), chatInput.size(), "%s", now2.c_str());
+                }
+                ImGui::PopID();
+            }
+            ImGui::EndPopup();
+        }
+        ImGui::SameLine(0, 6 * scale);
+        ImGui::BeginDisabled(imageBusy);
+        if (ImGui::Button(imageBusy ? "...##imagem" : "🖼##imagem", ImVec2(small, 0))) {
+            pending = [this, to = chatPeer] {
+                Browse(L"Mandar uma imagem", L"", false, {{L"Imagens", L"*.png;*.jpg;*.jpeg;*.bmp;*.gif"}}, [this, to](const std::wstring& path) {
+                    SendChatImage(to, path);
+                    OpenChatWith(to);
+                });
+            };
+        }
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip(imageBusy ? "Mandando a imagem..." : "Mandar uma imagem (PNG, JPG ou GIF)");
+        ImGui::SameLine(0, 6 * scale);
+        ImGui::SetNextItemWidth(right - 140 * scale - 2 * (small + 6 * scale));
         const std::string hint = "Mensagem para " + FriendName(chatPeer) + "...";
         const bool enter = ImGui::InputTextWithHint("##chatInput", hint.c_str(), chatInput.data(), chatInput.size(), ImGuiInputTextFlags_EnterReturnsTrue);
+        // The friend sees "digitando..." (told every 3 s while the text changes).
+        if (ImGui::IsItemEdited() && chatInput[0] != '\0' && GetTickCount64() - typingSentAt > 3000) {
+            typingSentAt = GetTickCount64();
+            Signal("/digitando", "para\t" + chatPeer + "\n");
+        }
         ImGui::PopStyleColor();
         ImGui::SameLine(0, 10 * scale);
-        ImGui::BeginDisabled(chatBusy);
         ImGui::PushStyleColor(ImGuiCol_Button, Color(kAccent));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Color(kAccentHover));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, Color(kAccent));
         ImGui::PushStyleColor(ImGuiCol_Text, Color(0xffffff));
-        const bool send = ImGui::Button(chatBusy ? "Enviando..." : "Enviar", ImVec2(130 * scale, 0)) || enter;
+        const bool send = ImGui::Button(chatOutbox.empty() ? "Enviar" : "Enviando...", ImVec2(130 * scale, 0)) || enter;
         ImGui::PopStyleColor(4);
-        ImGui::EndDisabled();
         ImGui::PopStyleVar(2);
-        if (send && !chatBusy) {
+        if (send) {
             const std::string text = chatInput.data();
             if (text.find_first_not_of(' ') != std::string::npos) {
-                PollChat(chatPeer, text);
+                QueueChat(chatPeer, text);
                 chatInput.fill('\0');
             }
             ImGui::SetKeyboardFocusHere(-1);
@@ -7114,6 +7862,7 @@ struct Client {
         toasts.erase(std::remove_if(toasts.begin(), toasts.end(), [&](const Toast& toast) { return toast.until < now; }), toasts.end());
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
         float bottom = viewport->WorkPos.y + viewport->WorkSize.y - 16 * scale;
+        int clicked = -1;
         for (size_t i = 0; i < toasts.size() && i < 4; ++i) {
             const Toast& toast = toasts[i];
             const float height = 74 * scale, width = 360 * scale;
@@ -7126,21 +7875,36 @@ struct Client {
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12 * scale, 12 * scale));
             char name[32];
             std::snprintf(name, sizeof(name), "##toast%zu", i);
-            ImGui::Begin(name, nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoSavedSettings |
+            ImGui::Begin(name, nullptr, ImGuiWindowFlags_NoDecoration | (toast.action ? 0 : ImGuiWindowFlags_NoInputs) | ImGuiWindowFlags_NoSavedSettings |
                                             ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav);
+            if (toast.action && ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) clicked = static_cast<int>(i);
             const ImVec2 at = ImGui::GetCursorScreenPos();
-            DrawMedal(ImGui::GetWindowDrawList(), at, 50 * scale, toast.text, true);
+            const PlayerCard* card = nullptr;
+            PlayerCard friendCard;
+            if (!toast.friendId.empty()) {
+                std::lock_guard guard(friendsLock);
+                for (const auto& known : friends) if (known.id == toast.friendId) friendCard = known, card = &friendCard;
+            }
+            if (card != nullptr) DrawAvatar(ImGui::GetWindowDrawList(), ImVec2(at.x + 2 * scale, at.y + 2 * scale), 46 * scale, *card, scale);
+            else DrawMedal(ImGui::GetWindowDrawList(), at, 50 * scale, toast.text, true);
             ImGui::SetCursorScreenPos(ImVec2(at.x + 62 * scale, at.y + 2 * scale));
             ImGui::BeginGroup();
             ImGui::TextDisabled("%s", toast.title.c_str());
             ImGui::PushFont(semibold, 18);
+            ImGui::PushClipRect(ImGui::GetCursorScreenPos(), ImVec2(at.x + width - 24 * scale, at.y + height), true);
             ImGui::TextUnformatted(toast.text.c_str());
+            ImGui::PopClipRect();
             ImGui::PopFont();
             ImGui::EndGroup();
             ImGui::End();
             ImGui::PopStyleVar(3);
             ImGui::PopStyleColor();
             bottom -= height + 10 * scale;
+        }
+        if (clicked >= 0) {
+            auto action = std::move(toasts[static_cast<size_t>(clicked)].action);
+            toasts.erase(toasts.begin() + clicked);
+            action();
         }
     }
 
@@ -7231,7 +7995,8 @@ struct Client {
         background = false;
         SyncProfiles(false);
         NoticeChat();
-        PollChat();
+        NoticeFriends();
+        SendQueuedChat();
         chatTabOpen = false;
         for (const auto& titleId : covers.TakeDone()) {
             for (const auto& game : library.Games()) if (game.titleId == titleId) ForgetArt(game);
@@ -7309,6 +8074,7 @@ struct Client {
         AccountWindow(scale);
         ImGui::End();
         ImGui::PopStyleVar();
+        FriendsPanel(scale);
         UpdateBar(scale);
         Toasts(scale);
     }
@@ -7461,7 +8227,17 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     ImGui::GetStyle().FontSizeBase = 16.0f;
     ImFont* regular = Exists(Wide(fonts + "segoeui.ttf")) ? io.Fonts->AddFontFromFileTTF((fonts + "segoeui.ttf").c_str()) : nullptr;
     if (regular == nullptr) regular = io.Fonts->AddFontDefault();
+    // The chat's emoji: Windows' Segoe UI Emoji merged into each font (drawn in one color, as the text).
+    const bool emoji = Exists(Wide(fonts + "seguiemj.ttf"));
+    const auto mergeEmoji = [&] {
+        if (!emoji) return;
+        ImFontConfig merge;
+        merge.MergeMode = true;
+        io.Fonts->AddFontFromFileTTF((fonts + "seguiemj.ttf").c_str(), 0.0f, &merge);
+    };
+    mergeEmoji();
     ImFont* semibold = Exists(Wide(fonts + "seguisb.ttf")) ? io.Fonts->AddFontFromFileTTF((fonts + "seguisb.ttf").c_str()) : nullptr;
+    if (semibold != nullptr) mergeEmoji();
     ApplyTheme(scale);
     ImGui_ImplWin32_Init(hwnd);
     ImGui_ImplDX11_Init(g_device, g_context);
