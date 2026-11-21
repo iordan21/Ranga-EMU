@@ -2700,6 +2700,51 @@ struct Client {
     std::mutex probeLock;
     std::map<std::string, std::string> probeResults; // id -> what to show ("" while testing)
 
+    // "Quem está na sala": the classics' server lists who plays what at its tables (GET /ranga/mesas, a server since
+    // 1.0.1; an older one answers 404). Asked in the background; the answer shows under the address.
+    std::string tablesShown;
+    std::atomic<bool> tablesBusy{false};
+
+    void TablesButton(const std::string& address, float labelWidth, float scale) {
+        ImGui::SetCursorPosX(labelWidth);
+        ImGui::BeginDisabled(tablesBusy || address.empty());
+        if (ImGui::Button(tablesBusy ? "Perguntando...###mesas" : "Quem está na sala###mesas")) {
+            tablesBusy = true;
+            std::thread([this, address] {
+                const HttpResult answer = HttpRequest("GET", "http://" + (address.find(':') == std::string::npos ? address + ":24873" : address) + "/ranga/mesas", "", "", "RangaEmu", 5000);
+                std::string text;
+                if (answer.status == 200) {
+                    size_t start = 0;
+                    while (start < answer.body.size()) {
+                        size_t end = answer.body.find('\n', start);
+                        if (end == std::string::npos) end = answer.body.size();
+                        const std::string line = answer.body.substr(start, end - start);
+                        start = end + 1;
+                        if (const size_t tab = line.find('\t'); tab != std::string::npos) text += line.substr(tab + 1) + " jogando " + line.substr(0, tab) + "\n";
+                    }
+                    if (text.empty()) text = "Ninguém na sala agora.";
+                } else {
+                    text = answer.status == 404 ? "Este servidor ainda não sabe listar (precisa da versão 1.0.1)." : "A sala não respondeu.";
+                }
+                std::lock_guard guard(probeLock);
+                tablesShown = text;
+                tablesBusy = false;
+            }).detach();
+        }
+        ImGui::EndDisabled();
+        std::string shown;
+        {
+            std::lock_guard guard(probeLock);
+            shown = tablesShown;
+        }
+        if (!shown.empty()) {
+            ImGui::SetCursorPosX(labelWidth);
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextDisabled("%s", shown.c_str());
+            ImGui::PopTextWrapPos();
+        }
+    }
+
     void ProbeButton(const char* id, const std::string& address, int defaultPort, bool tcp, float scale) {
         ImGui::SameLine(0, 8 * scale);
         std::string shown;
@@ -3299,6 +3344,7 @@ struct Client {
             };
             field("Endereço da sala", "##onlineAddress", onlineAddress, "ranga_online_endereco", L"online_endereco");
             ProbeButton("classicos", onlineAddress.data(), 24873, true, scale);
+            TablesButton(onlineAddress.data(), labelWidth, scale);
             field("Seu nome", "##onlineName", onlineName, "ranga_online_nome", L"online_nome");
             label("Atraso");
             if (ImGui::Checkbox("Automático##onlineDelayAuto", &onlineDelayAuto))

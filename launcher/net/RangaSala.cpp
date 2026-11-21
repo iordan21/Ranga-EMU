@@ -126,7 +126,7 @@ void Log(const char* format, ...) {
 
 struct Player {
     Socket socket = INVALID_SOCKET;
-    std::string address, game, name;
+    std::string address, game, name, title; // title: the game's name, when the Ranga sends it
     int slot = -1;
     std::vector<uint8_t> in, out;
     size_t outAt = 0;
@@ -345,6 +345,8 @@ std::string Header(const std::string& request, const std::string& name) {
     return request.substr(from, end == std::string::npos ? std::string::npos : end - from);
 }
 
+std::string TablesText();
+
 void ServeHttp(Player& player) {
     const auto end = std::search(player.in.begin(), player.in.end(), "\r\n\r\n", "\r\n\r\n" + 4);
     if (end == player.in.end()) {
@@ -374,6 +376,7 @@ void ServeHttp(Player& player) {
     }
     player.in.clear();
 
+    // (/ranga/mesas stays open: anyone with the address can sit at a table anyway, so the names it lists are no secret.)
     const bool social = path == "/ranga/perfil" || path == "/ranga/perfis" || path == "/ranga/chat";
     if (social && !g_group.empty() && Header(request, "x-ranga-grupo") != g_group) {
         Answer(player, 401, "");
@@ -383,6 +386,11 @@ void ServeHttp(Player& player) {
         const int code = path == "/ranga/perfil" ? StoreProfile(body) : path == "/ranga/chat" ? Say(body) : 404;
         Answer(player, code, "");
         if (code != 200 && code != 429) Log("%s recusado (%d) de %s", path.c_str(), code, player.address.c_str());
+        return;
+    }
+    // Who plays what at the tables now: one line each, "game's name<TAB>player's name".
+    if (path == "/ranga/mesas") {
+        Answer(player, 200, TablesText());
         return;
     }
     if (path == "/ranga/perfis" && !g_dataFolder.empty()) {
@@ -417,6 +425,15 @@ void ServeHttp(Player& player) {
 // ---- Tables ----
 
 std::vector<std::unique_ptr<Player>> g_players;
+std::string TablesText() {
+    std::string text;
+    for (const auto& seated : g_players) {
+        if (seated->slot < 0 || seated->closing) continue;
+        text += (seated->title.empty() ? "um jogo" : seated->title) + "\t" + seated->name + "\n";
+    }
+    return text;
+}
+
 // game -> who sits at each slot
 std::map<std::string, std::array<Player*, RangaNet::kMaxPlayers>> g_tables;
 
@@ -500,6 +517,9 @@ void Handle(Player& player, uint8_t type, const uint8_t* body, size_t size) {
         const uint8_t version = read.U8();
         const std::string game = read.Str(), name = read.Str();
         if (!read.Ok() || game.empty()) { player.closing = true; return; }
+        // A Ranga since 1.0.1 sends the game's name too, for /ranga/mesas; one from before ends here.
+        const std::string title = read.Left() > 0 ? read.Str() : std::string();
+        player.title = title.size() > 120 ? title.substr(0, 120) : title;
         Seat(player, version, game, name);
         return;
     }

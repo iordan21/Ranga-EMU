@@ -443,7 +443,7 @@ void Drop(const std::wstring& why) {
 
 }
 
-bool Start(const std::string& address, const std::string& game, const std::string& name, int delay, const Hooks& hooks) {
+bool Start(const std::string& address, const std::string& game, const std::string& name, int delay, const Hooks& hooks, const std::string& title) {
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return false;
     std::string host = address, port = std::to_string(RangaNet::kDefaultPort);
@@ -499,7 +499,7 @@ bool Start(const std::string& address, const std::string& game, const std::strin
     BOOL noDelay = TRUE;
     setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&noDelay), sizeof(noDelay));
     s->socket = sock;
-    Queue(RangaNet::Writer(RangaNet::kHello).U8(RangaNet::kVersion).Str(game).Str(s->name).Done());
+    Queue(RangaNet::Writer(RangaNet::kHello).U8(RangaNet::kVersion).Str(game).Str(s->name).Str(title).Done());
     s->hooks.log("[online] conectado a %s, jogo %s, atraso de %d quadros%s\n", address.c_str(), game.c_str(), s->delay, s->autoDelay ? " (automático)" : "");
     return true;
 }

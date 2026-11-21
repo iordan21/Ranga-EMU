@@ -2308,7 +2308,7 @@ void ReadOptionsFile(const std::wstring& path) {
 // Online play (Netplay.hpp), when the game's options ask for it: ranga_online = ligado, ranga_online_endereco (the
 // table server, "host:port"), ranga_online_atraso (frames, 2 to 8) and ranga_online_nome. The game is told apart by
 // the core and the file (its size and the first 8 MB), so only the same game of the same core sits at one table.
-void StartOnline(const std::wstring& corePath, const std::wstring& romPath, bool noGame) {
+void StartOnline(const std::wstring& corePath, const std::wstring& romPath, bool noGame, const std::wstring& title) {
     const auto option = [](const char* key) {
         const auto found = g.overrides.find(key);
         return found == g.overrides.end() ? std::string() : found->second;
@@ -2357,7 +2357,7 @@ void StartOnline(const std::wstring& corePath, const std::wstring& romPath, bool
     hooks.message = [](const std::wstring& text) { ShowMessage(text, 240); };
     // Players 3 and 4 need their ports too.
     for (unsigned port = 2; port < 4; ++port) g.core.setControllerPort(port, RETRO_DEVICE_JOYPAD);
-    Netplay::Start(address, game, option("ranga_online_nome"), delay, hooks);
+    Netplay::Start(address, game, option("ranga_online_nome"), delay, hooks, Utf8(title));
 }
 
 int RetroMain(int argc, wchar_t** argv) {
@@ -2541,7 +2541,7 @@ int RetroMain(int argc, wchar_t** argv) {
     romName = romName.substr(0, romName.find_last_of(L'.'));
     Saves saves{saveDir + L"\\" + romName + L".srm", saveDir + L"\\" + romName + L".state"};
     saves.LoadSram();
-    StartOnline(corePath, romPath, noGame);
+    StartOnline(corePath, romPath, noGame, title);
     if (!noGame) {
         // RetroAchievements, when the player signed in on Ranga's profile and the console has them.
         Achievements::Setup achievements;
