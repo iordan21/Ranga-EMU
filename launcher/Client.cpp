@@ -871,6 +871,8 @@ struct Client {
         // RANGA_CLIENT_PAGE=jogo:<titleId> (tests): opens on that game's page.
         // (The library fills in later, so the game is looked for in the first frames, OpenStartGame.)
         if (const wchar_t* start = _wgetenv(L"RANGA_CLIENT_PAGE"); start != nullptr && std::wstring(start).rfind(L"jogo:", 0) == 0) startGame = std::wstring(start).substr(5);
+        // RANGA_CLIENT_PAGE=chat (tests): opens on the profile's Chat tab.
+        if (const wchar_t* start = _wgetenv(L"RANGA_CLIENT_PAGE"); start != nullptr && std::wstring(start) == L"chat") startChat = true;
     }
     ~Client() {
         if (updateThread.joinable()) updateThread.join();
@@ -6389,61 +6391,178 @@ struct Client {
             chatScroll = true;
         }
         const long long now = static_cast<long long>(std::time(nullptr));
+        const auto isOnline = [&](const PlayerCard& card) { return !card.closed && now - card.seen < 300; };
+        const auto statusOf = [&](const PlayerCard& card) {
+            if (!isOnline(card)) return "Visto " + FormatAgo(card.seen);
+            return card.playing.empty() ? std::string("Online agora") : "Jogando " + card.playing;
+        };
+        // The last message with each friend, for the preview under the name.
+        std::map<std::string, DirectMessage> lastWith;
+        {
+            std::lock_guard guard(chatLock);
+            for (const auto& message : chat) {
+                const std::string other = message.from == profile.accountId ? message.to : message.from;
+                if (lastWith[other].number < message.number) lastWith[other] = message;
+            }
+        }
+        const PlayerCard* peer = nullptr;
+        for (const auto& card : list) if (card.id == chatPeer) peer = &card;
         ImGui::Dummy(ImVec2(0, 6 * scale));
-        // The friends on the left, the conversation on the right.
-        ImGui::BeginChild("##chatFriends", ImVec2(240 * scale, -54 * scale), ImGuiChildFlags_None);
+
+        // ---- The friends, on the left: photo with the online dot, name, last message or status, unread count.
+        const float listWidth = 290 * scale, rowHeight = 64 * scale, avatar = 42 * scale;
+        // The whole chat fits what is left of the page, the box to write in always in view.
+        const float total = std::max(ImGui::GetContentRegionAvail().y - (problem.empty() ? 30 : 56) * scale, 300 * scale);
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, Color(kSidebar));
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 12 * scale);
+        ImGui::BeginChild("##chatFriends", ImVec2(listWidth, total), ImGuiChildFlags_None);
+        ImDrawList* listDraw = ImGui::GetWindowDrawList();
+        ImGui::Dummy(ImVec2(0, 6 * scale));
         for (const auto& card : list) {
-            const bool online = !card.closed && now - card.seen < 300;
-            std::string label = card.name;
-            if (unread[card.id] > 0) label += "  (" + std::to_string(unread[card.id]) + ")";
+            const bool chosen = card.id == chatPeer;
+            const ImVec2 min = ImGui::GetCursorScreenPos();
+            const ImVec2 rowMin(min.x + 6 * scale, min.y), rowMax(min.x + listWidth - 6 * scale, min.y + rowHeight);
             ImGui::PushID(card.id.c_str());
-            ImGui::PushStyleColor(ImGuiCol_Text, Color(online ? kGreen : kText));
-            if (ImGui::Selectable(label.c_str(), card.id == chatPeer, 0, ImVec2(0, 28 * scale))) chatPeer = card.id;
-            ImGui::PopStyleColor();
+            ImGui::SetCursorScreenPos(rowMin);
+            if (ImGui::InvisibleButton("##friend", ImVec2(rowMax.x - rowMin.x, rowHeight))) chatPeer = card.id;
+            const bool hovered = ImGui::IsItemHovered();
             ImGui::PopID();
+            if (chosen || hovered) listDraw->AddRectFilled(rowMin, rowMax, Packed(chosen ? kSelected : kHover), 10 * scale);
+            const ImVec2 photo(rowMin.x + 10 * scale, rowMin.y + (rowHeight - avatar) / 2);
+            DrawAvatar(listDraw, photo, avatar, card, scale);
+            // The online dot on the photo's corner, ringed in the row's color.
+            const ImVec2 dot(photo.x + avatar - 2 * scale, photo.y + avatar - 2 * scale);
+            listDraw->AddCircleFilled(dot, 7 * scale, Packed(chosen ? kSelected : kSidebar), 16);
+            listDraw->AddCircleFilled(dot, 5 * scale, Packed(isOnline(card) ? kGreen : kDim), 16);
+            const float textX = photo.x + avatar + 14 * scale, textRight = rowMax.x - 12 * scale;
+            const int count = unread[card.id];
+            const float badge = count > 0 ? 26 * scale : 0.0f;
+            const ImVec4 clip(textX, rowMin.y, textRight - badge, rowMax.y);
+            listDraw->AddText(semibold, 16 * scale, ImVec2(textX, rowMin.y + 13 * scale), Packed(kText), card.name.c_str(), nullptr, 0, &clip);
+            std::string preview = statusOf(card);
+            if (const auto found = lastWith.find(card.id); found != lastWith.end() && found->second.number > 0)
+                preview = (found->second.from == profile.accountId ? "Você: " : "") + found->second.text;
+            listDraw->AddText(nullptr, 13 * scale, ImVec2(textX, rowMin.y + 35 * scale), Packed(count > 0 ? kText : kDim), preview.c_str(), nullptr, 0, &clip);
+            if (count > 0) {
+                const std::string number = count > 99 ? "99+" : std::to_string(count);
+                const ImVec2 size = ImGui::CalcTextSize(number.c_str());
+                const ImVec2 center(textRight - 10 * scale, rowMin.y + rowHeight / 2);
+                const float radius = std::max(10 * scale, size.x / 2 + 6 * scale);
+                listDraw->AddCircleFilled(center, radius, Packed(kAccent), 24);
+                listDraw->AddText(ImVec2(center.x - size.x / 2, center.y - size.y / 2), Packed(0xffffff), number.c_str());
+            }
+            ImGui::Dummy(ImVec2(0, 4 * scale));
         }
         ImGui::EndChild();
-        ImGui::SameLine();
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
+
+        // ---- The conversation, on the right: who it is with, the messages in bubbles, the box to write in.
+        ImGui::SameLine(0, 14 * scale);
+        ImGui::BeginGroup();
+        const float right = ImGui::GetContentRegionAvail().x;
+        const float headerHeight = 62 * scale, inputHeight = 52 * scale;
         ImGui::PushStyleColor(ImGuiCol_ChildBg, Color(kSidebar));
-        ImGui::BeginChild("##chatLog", ImVec2(0, -54 * scale), ImGuiChildFlags_None, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+        ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 12 * scale);
+        ImGui::BeginChild("##chatHeader", ImVec2(right, headerHeight), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
+        if (peer != nullptr) {
+            ImDrawList* head = ImGui::GetWindowDrawList();
+            const ImVec2 at = ImGui::GetCursorScreenPos();
+            const float side = 40 * scale;
+            DrawAvatar(head, ImVec2(at.x + 12 * scale, at.y + (headerHeight - side) / 2), side, *peer, scale);
+            head->AddText(semibold, 18 * scale, ImVec2(at.x + side + 28 * scale, at.y + 11 * scale), Packed(kText), peer->name.c_str());
+            head->AddCircleFilled(ImVec2(at.x + side + 33 * scale, at.y + 42 * scale), 4 * scale, Packed(isOnline(*peer) ? kGreen : kDim), 12);
+            head->AddText(nullptr, 13 * scale, ImVec2(at.x + side + 42 * scale, at.y + 34 * scale), Packed(kDim), statusOf(*peer).c_str());
+        }
+        ImGui::EndChild();
         ImGui::Dummy(ImVec2(0, 4 * scale));
-        if (messages.empty()) ImGui::TextDisabled("  Nenhuma mensagem ainda com %s. Mande a primeira!", FriendName(chatPeer).c_str());
-        for (const auto& message : messages) {
-            const bool mine = message.from == profile.accountId;
-            ImGui::SetCursorPosX(12 * scale);
-            ImGui::BeginGroup();
-            ImGui::PushFont(semibold, 15);
-            ImGui::PushStyleColor(ImGuiCol_Text, Color(mine ? kGreen : kAccentHover));
-            ImGui::TextUnformatted(mine ? profile.ShownName().c_str() : FriendName(message.from).c_str());
-            ImGui::PopStyleColor();
-            ImGui::PopFont();
-            ImGui::SameLine();
-            const time_t at = static_cast<time_t>(message.when);
+
+        ImGui::BeginChild("##chatLog", ImVec2(right, total - headerHeight - inputHeight - 10 * scale), ImGuiChildFlags_None);
+        ImDrawList* log = ImGui::GetWindowDrawList();
+        const float logWidth = ImGui::GetContentRegionAvail().x;
+        const float bubbleMax = std::min(logWidth * 0.62f, 620 * scale), pad = 12 * scale, textSize = 15 * scale;
+        ImGui::Dummy(ImVec2(0, 10 * scale));
+        if (messages.empty()) {
+            const std::string empty = "Nenhuma mensagem ainda com " + FriendName(chatPeer) + ". Mande a primeira!";
+            const ImVec2 size = ImGui::CalcTextSize(empty.c_str());
+            ImGui::SetCursorPos(ImVec2((logWidth - size.x) / 2, ImGui::GetCursorPosY() + 60 * scale));
+            ImGui::TextDisabled("%s", empty.c_str());
+        }
+        const auto dayOf = [](long long when) {
+            const time_t at = static_cast<time_t>(when);
             tm local{};
             localtime_s(&local, &at);
-            ImGui::TextDisabled("%02d/%02d %02d:%02d", local.tm_mday, local.tm_mon + 1, local.tm_hour, local.tm_min);
-            ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x + ImGui::GetCursorPosX() - 12 * scale);
-            ImGui::TextWrapped("%s", message.text.c_str());
-            ImGui::PopTextWrapPos();
-            ImGui::EndGroup();
-            ImGui::Dummy(ImVec2(0, 4 * scale));
+            return local.tm_year * 1000 + local.tm_yday;
+        };
+        int lastDay = -1;
+        for (size_t i = 0; i < messages.size(); ++i) {
+            const auto& message = messages[i];
+            const bool mine = message.from == profile.accountId;
+            // A line with the day between days: Hoje, Ontem or the date.
+            if (const int day = dayOf(message.when); day != lastDay) {
+                lastDay = day;
+                const time_t at = static_cast<time_t>(message.when);
+                tm local{};
+                localtime_s(&local, &at);
+                char date[16];
+                std::snprintf(date, sizeof(date), "%02d/%02d", local.tm_mday, local.tm_mon + 1);
+                const std::string label = day == dayOf(now) ? "Hoje" : day == dayOf(now - 86400) ? "Ontem" : date;
+                const ImVec2 size = ImGui::CalcTextSize(label.c_str());
+                const ImVec2 at2 = ImGui::GetCursorScreenPos();
+                const float middle = at2.x + logWidth / 2;
+                log->AddRectFilled(ImVec2(middle - size.x / 2 - 12 * scale, at2.y + 4 * scale), ImVec2(middle + size.x / 2 + 12 * scale, at2.y + size.y + 12 * scale),
+                                   Packed(kSelected), 10 * scale);
+                log->AddText(ImVec2(middle - size.x / 2, at2.y + 8 * scale), Packed(kDim), label.c_str());
+                ImGui::Dummy(ImVec2(0, size.y + 22 * scale));
+            }
+            // Messages from the same person a few minutes apart sit together; the time goes under the last one.
+            const bool groupEnds = i + 1 == messages.size() || messages[i + 1].from != message.from || messages[i + 1].when - message.when > 300 ||
+                                   dayOf(messages[i + 1].when) != dayOf(message.when);
+            const ImVec2 text = ImGui::GetFont()->CalcTextSizeA(textSize, FLT_MAX, bubbleMax - 2 * pad, message.text.c_str());
+            const float width = std::max(text.x + 2 * pad, 48 * scale), height = text.y + 2 * pad * 0.8f;
+            const ImVec2 at = ImGui::GetCursorScreenPos();
+            const float x = mine ? at.x + logWidth - width - 16 * scale : at.x + 16 * scale;
+            const ImVec2 min(x, at.y), max(x + width, at.y + height);
+            log->AddRectFilled(min, max, Packed(mine ? kAccent : kSelected, mine ? 0.9f : 1.0f), 14 * scale);
+            log->AddText(ImGui::GetFont(), textSize, ImVec2(min.x + pad, min.y + pad * 0.8f), Packed(mine ? 0xffffff : kText), message.text.c_str(), nullptr, bubbleMax - 2 * pad);
+            ImGui::Dummy(ImVec2(0, height + (groupEnds ? 2 : 4) * scale));
+            if (groupEnds) {
+                const time_t when = static_cast<time_t>(message.when);
+                tm local{};
+                localtime_s(&local, &when);
+                char hour[8];
+                std::snprintf(hour, sizeof(hour), "%02d:%02d", local.tm_hour, local.tm_min);
+                const ImVec2 size = ImGui::CalcTextSize(hour);
+                const ImVec2 under = ImGui::GetCursorScreenPos();
+                log->AddText(nullptr, 12 * scale, ImVec2(mine ? max.x - size.x * 0.85f - 4 * scale : min.x + 4 * scale, under.y), Packed(kDim), hour);
+                ImGui::Dummy(ImVec2(0, 18 * scale));
+            }
         }
         if (chatScroll) {
             ImGui::SetScrollHereY(1.0f);
             chatScroll = false;
         }
         ImGui::EndChild();
-        ImGui::PopStyleColor();
-        ImGui::Dummy(ImVec2(0, 4 * scale));
-        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 130 * scale);
+
+        // The box to write in, round, with Enviar beside it.
+        ImGui::Dummy(ImVec2(0, 2 * scale));
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 22 * scale);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(18 * scale, 14 * scale));
         ImGui::PushStyleColor(ImGuiCol_FrameBg, Color(kSelected));
+        ImGui::SetNextItemWidth(right - 140 * scale);
         const std::string hint = "Mensagem para " + FriendName(chatPeer) + "...";
         const bool enter = ImGui::InputTextWithHint("##chatInput", hint.c_str(), chatInput.data(), chatInput.size(), ImGuiInputTextFlags_EnterReturnsTrue);
         ImGui::PopStyleColor();
-        ImGui::SameLine();
+        ImGui::SameLine(0, 10 * scale);
         ImGui::BeginDisabled(chatBusy);
-        const bool send = ImGui::Button(chatBusy ? "Enviando..." : "Enviar", ImVec2(120 * scale, 0)) || enter;
+        ImGui::PushStyleColor(ImGuiCol_Button, Color(kAccent));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Color(kAccentHover));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, Color(kAccent));
+        ImGui::PushStyleColor(ImGuiCol_Text, Color(0xffffff));
+        const bool send = ImGui::Button(chatBusy ? "Enviando..." : "Enviar", ImVec2(130 * scale, 0)) || enter;
+        ImGui::PopStyleColor(4);
         ImGui::EndDisabled();
+        ImGui::PopStyleVar(2);
         if (send && !chatBusy) {
             const std::string text = chatInput.data();
             if (text.find_first_not_of(' ') != std::string::npos) {
@@ -6457,6 +6576,9 @@ struct Client {
             ImGui::TextUnformatted(problem.c_str());
             ImGui::PopStyleColor();
         }
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
+        ImGui::EndGroup();
     }
 
     void ProfileFriends(float scale) {
@@ -7058,7 +7180,14 @@ struct Client {
 
     std::wstring startGame; // RANGA_CLIENT_PAGE=jogo:<titleId> (tests), until the library has it
 
+    bool startChat = false; // RANGA_CLIENT_PAGE=chat (tests)
+
     void Frame(float scale) {
+        if (startChat) {
+            startChat = false;
+            OpenProfile();
+            openChatTab = true;
+        }
         if (!startGame.empty()) {
             for (size_t i = 0; i < library.Games().size(); ++i) {
                 if (library.Games()[i].titleId != startGame) continue;
