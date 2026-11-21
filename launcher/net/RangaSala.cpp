@@ -176,6 +176,8 @@ struct StoredProfile {
     long long seen = 0;
 };
 std::string g_dataFolder;
+// Switch shader caches to hand out (--shaders): <title id>.bin each.
+std::string g_shaders;
 std::map<std::string, StoredProfile> g_profiles;
 constexpr size_t kMaxProfiles = 200, kMaxBody = 512 * 1024;
 
@@ -406,6 +408,17 @@ void ServeHttp(Player& player) {
     bool safe = !g_updates.empty() && path.find("..") == std::string::npos;
     for (const char c : path) safe = safe && (std::isalnum(static_cast<unsigned char>(c)) || c == '/' || c == '_' || c == '-' || c == '.');
     std::string file;
+    // A Switch game's shader cache (Eden's vulkan.bin, the part that works on any GPU), by its 16-digit title id:
+    // the hosting Ranga keeps its own in --shaders, and friends fetch it so their first races don't stutter.
+    if (path.rfind("/ranga/shaders/", 0) == 0 && !g_shaders.empty()) {
+        const std::string id = path.substr(15);
+        const bool valid = id.size() == 20 && id.compare(16, 4, ".bin") == 0 &&
+                           std::all_of(id.begin(), id.begin() + 16, [](char c) { return std::isxdigit(static_cast<unsigned char>(c)) != 0; });
+        const std::string bytes = valid ? ReadWhole(g_shaders + kSep + id) : std::string();
+        Answer(player, bytes.empty() ? 404 : 200, bytes);
+        if (!bytes.empty()) Log("cache de shaders %s -> %s (%zu bytes)", id.c_str(), player.address.c_str(), bytes.size());
+        return;
+    }
     if (safe && path == "/ranga/manifest") file = g_updates + kSep + "manifest.txt";
     else if (safe && path == "/ranga/manifest.sig") file = g_updates + kSep + "manifest.sig";
     else if (safe && path.rfind("/ranga/f/", 0) == 0 && path.size() > 9 && std::count(path.begin() + 9, path.end(), '/') <= 1) {
@@ -548,6 +561,7 @@ int main(int argc, char** argv) {
         if (std::strcmp(argv[i], "--port") == 0) port = std::atoi(argv[++i]);
         else if (std::strcmp(argv[i], "--log") == 0) g_log = std::fopen(argv[++i], "a");
         else if (std::strcmp(argv[i], "--atualizacao") == 0) g_updates = argv[++i];
+        else if (std::strcmp(argv[i], "--shaders") == 0) g_shaders = argv[++i];
         else if (std::strcmp(argv[i], "--perfis") == 0) g_dataFolder = argv[++i];
         else if (std::strcmp(argv[i], "--grupo") == 0) g_group = argv[++i];
         else if (std::strcmp(argv[i], "--hub-xbox") == 0) hubPort = std::atoi(argv[++i]);

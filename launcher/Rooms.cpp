@@ -229,6 +229,26 @@ void SetExtraLan(const std::wstring& root, Extra extra, bool on) {
     WritePrivateProfileStringW(Info(extra).section, L"lan", on ? L"1" : L"0", Ini(root).c_str());
 }
 
+void ShareShaderCaches(const std::wstring& root) {
+    // Eden keeps each game's cache in bios\retroarch\eden\shader\<title id>\; vulkan.bin is the part any GPU can use
+    // (vulkan_pipelines.bin is this GPU's own). A newer or bigger one is copied over the shared one.
+    const std::wstring from = root + L"\\bios\\retroarch\\eden\\shader", to = root + L"\\salas\\shaders";
+    CreateDirectoryW(to.c_str(), nullptr);
+    WIN32_FIND_DATAW found;
+    HANDLE search = FindFirstFileW((from + L"\\*").c_str(), &found);
+    if (search == INVALID_HANDLE_VALUE) return;
+    do {
+        const std::wstring id = found.cFileName;
+        if ((found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0 || id.size() != 16) continue;
+        const std::wstring source = from + L"\\" + id + L"\\vulkan.bin", target = to + L"\\" + Lower(id) + L".bin";
+        unsigned long long sourceStamp = 0, sourceSize = 0, targetStamp = 0, targetSize = 0;
+        if (!FileStamp(source, sourceStamp, sourceSize) || sourceSize == 0) continue;
+        if (FileStamp(target, targetStamp, targetSize) && targetSize >= sourceSize && targetStamp >= sourceStamp) continue;
+        CopyFileW(source.c_str(), target.c_str(), FALSE);
+    } while (FindNextFileW(search, &found));
+    FindClose(search);
+}
+
 int ProbeRoom(const std::string& address, int defaultPort, bool tcp) {
     std::string host = address;
     int port = defaultPort;
@@ -347,6 +367,9 @@ std::wstring StartExtra(const std::wstring& root, Extra extra) {
         if (ExtraLan(root, extra)) command += L" --lan";
         // The Xbox's System Link hub rides along, on its own UDP port.
         command += L" --hub-xbox " + std::to_wstring(XboxHubPort(root));
+        // The Switch games' shader caches this PC hands out (ShareShaderCaches keeps them up to date).
+        CreateDirectoryW((root + L"\\salas\\shaders").c_str(), nullptr);
+        command += L" --shaders \"" + root + L"\\salas\\shaders\"";
         command += L" --log \"" + log + L"\" --atualizacao \"" + root + L"\\salas\\atualizacao\" --perfis \"" + root + L"\\salas\\perfis\"";
         // The group's code, when the friends set one (letters and digits only, see PlayerProfile.hpp GroupCode).
         std::wstring group;

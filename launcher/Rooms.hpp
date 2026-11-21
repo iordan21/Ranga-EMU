@@ -60,6 +60,9 @@ int XboxHubPort(const std::wstring& root);
 // defaultPort). Switch and 3DS rooms (ENet, UDP) get a connection request, which a room answers at once; the classics'
 // server (tcp) a connection. Blocks: run it off the drawing thread.
 int ProbeRoom(const std::string& address, int defaultPort, bool tcp);
+// On the hosting PC: copies each Switch game's portable shader cache (Eden's vulkan.bin) to salas\shaders\<id>.bin,
+// which the classics' server hands out (GET /ranga/shaders/<id>.bin).
+void ShareShaderCaches(const std::wstring& root);
 // This PC's addresses on home networks (192.168.x, 10.x, 172.16-31.x), for the friends in the same house.
 std::vector<std::wstring> LanAddresses();
 bool ExtraRunning(const std::wstring& root, Extra extra);

@@ -3151,6 +3151,7 @@ struct Client {
         if (game.system == L"3DS" && EngineFor(game.system).native) Room3dsSection(game, label, labelWidth, scale);
         if (game.system == L"PS3" && EngineFor(game.system).native) Ps3OnlineSection(game, label, labelWidth, scale);
         if (game.system == L"XBOX" && EngineFor(game.system).native) XboxOnlineSection(game, label, labelWidth, scale);
+        if (game.system == L"SWITCH" && EngineFor(game.system).native) ShaderCacheSection(game, label, labelWidth, scale);
         if (game.system == L"SWITCH" && EngineFor(game.system).native) {
             // Eden's multiplayer rooms: the game's local wireless / LAN mode goes through a room over UDP. The core
             // joins or hosts the room when the game starts, so nothing here changes a game that is already open.
@@ -3526,6 +3527,74 @@ struct Client {
         }
         ImGui::EndDisabled();
         if (running) ImGui::TextDisabled("Feche o jogo para mudar o online.");
+    }
+
+    // Cache de shaders: the Switch game's portable shader cache (Eden's vulkan.bin) fetched from the PC that hosts
+    // (its classics' server, /ranga/shaders/<id>.bin), so the first races don't stutter while shaders compile. It
+    // replaces the one here only when bigger (more shaders); the GPU's own part (vulkan_pipelines.bin) is rebuilt here.
+    std::atomic<bool> shaderBusy{false};
+    std::string shaderResult; // under probeLock
+
+    template <typename Label> void ShaderCacheSection(const Game& game, Label& label, float labelWidth, float scale) {
+        const std::wstring id = DetectSwitchContent(game.folder).titleId;
+        if (id.size() != 16) return;
+        const std::wstring local = library.Root() + L"\\bios\\retroarch\\eden\\shader\\" + Lower(id) + L"\\vulkan.bin";
+        unsigned long long stamp = 0, size = 0;
+        FileStamp(local, stamp, size);
+        ImGui::Dummy(ImVec2(0, 6 * scale));
+        ImGui::Separator();
+        ImGui::Dummy(ImVec2(0, 2 * scale));
+        label("Cache de shaders");
+        ImGui::AlignTextToFramePadding();
+        if (size > 0) ImGui::Text("%.1f MB neste PC", size / 1048576.0);
+        else ImGui::TextDisabled("nenhum ainda");
+        if (!RoomServerEnabled(library.Root())) {
+            ImGui::SameLine(0, 12 * scale);
+            const bool running = runner.Busy() && runner.TitleId() == game.titleId;
+            ImGui::BeginDisabled(shaderBusy || running);
+            if (ImGui::Button(shaderBusy ? "Baixando...###shaders" : "Baixar dos amigos###shaders")) {
+                shaderBusy = true;
+                std::thread([this, root = library.Root(), id, local, size] {
+                    std::string result = "O PC que hospeda não respondeu ou ainda não tem cache deste jogo.";
+                    for (const std::wstring& source : UpdateSources(root)) {
+                        if (source.find(L"github") != std::wstring::npos) continue;
+                        const HttpResult answer = HttpRequest("GET", Utf8(source) + "/ranga/shaders/" + Utf8(Lower(id)) + ".bin", "", "", "RangaEmu", 120000);
+                        if (answer.status != 200 || answer.body.size() < 64) continue;
+                        if (answer.body.size() <= size) {
+                            result = "O seu cache já é do mesmo tamanho ou maior: nada mudou.";
+                            break;
+                        }
+                        CreateDirectoryW((root + L"\\bios\\retroarch\\eden\\shader").c_str(), nullptr);
+                        CreateDirectoryW(local.substr(0, local.find_last_of(L'\\')).c_str(), nullptr);
+                        if (FILE* file = _wfopen(local.c_str(), L"wb")) {
+                            std::fwrite(answer.body.data(), 1, answer.body.size(), file);
+                            std::fclose(file);
+                            char text[160];
+                            std::snprintf(text, sizeof(text), "Cache de %.1f MB baixado: as primeiras corridas não devem mais travar.", answer.body.size() / 1048576.0);
+                            result = text;
+                        }
+                        break;
+                    }
+                    std::lock_guard guard(probeLock);
+                    shaderResult = result;
+                    shaderBusy = false;
+                }).detach();
+            }
+            ImGui::EndDisabled();
+        }
+        ImGui::SetCursorPosX(labelWidth);
+        ImGui::PushTextWrapPos(0);
+        std::string shown;
+        {
+            std::lock_guard guard(probeLock);
+            shown = shaderResult;
+        }
+        if (!shown.empty()) ImGui::TextUnformatted(shown.c_str());
+        else if (RoomServerEnabled(library.Root()))
+            ImGui::TextDisabled("Este PC hospeda: o cache dele vai para os amigos sozinho, pela sala dos clássicos.");
+        else
+            ImGui::TextDisabled("Os shaders que o PC que hospeda já compilou neste jogo, para as primeiras partidas não travarem. Não contém o jogo.");
+        ImGui::PopTextWrapPos();
     }
 
     // Whether the PS3 game's code was compiled once to the end (the core leaves cache\<serial>\ranga-pronto.txt);
@@ -5162,6 +5231,8 @@ struct Client {
             // The console's own menu (StartSystem) is no game.
             if (key.size() > 8 && key.compare(key.size() - 8, 8, L"-SISTEMA") == 0) continue;
             profile.RecordSession(key, ended.game.system, ended.game.title, ended.started, ended.seconds, ended.online);
+            // The hosting PC: the shaders this run compiled go to the friends (Cache de shaders).
+            if (ended.game.system == L"SWITCH" && RoomServerEnabled(library.Root())) ShareShaderCaches(library.Root());
             // A crash (an NTSTATUS error such as 0xC0000005): the report, which keeps the logs of this very run, is
             // offered at once, before another start writes over them.
             if ((ended.code & 0xF0000000u) == 0xC0000000u && ended.code != 0xCFFFFFFFu) {
@@ -6999,6 +7070,11 @@ struct Client {
             }
         }
         TakePlayCheck();
+        // The hosting PC shares its Switch shader caches once Ranga is open (and after each Switch game, ProcessEnded).
+        if (static bool shared = false; !shared) {
+            shared = true;
+            if (RoomServerEnabled(library.Root())) std::thread([root = library.Root()] { ShareShaderCaches(root); }).detach();
+        }
         // The library goes in the profile card (who has what), looked at again every 10 s.
         if (static ULONGLONG ownedAt = 0; profileLoaded && GetTickCount64() - ownedAt > 10000) {
             ownedAt = GetTickCount64();
