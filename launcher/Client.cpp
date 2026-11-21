@@ -2266,6 +2266,7 @@ struct Client {
     }
 
     void OpenConsole() {
+        librarySearch.fill(0); // each console's page opens with every game
         // What was dropped in the console's folder since the last look comes in now.
         const std::wstring keep = Current() != nullptr ? Current()->titleId : L"";
         library.ScanGamesFolders(console);
@@ -2692,8 +2693,20 @@ struct Client {
         if (gamepads.Connected()) draw->AddText(nullptr, ImGui::GetFontSize() * 0.9f, ImVec2(origin.x + left, origin.y + size.y - 30 * scale), Packed(kDim), hint);
     }
 
+    std::array<char, 64> librarySearch{}; // what was typed in the console page's search
+
+    // Lower case without accents, for the search: "Pokémon" and "pokemon" meet.
+    static std::wstring Plainer(std::wstring text) {
+        static const std::wstring accented = L"àáâãäåçèéêëìíîïñòóôõöùúûüýÿ", plain = L"aaaaaaceeeeiiiinooooouuuuyy";
+        for (auto& c : text) {
+            c = static_cast<wchar_t>(towlower(c));
+            if (const size_t at = accented.find(c); at != std::wstring::npos) c = plain[at];
+        }
+        return text;
+    }
+
     void ConsolePage(float scale, const Nav& input) {
-        const auto games = ConsoleGames(console);
+        auto games = ConsoleGames(console);
         ImDrawList* draw = ImGui::GetWindowDrawList();
         const ImVec2 origin = ImGui::GetWindowPos(), size = ImGui::GetWindowSize();
         // The top row here is Consoles, Adicionar jogo and Emuladores.
@@ -2720,6 +2733,13 @@ struct Client {
             ImGui::SetCursorPosY(22 * scale);
             if (ImGui::Button("Pasta de jogos", ImVec2(0, 36 * scale))) pending = [this] { OpenGamesFolder(); };
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Abre a pasta deste console. O que você colocar nela entra na lista sozinho.");
+            // Search: the games whose name has what was typed (no matter accents or capitals).
+            ImGui::SameLine(0, 12 * scale);
+            ImGui::SetCursorPosY(22 * scale);
+            ImGui::SetNextItemWidth(220 * scale);
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10 * scale, 9 * scale));
+            ImGui::InputTextWithHint("##busca", "Buscar jogo...", librarySearch.data(), librarySearch.size());
+            ImGui::PopStyleVar();
         }
         TopButtons(scale, size.x - left, 1);
 
@@ -2755,6 +2775,15 @@ struct Client {
             return;
         }
 
+        if (librarySearch[0] != 0) {
+            const std::wstring wanted = Plainer(Wide(librarySearch.data()));
+            std::erase_if(games, [&](int index) { return Plainer(library.Games()[static_cast<size_t>(index)].title).find(wanted) == std::wstring::npos; });
+            if (games.empty()) {
+                ImGui::SetCursorPos(ImVec2(left, 110 * scale));
+                ImGui::TextDisabled("Nenhum jogo com \"%s\" no nome.", librarySearch.data());
+                return;
+            }
+        }
         const float tile = 168 * scale, gap = 22 * scale, label = ImGui::GetFontSize() * 2.7f;
         ImGui::SetCursorPos(ImVec2(left, 80 * scale));
         ImGui::BeginChild("##grid", ImVec2(size.x - left, 0), ImGuiChildFlags_None);
