@@ -151,6 +151,8 @@ struct SwitchContent {
 SwitchContent DetectSwitchContent(const std::wstring& path);
 // The library key of a game file: console and a hash of its path, so the same file is added once.
 std::wstring FileKey(const std::wstring& system, const std::wstring& path);
+// An Xbox 360 game's title id ("4D5307E6"), read from its default.xex (folder, loose .xex or disc image); empty if none.
+std::wstring X360TitleId(const std::wstring& path);
 
 }
 

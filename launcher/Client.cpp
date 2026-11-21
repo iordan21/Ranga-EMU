@@ -1826,6 +1826,8 @@ struct Client {
             files.push_back(wanted);
         }
         if (game.system == L"PSP") files.push_back(art + (icon ? L"\\ICON0.PNG" : L"\\PIC1.PNG"));
+        // A Wii U game in a folder carries its menu icon and its TV boot picture in meta (TGA, which the loader reads).
+        if (game.system == L"WIIU" && IsDirectory(game.folder)) files.push_back(game.folder + (icon ? L"\\meta\\iconTex.tga" : L"\\meta\\bootTvTex.tga"));
         // The Switch core keeps the game's own icon here the first time the game runs: no box art server has the Switch.
         if (game.system == L"SWITCH" && icon) files.push_back(art + L"\\icon.jpg");
         files.push_back(BoxartFile(game));

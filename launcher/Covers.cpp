@@ -1,4 +1,5 @@
 #include "Covers.hpp"
+#include "Systems.hpp"
 
 #include <windows.h>
 #include <winhttp.h>
@@ -69,15 +70,15 @@ std::wstring Unescape(const std::string& href) {
 }
 
 // GET https://<host><path>; the HTTP status, or 0 when the server could not be reached.
-int Get(const wchar_t* host, const std::wstring& path, std::string& body) {
+int Get(const wchar_t* host, const std::wstring& path, std::string& body, bool secure = true) {
     body.clear();
     HINTERNET session = WinHttpOpen(L"RangaEmu", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (session == nullptr) session = WinHttpOpen(L"RangaEmu", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (session == nullptr) return 0;
     WinHttpSetTimeouts(session, 5000, 5000, 10000, 15000);
     int status = 0;
-    if (HINTERNET connection = WinHttpConnect(session, host, INTERNET_DEFAULT_HTTPS_PORT, 0)) {
-        if (HINTERNET request = WinHttpOpenRequest(connection, L"GET", path.c_str(), nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE)) {
+    if (HINTERNET connection = WinHttpConnect(session, host, secure ? INTERNET_DEFAULT_HTTPS_PORT : INTERNET_DEFAULT_HTTP_PORT, 0)) {
+        if (HINTERNET request = WinHttpOpenRequest(connection, L"GET", path.c_str(), nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, secure ? WINHTTP_FLAG_SECURE : 0)) {
             if (WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) && WinHttpReceiveResponse(request, nullptr)) {
                 DWORD code = 0, size = sizeof(code);
                 WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_HEADER_NAME_BY_INDEX, &code, &size, WINHTTP_NO_HEADER_INDEX);
@@ -348,6 +349,26 @@ const std::vector<std::wstring>* CoverFetcher::List(const std::wstring& folder) 
 }
 
 void CoverFetcher::Fetch(const Job& job) {
+    // Xbox 360: libretro has only a dozen of its boxes, Microsoft's own store images have them all, named after the
+    // game's title id (read from its default.xex). That server answers on plain HTTP only.
+    if (job.system == L"X360") {
+        const std::wstring id = X360TitleId(job.folder);
+        const std::wstring art = job.workspace + L"\\art";
+        MakeFolders(job.workspace);
+        CreateDirectoryW(art.c_str(), nullptr);
+        std::string jpg;
+        const int status = id.empty() ? 404 : Get(L"download.xbox.com", L"/content/images/66acd000-77fe-1000-9115-d802" + Lower(id) + L"/1033/boxartlg.jpg", jpg, false);
+        if (status == 404 || status == 403) {
+            WriteAll(art + L"\\boxart.falta", "Xbox 360 " + Utf8(id) + "\n");
+            return;
+        }
+        // The fetched box is kept as boxart.png whatever its format: the picture loader reads it by its bytes.
+        if (status != 200 || jpg.size() < 4 || static_cast<unsigned char>(jpg[0]) != 0xFF || static_cast<unsigned char>(jpg[1]) != 0xD8) return;
+        if (!WriteAll(art + L"\\boxart.png", jpg)) return;
+        std::lock_guard guard(lock);
+        done.push_back(job.titleId);
+        return;
+    }
     const std::wstring folder = CoverFolder(job.system, Extension(job.folder));
     const std::vector<std::wstring>* list = List(folder);
     if (list == nullptr) return; // offline or the server has no list: try again next time

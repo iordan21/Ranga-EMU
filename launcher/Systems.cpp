@@ -1190,6 +1190,50 @@ void ExtractArt(const std::wstring& system, const std::wstring& path, const std:
 
 std::wstring FileKey(const std::wstring& system, const std::wstring& path) { return system + L"-" + Fnv(path); }
 
+std::wstring X360TitleId(const std::wstring& path) {
+    // The XEX's own header is plain (only the code is encrypted): after "XEX2", the module flags, the PE offset, a
+    // reserved word and the security info offset comes the count of optional headers, each a key and a value. Key
+    // 0x00040006, the execution info, points at media id, version, base version, then the title id.
+    const auto titleOf = [](const std::string& xex) -> std::wstring {
+        if (xex.size() < 24 || xex.compare(0, 4, "XEX2") != 0) return L"";
+        const unsigned count = Be32(xex, 20);
+        for (unsigned i = 0; i < count && 24 + i * 8 + 8 <= xex.size(); ++i) {
+            if (Be32(xex, 24 + i * 8) != 0x00040006u) continue;
+            const unsigned at = Be32(xex, 24 + i * 8 + 4);
+            if (at + 16 > xex.size()) return L"";
+            wchar_t id[9] = {};
+            std::swprintf(id, 9, L"%08X", Be32(xex, at + 12));
+            return id;
+        }
+        return L"";
+    };
+    if (IsDirectory(path)) return titleOf(Reader(path + L"\\default.xex").At(0, 1 << 16));
+    if (Lower(path).size() > 4 && Lower(path).compare(Lower(path).size() - 4, 4, L".xex") == 0) return titleOf(Reader(path).At(0, 1 << 16));
+    // A disc: the XDVDFS root lists default.xex. Each entry is two tree links, its sector and size, attributes, the
+    // name's length and the name, 4-byte aligned; 0xFF fills a sector's end.
+    Reader reader(path);
+    for (const long long volume : {0x10000LL, 0xFDA0000LL, 0x2090000LL, 0x18310000LL}) {
+        const std::string descriptor = reader.At(volume, 32);
+        if (descriptor.rfind("MICROSOFT*XBOX*MEDIA", 0) != 0) continue;
+        const long long base = volume - 0x10000;
+        const std::string folder = reader.At(base + static_cast<long long>(Le32(descriptor, 20)) * 2048, std::min<size_t>(Le32(descriptor, 24), 1 << 16));
+        for (size_t at = 0; at + 14 <= folder.size();) {
+            if (static_cast<unsigned char>(folder[at]) == 0xFF && static_cast<unsigned char>(folder[at + 1]) == 0xFF) {
+                at = (at / 2048 + 1) * 2048;
+                continue;
+            }
+            const size_t length = static_cast<unsigned char>(folder[at + 13]);
+            if (at + 14 + length > folder.size()) break;
+            std::string name = folder.substr(at + 14, length);
+            for (auto& c : name) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+            if (name == "default.xex") return titleOf(reader.At(base + static_cast<long long>(Le32(folder, at + 4)) * 2048, std::min<size_t>(Le32(folder, at + 8), 1 << 16)));
+            at = (at + 14 + length + 3) & ~static_cast<size_t>(3);
+        }
+        return L"";
+    }
+    return L"";
+}
+
 SwitchContent DetectSwitchContent(const std::wstring& path) {
     const auto isHex = [](const std::wstring& text, size_t from, size_t count) {
         if (from + count > text.size()) return false;
