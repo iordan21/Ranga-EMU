@@ -4,6 +4,7 @@
 #include <winhttp.h>
 
 #include <cctype>
+#include <cstdlib>
 #include <cstring>
 #include <cwctype>
 #include <utility>
@@ -12,7 +13,18 @@ namespace Ranga {
 
 namespace {
 
-constexpr const wchar_t* kHost = L"thumbnails.libretro.com";
+// The covers come from libretro-thumbnails on GitHub: thumbnails.libretro.com, where they were read before, answers
+// 404 for every console since November 2026. Each console is a repository named after its folder with "_" for the
+// spaces ("Sony - PlayStation 2" is libretro-thumbnails/Sony_-_PlayStation_2); its list comes from GitHub's API and
+// each picture from raw.githubusercontent.com.
+constexpr const wchar_t* kApiHost = L"api.github.com";
+constexpr const wchar_t* kRawHost = L"raw.githubusercontent.com";
+
+std::wstring Repository(const std::wstring& folder) {
+    std::wstring name = folder;
+    for (auto& c : name) if (c == L' ') c = L'_';
+    return name;
+}
 
 // "%20"-style escapes of the UTF-8 bytes, for one part of a URL path.
 std::wstring Escape(const std::wstring& part) {
@@ -56,15 +68,15 @@ std::wstring Unescape(const std::string& href) {
     return Wide(bytes);
 }
 
-// GET https://thumbnails.libretro.com<path>; the HTTP status, or 0 when the server could not be reached.
-int Get(const std::wstring& path, std::string& body) {
+// GET https://<host><path>; the HTTP status, or 0 when the server could not be reached.
+int Get(const wchar_t* host, const std::wstring& path, std::string& body) {
     body.clear();
     HINTERNET session = WinHttpOpen(L"RangaEmu", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (session == nullptr) session = WinHttpOpen(L"RangaEmu", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (session == nullptr) return 0;
     WinHttpSetTimeouts(session, 5000, 5000, 10000, 15000);
     int status = 0;
-    if (HINTERNET connection = WinHttpConnect(session, kHost, INTERNET_DEFAULT_HTTPS_PORT, 0)) {
+    if (HINTERNET connection = WinHttpConnect(session, host, INTERNET_DEFAULT_HTTPS_PORT, 0)) {
         if (HINTERNET request = WinHttpOpenRequest(connection, L"GET", path.c_str(), nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE)) {
             if (WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) && WinHttpReceiveResponse(request, nullptr)) {
                 DWORD code = 0, size = sizeof(code);
@@ -228,7 +240,7 @@ void CoverFetcher::Request(const Game& game) {
         std::lock_guard guard(lock);
         if (!asked.insert(game.titleId).second) return;
     }
-    if (Exists(BoxartFile(game)) || Exists(game.workspace + L"\\art\\boxart.miss")) return;
+    if (Exists(BoxartFile(game)) || Exists(game.workspace + L"\\art\\boxart.falta")) return;
     {
         std::lock_guard guard(lock);
         jobs.push_back({game.titleId, game.system, game.workspace, game.folder, game.title});
@@ -278,17 +290,45 @@ const std::vector<std::wstring>* CoverFetcher::List(const std::wstring& folder) 
     const bool fresh = Exists(cache) && ticks(now) - ticks(kept) < 30ull * 24 * 3600 * 10000000;
     if (fresh) parse(ReadBytes(cache));
     if (!fresh || list.empty()) {
-        std::string page;
-        if (Get(L"/" + Escape(folder) + L"/Named_Boxarts/", page) == 200) {
+        // The repository's top tree names the Named_Boxarts folder's own tree, which lists every picture.
+        const std::wstring api = L"/repos/libretro-thumbnails/" + Escape(Repository(folder)) + L"/git/trees/";
+        std::string top, page, boxarts;
+        if (Get(kApiHost, api + L"master", top) == 200) {
+            const size_t at = top.find("\"path\":\"Named_Boxarts\"");
+            const size_t sha = at == std::string::npos ? std::string::npos : top.find("\"sha\":\"", at);
+            if (sha != std::string::npos) boxarts = top.substr(sha + 7, 40);
+        }
+        if (boxarts.size() == 40 && Get(kApiHost, api + Wide(boxarts), page) == 200) {
             std::string text;
-            for (size_t at = 0; (at = page.find("href=\"", at)) != std::string::npos;) {
-                at += 6;
-                const size_t end = page.find('"', at);
-                if (end == std::string::npos) break;
-                const std::string href = page.substr(at, end - at);
-                at = end;
-                if (href.size() > 4 && href.compare(href.size() - 4, 4, ".png") == 0 && href.find('/') == std::string::npos)
-                    text += Utf8(Unescape(href.substr(0, href.size() - 4))) + "\n";
+            for (size_t at = 0; (at = page.find("\"path\":\"", at)) != std::string::npos;) {
+                at += 8;
+                std::string name;
+                for (; at < page.size() && page[at] != '"'; ++at) {
+                    if (page[at] != '\\' || at + 1 >= page.size()) {
+                        name += page[at];
+                        continue;
+                    }
+                    const char next = page[++at];
+                    if (next == 'u' && at + 4 < page.size()) {
+                        // A \u escape, written back as UTF-8 (the names stay inside the Basic Multilingual Plane).
+                        const unsigned code = static_cast<unsigned>(std::strtoul(page.substr(at + 1, 4).c_str(), nullptr, 16));
+                        at += 4;
+                        if (code < 0x80) {
+                            name += static_cast<char>(code);
+                        } else if (code < 0x800) {
+                            name += static_cast<char>(0xC0 | (code >> 6));
+                            name += static_cast<char>(0x80 | (code & 0x3F));
+                        } else {
+                            name += static_cast<char>(0xE0 | (code >> 12));
+                            name += static_cast<char>(0x80 | ((code >> 6) & 0x3F));
+                            name += static_cast<char>(0x80 | (code & 0x3F));
+                        }
+                    } else {
+                        name += next;
+                    }
+                }
+                if (name.size() > 4 && name.compare(name.size() - 4, 4, ".png") == 0 && name.find('/') == std::string::npos)
+                    text += name.substr(0, name.size() - 4) + "\n";
             }
             if (!text.empty()) {
                 CreateDirectoryW((root + L"\\covers").c_str(), nullptr);
@@ -334,13 +374,13 @@ void CoverFetcher::Fetch(const Job& job) {
     MakeFolders(job.workspace);
     CreateDirectoryW(art.c_str(), nullptr);
     if (match.empty()) {
-        WriteAll(art + L"\\boxart.miss", Utf8(folder) + "\n");
+        WriteAll(art + L"\\boxart.falta", Utf8(folder) + "\n");
         return;
     }
     std::string png;
-    const int status = Get(L"/" + Escape(folder) + L"/Named_Boxarts/" + Escape(match) + L".png", png);
+    const int status = Get(kRawHost, L"/libretro-thumbnails/" + Escape(Repository(folder)) + L"/master/Named_Boxarts/" + Escape(match) + L".png", png);
     if (status == 404) {
-        WriteAll(art + L"\\boxart.miss", Utf8(folder + L"/" + match) + "\n");
+        WriteAll(art + L"\\boxart.falta", Utf8(folder + L"/" + match) + "\n");
         return;
     }
     if (status != 200 || png.size() < 8 || png.compare(1, 3, "PNG") != 0) return;
