@@ -1,3 +1,4 @@
+#define RANGA_REAL_WRITE_INI
 #include "Common.hpp"
 
 #include <objidl.h>
@@ -8,6 +9,8 @@
 #include <cstring>
 #include <cwchar>
 #include <cwctype>
+#include <map>
+#include <mutex>
 
 namespace Ranga {
 
@@ -344,9 +347,67 @@ void EnsureUnicodeIni(const std::wstring& path) {
     fclose(file);
 }
 
+bool FileStamp(const std::wstring& path, unsigned long long& stamp, unsigned long long& size) {
+    WIN32_FILE_ATTRIBUTE_DATA data;
+    if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &data)) return false;
+    stamp = (static_cast<unsigned long long>(data.ftLastWriteTime.dwHighDateTime) << 32) | data.ftLastWriteTime.dwLowDateTime;
+    size = (static_cast<unsigned long long>(data.nFileSizeHigh) << 32) | data.nFileSizeLow;
+    return true;
+}
+
+// The interface asks for the same few settings every frame, and each GetPrivateProfileString opens, reads and closes
+// the file. The answers of an ini are kept: looked at again (its time and size) at most every half second, dropped when
+// it changed, and dropped at once when Ranga itself writes it (WriteIni, which WritePrivateProfileStringW stands for).
+namespace {
+
+struct KeptIni {
+    ULONGLONG checkedAt = 0;
+    unsigned long long stamp = 0, size = 0;
+    bool exists = false;
+    std::map<std::wstring, std::wstring> answers; // section \n key \n fallback -> value
+};
+std::mutex g_iniLock;
+std::map<std::wstring, KeptIni> g_ini;
+
+}
+
+void ForgetIni(const std::wstring& path) {
+    std::lock_guard guard(g_iniLock);
+    g_ini.erase(Lower(path));
+}
+
+BOOL WriteIni(const wchar_t* section, const wchar_t* key, const wchar_t* value, const wchar_t* path) {
+    const BOOL done = ::WritePrivateProfileStringW(section, key, value, path);
+    if (path != nullptr) ForgetIni(path);
+    return done;
+}
+
 std::wstring ReadIni(const std::wstring& path, const wchar_t* section, const wchar_t* key, const wchar_t* fallback) {
+    if (section == nullptr || key == nullptr) {
+        wchar_t value[MAX_PATH * 2] = {};
+        GetPrivateProfileStringW(section, key, fallback, value, MAX_PATH * 2, path.c_str());
+        return value;
+    }
+    const std::wstring file = Lower(path);
+    const std::wstring id = std::wstring(section) + L"\n" + key + L"\n" + (fallback != nullptr ? fallback : L"");
+    {
+        std::lock_guard guard(g_iniLock);
+        KeptIni& kept = g_ini[file];
+        const ULONGLONG now = GetTickCount64();
+        if (kept.checkedAt == 0 || now - kept.checkedAt >= 500) {
+            unsigned long long stamp = 0, size = 0;
+            const bool exists = FileStamp(path, stamp, size);
+            if (exists != kept.exists || stamp != kept.stamp || size != kept.size) kept.answers.clear();
+            kept.exists = exists, kept.stamp = stamp, kept.size = size, kept.checkedAt = now;
+        }
+        if (const auto found = kept.answers.find(id); found != kept.answers.end()) return found->second;
+    }
     wchar_t value[MAX_PATH * 2] = {};
     GetPrivateProfileStringW(section, key, fallback, value, MAX_PATH * 2, path.c_str());
+    std::lock_guard guard(g_iniLock);
+    KeptIni& kept = g_ini[file];
+    if (kept.answers.size() > 2048) kept.answers.clear();
+    kept.answers[id] = value;
     return value;
 }
 

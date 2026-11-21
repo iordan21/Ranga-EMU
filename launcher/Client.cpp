@@ -545,7 +545,16 @@ public:
     void Start() {
         if (started) return;
         SDL_SetMainReady();
+        // As in Ranga Retro: DirectInput's look for pads costs about 300 ms (here, every time a game closes) and only
+        // old generic pads need it, so it comes in only when the first look finds no pad.
+        const bool directInputChosen = std::getenv("SDL_DIRECTINPUT_ENABLED") != nullptr;
+        if (!directInputChosen) SDL_SetHint("SDL_DIRECTINPUT_ENABLED", "0");
         if (SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) != 0) return;
+        if (!directInputChosen && SDL_NumJoysticks() == 0) {
+            SDL_QuitSubSystem(SDL_INIT_GAMECONTROLLER);
+            SDL_SetHint("SDL_DIRECTINPUT_ENABLED", "1");
+            if (SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) != 0) return;
+        }
         started = true;
         Open();
     }
@@ -856,6 +865,13 @@ struct Client {
         if (!RoomServerEnabled(root) && (_wgetenv(L"RANGA_CLIENT_TEST_INPUT") == nullptr || autoUpdate)) StartUpdateCheck();
         // RANGA_CLIENT_PAGE=novidades (tests): opens on the news board.
         if (const wchar_t* start = _wgetenv(L"RANGA_CLIENT_PAGE"); start != nullptr && std::wstring(start) == L"novidades") newsOpen = true;
+        // RANGA_CLIENT_PAGE=jogo:<titleId> (tests): opens on that game's page.
+        if (const wchar_t* start = _wgetenv(L"RANGA_CLIENT_PAGE"); start != nullptr && std::wstring(start).rfind(L"jogo:", 0) == 0) {
+            const std::wstring id = std::wstring(start).substr(5);
+            for (size_t i = 0; i < library.Games().size(); ++i) {
+                if (library.Games()[i].titleId == id) pending = [this, index = static_cast<int>(i)] { OpenGame(index); };
+            }
+        }
     }
     ~Client() {
         if (updateThread.joinable()) updateThread.join();

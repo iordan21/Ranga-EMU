@@ -7,6 +7,7 @@
 #include <cwchar>
 #include <filesystem>
 #include <map>
+#include <mutex>
 
 namespace Ranga {
 
@@ -461,9 +462,48 @@ Options LoadOptions(const Game& game) {
 namespace {
 
 // Each line of core-options.ini as its key (empty for a line that is not "key = value") and the line itself.
-std::vector<std::pair<std::string, std::string>> CoreOptionLines(const Game& game) {
+// The game's page asks for its options many times a frame: the file's lines are kept with its time and size, and
+// read again only when those change (by Ranga, or by Ranga Retro when the player picks an option in the game).
+std::vector<std::pair<std::string, std::string>> ReadCoreOptionLines(const std::wstring& path);
+
+// Looked at again (time and size) at most every half second; Ranga's own writes (WriteCoreOption) drop it at once.
+struct KeptOptions {
+    ULONGLONG checkedAt = 0;
+    unsigned long long stamp = 0, size = 0;
+    bool exists = false;
     std::vector<std::pair<std::string, std::string>> lines;
-    const std::string text = ReadBytes(game.workspace + L"\\core-options.ini");
+};
+std::mutex g_optionsLock;
+std::map<std::wstring, KeptOptions> g_options;
+
+std::vector<std::pair<std::string, std::string>> CoreOptionLines(const Game& game) {
+    const std::wstring path = game.workspace + L"\\core-options.ini";
+    const ULONGLONG now = GetTickCount64();
+    {
+        std::lock_guard guard(g_optionsLock);
+        if (const auto found = g_options.find(path); found != g_options.end()) {
+            KeptOptions& kept = found->second;
+            if (now - kept.checkedAt < 500) return kept.lines;
+            unsigned long long stamp = 0, size = 0;
+            const bool exists = FileStamp(path, stamp, size);
+            if (exists == kept.exists && stamp == kept.stamp && size == kept.size) {
+                kept.checkedAt = now;
+                return kept.lines;
+            }
+        }
+    }
+    KeptOptions kept;
+    kept.exists = FileStamp(path, kept.stamp, kept.size);
+    kept.checkedAt = now;
+    if (kept.exists) kept.lines = ReadCoreOptionLines(path);
+    std::lock_guard guard(g_optionsLock);
+    if (g_options.size() > 512) g_options.clear();
+    return (g_options[path] = std::move(kept)).lines;
+}
+
+std::vector<std::pair<std::string, std::string>> ReadCoreOptionLines(const std::wstring& path) {
+    std::vector<std::pair<std::string, std::string>> lines;
+    const std::string text = ReadBytes(path);
     for (size_t start = 0; start < text.size();) {
         size_t end = text.find('\n', start);
         if (end == std::string::npos) end = text.size();
@@ -509,6 +549,8 @@ void WriteCoreOption(const Game& game, const std::string& key, const std::string
     if (_wfopen_s(&file, (game.workspace + L"\\core-options.ini").c_str(), L"wb") != 0 || file == nullptr) return;
     std::fwrite(out.data(), 1, out.size(), file);
     std::fclose(file);
+    std::lock_guard guard(g_optionsLock);
+    g_options.erase(game.workspace + L"\\core-options.ini");
 }
 
 namespace {

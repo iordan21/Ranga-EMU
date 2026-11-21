@@ -638,7 +638,21 @@ uint32_t Expand6(uint32_t value) { return (value << 2) | (value >> 4); }
 // RANGA_RETRO_STATS: frames the core handed over and frames it repeated, since the last stats line.
 int g_statsFrames = 0, g_statsDupes = 0;
 
+// How long opening the game took, step by step, in game.log: the program started at g_startedAt; the first frame the
+// core hands over (picture or not) closes the count.
+LARGE_INTEGER g_startedAt{}, g_counterRate{};
+double SinceStart() {
+    LARGE_INTEGER now;
+    QueryPerformanceCounter(&now);
+    return g_counterRate.QuadPart == 0 ? 0 : static_cast<double>(now.QuadPart - g_startedAt.QuadPart) * 1000.0 / static_cast<double>(g_counterRate.QuadPart);
+}
+bool g_firstFrameSeen = false;
+
 void RETRO_CALLCONV VideoRefresh(const void* data, unsigned width, unsigned height, size_t pitch) {
+    if (!g_firstFrameSeen) {
+        g_firstFrameSeen = true;
+        Log("[retro] tempo: primeiro quadro aos %.0f ms\n", SinceStart());
+    }
     // A null frame repeats the previous one (GET_CAN_DUPE).
     if (data == nullptr || width == 0 || height == 0) {
         ++g_statsDupes;
@@ -2347,6 +2361,8 @@ void StartOnline(const std::wstring& corePath, const std::wstring& romPath, bool
 }
 
 int RetroMain(int argc, wchar_t** argv) {
+    QueryPerformanceFrequency(&g_counterRate);
+    QueryPerformanceCounter(&g_startedAt);
     std::wstring corePath, romPath, title = L"jogo", optionsPath, systemDir, saveDir;
     // --option key=value: a core option for this run only, over the options file and never written to it (Ranga
     // passes its own room's local address this way when the room runs on this PC).
@@ -2444,13 +2460,28 @@ int RetroMain(int argc, wchar_t** argv) {
     SDL_SetMainReady();
     // The window is Win32, not SDL's, so SDL is told to read pads regardless of focus; the game checks focus itself.
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
-    if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) != 0) Log("[retro] SDL: %s\n", SDL_GetError());
+    const double beforeSdl = SinceStart();
+    if (SDL_Init(SDL_INIT_AUDIO) != 0) Log("[retro] SDL: %s\n", SDL_GetError());
+    // Looking for pads through DirectInput takes about 300 ms on every start, and only old generic pads need it: the
+    // DualSense and the Xbox pads come through HIDAPI, XInput and Raw Input. So the first look leaves DirectInput out,
+    // and only when it finds no pad at all does a second look bring it in (unless SDL_DIRECTINPUT_ENABLED was set).
+    const bool directInputChosen = std::getenv("SDL_DIRECTINPUT_ENABLED") != nullptr;
+    if (!directInputChosen) SDL_SetHint("SDL_DIRECTINPUT_ENABLED", "0");
+    if (SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) != 0) Log("[retro] SDL: %s\n", SDL_GetError());
+    if (!directInputChosen && SDL_NumJoysticks() == 0) {
+        SDL_QuitSubSystem(SDL_INIT_GAMECONTROLLER);
+        SDL_SetHint("SDL_DIRECTINPUT_ENABLED", "1");
+        if (SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) != 0) Log("[retro] SDL: %s\n", SDL_GetError());
+    }
     OpenPads();
 
+    const double beforeCore = SinceStart();
     if (!g.core.Load(corePath)) {
         Log("[retro] não deu para carregar o core %s\n", Utf8(corePath).c_str());
         return 3;
     }
+    const double coreLoaded = SinceStart();
+    Log("[retro] tempo: preparação até %.0f ms, controles e som (SDL) até %.0f ms, core carregado aos %.0f ms\n", beforeSdl, beforeCore, coreLoaded);
     // The order RetroArch uses: some cores (Mesen) make what keeps the other callbacks only in retro_init.
     g.core.setEnvironment(Environment);
     g.core.init();
@@ -2476,11 +2507,13 @@ int RetroMain(int argc, wchar_t** argv) {
     const std::string romUtf8 = Utf8(romPath);
     std::vector<unsigned char> romData;
     retro_game_info game{romUtf8.c_str(), nullptr, 0, nullptr};
+    const double beforeRead = SinceStart();
     if (!info.need_fullpath && !noGame) {
         romData = ReadFile(romPath);
         game.data = romData.data();
         game.size = romData.size();
     }
+    const double romRead = SinceStart();
     // The window exists before the game loads, so a GPU context can be made on it right after.
     g_window = CreateGameWindow(title);
     // A core that never ran a game is not unloaded either: some crash in retro_deinit (Mupen64Plus) and some hang while
@@ -2500,6 +2533,8 @@ int RetroMain(int argc, wchar_t** argv) {
     g.core.setControllerPort(0, RETRO_DEVICE_JOYPAD);
     g.core.setControllerPort(1, RETRO_DEVICE_JOYPAD);
     g.core.getAvInfo(&g.av);
+    Log("[retro] tempo: core carregado aos %.0f ms, jogo lido em %.0f ms (%s, %.1f MB), core abriu o jogo aos %.0f ms\n", coreLoaded,
+        romRead - beforeRead, info.need_fullpath ? "o core lê sozinho" : "lido pelo Ranga", romData.size() / 1048576.0, SinceStart());
     Log("[retro] %ux%u, %.3f fps, som %.0f Hz\n", g.av.geometry.base_width, g.av.geometry.base_height, g.av.timing.fps, g.av.timing.sample_rate);
 
     std::wstring romName = noGame ? L"sem-jogo" : romPath.substr(romPath.find_last_of(L"\\/") + 1);

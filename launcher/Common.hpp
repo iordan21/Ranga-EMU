@@ -51,7 +51,13 @@ void PrepareModules(const std::wstring& game, const std::wstring& prep, std::wst
 
 // The profile API writes Unicode only into a file that already starts with a UTF-16 byte order mark.
 void EnsureUnicodeIni(const std::wstring& path);
+// A file's last write time and size; false when it is not there.
+bool FileStamp(const std::wstring& path, unsigned long long& stamp, unsigned long long& size);
 std::wstring ReadIni(const std::wstring& path, const wchar_t* section, const wchar_t* key, const wchar_t* fallback);
+// Drops what ReadIni kept of that file. WriteIni writes (WritePrivateProfileStringW) and drops it, so the next read
+// sees the change; every WritePrivateProfileStringW in Ranga is WriteIni (the macro at the end of this file).
+void ForgetIni(const std::wstring& path);
+BOOL WriteIni(const wchar_t* section, const wchar_t* key, const wchar_t* value, const wchar_t* path);
 std::wstring Lower(std::wstring text);
 // A game's name as shown: what download sites and dump tools add to file names goes away ("(nswvault.com)",
 // "[0100...][v0]", "Base Game", "(USA)", "(En,Fr,De)", underscores); "(Disc 2)" and the like stay. Never empty.
@@ -72,5 +78,10 @@ bool WriteSosSetting(const std::wstring& workspace, const char* key, int value);
 void RequestFullscreen(const PROCESS_INFORMATION& process);
 
 }
+
+// Ranga's writes to its .ini files go through WriteIni, so what ReadIni keeps never goes stale.
+#ifndef RANGA_REAL_WRITE_INI
+#define WritePrivateProfileStringW Ranga::WriteIni
+#endif
 
 #endif
