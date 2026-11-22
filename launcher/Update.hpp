@@ -84,6 +84,20 @@ std::wstring PublishToGitHub(const std::wstring& root, std::string& version);
 // Uses Windows' own tar.exe; takes a minute or two (off the window's thread). made gets the zip's path.
 std::wstring MakeFriendPackage(const std::wstring& root, const std::wstring& folder, std::wstring& made);
 
+// ---- What the apps' store (Store.hpp) shares with the update ----
+
+// GET of a whole http(s) address (redirects followed, as GitHub's downloads need): the status, 0 when unreachable;
+// the body to memory or to a file.
+int DownloadUrl(const std::wstring& url, std::string* body, const std::wstring& toFile, const std::function<void(uint64_t)>& got);
+// Signed with the key only the hosting PC has (the same as the update's lists).
+bool SignedByRanga(const std::string& message, const std::string& signature);
+// The hosting PC: signs with salas\chave-atualizacao.bin. Empty: done; else why not.
+std::wstring SignWithRangaKey(const std::wstring& root, const std::string& message, std::string& signature);
+std::string Sha256OfFile(const std::wstring& path);
+// Runs a command hidden and waits; out gets what it printed. The exit code, -1 when it did not start.
+int RunHiddenCommand(const std::wstring& command, const std::wstring& folder, std::string& out);
+void RemoveFolderTree(const std::wstring& folder);
+
 }
 
 #endif

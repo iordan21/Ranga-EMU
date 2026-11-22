@@ -182,6 +182,11 @@ int HttpGet(const std::wstring& source, const std::wstring& request, std::string
         host = rest.substr(0, slash);
         const std::wstring base = slash == std::wstring::npos ? L"" : rest.substr(slash);
         port = secure ? INTERNET_DEFAULT_HTTPS_PORT : INTERNET_DEFAULT_HTTP_PORT;
+        // An address with its port ("http://127.0.0.1:8799/x"): the port apart from the host.
+        if (const size_t colon = host.rfind(L':'); colon != std::wstring::npos) {
+            port = static_cast<INTERNET_PORT>(_wtoi(host.c_str() + colon + 1));
+            host.resize(colon);
+        }
         if (secure) flags = WINHTTP_FLAG_SECURE;
         if (request == L"/ranga/manifest") path = L"/manifest.txt";
         else if (request == L"/ranga/manifest.sig") path = L"/manifest.sig";
@@ -751,5 +756,24 @@ void CleanUpdateLeftovers(const std::wstring& root) {
     const std::wstring staging = Staging(root);
     if (IsDirectory(staging)) RemoveTree(staging);
 }
+
+int DownloadUrl(const std::wstring& url, std::string* body, const std::wstring& toFile, const std::function<void(uint64_t)>& got) {
+    return HttpGet(url, L"", body, toFile, got);
+}
+
+bool SignedByRanga(const std::string& message, const std::string& signature) { return Verify(message, signature); }
+
+std::wstring SignWithRangaKey(const std::wstring& root, const std::string& message, std::string& signature) {
+    const std::string key = ReadBytes(PrivateKey(root));
+    if (key.empty()) return L"Falta a chave de assinatura (salas\\chave-atualizacao.bin): só o PC que publica assina.";
+    if (!Sign(key, message, signature)) return L"A assinatura falhou (a chave está estragada?).";
+    return L"";
+}
+
+std::string Sha256OfFile(const std::wstring& path) { return HashFile(path); }
+
+int RunHiddenCommand(const std::wstring& command, const std::wstring& folder, std::string& out) { return RunCaptured(command, folder, out); }
+
+void RemoveFolderTree(const std::wstring& folder) { RemoveTree(folder); }
 
 }

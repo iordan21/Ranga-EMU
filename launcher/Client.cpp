@@ -10,6 +10,7 @@
 #include "Rooms.hpp"
 #include "ConsoleGraphics.hpp"
 #include "Update.hpp"
+#include "Store.hpp"
 #include "Http.hpp"
 #include "PlayerProfile.hpp"
 #include "Lobby.hpp"
@@ -910,6 +911,8 @@ struct Client {
         if (packageThread.joinable()) packageThread.join();
         if (githubThread.joinable()) githubThread.join();
         if (newsThread.joinable()) newsThread.join();
+        if (storeThread.joinable()) storeThread.join();
+        if (appProcess != nullptr) CloseHandle(appProcess);
         StopProfileThreads();
     }
 
@@ -1013,6 +1016,7 @@ struct Client {
 
     void OpenNews() {
         newsOpen = true;
+        storeOpen = false;
         profileOpen = false;
         enginesPage = false;
         RefreshNews(true);
@@ -1023,6 +1027,7 @@ struct Client {
         if (nav.back) {
             MarkNewsSeen();
             newsOpen = false;
+            storeOpen = false;
             return;
         }
         const float left = 40 * scale;
@@ -1030,6 +1035,7 @@ struct Client {
         if (ImGui::Button("<  Voltar", ImVec2(0, 36 * scale))) {
             MarkNewsSeen();
             newsOpen = false;
+            storeOpen = false;
             return;
         }
         ImGui::SameLine(0, 18 * scale);
@@ -1086,6 +1092,222 @@ struct Client {
         // The gamepad scrolls the list with up and down.
         if (nav.down) ImGui::SetScrollY(ImGui::GetScrollY() + 120 * scale);
         if (nav.up) ImGui::SetScrollY(std::max(0.0f, ImGui::GetScrollY() - 120 * scale));
+        ImGui::EndChild();
+    }
+
+    // ---- Apps: the store of the owner's Windows programs (Store.hpp); the first is Ranga TV ----
+    // A page of its own (the top bar's Apps button): each app turned on (downloaded, checked, unzipped), opened,
+    // updated and removed from there, all by the gamepad too. While an app runs, the controllers are its, as a game's.
+    std::thread storeThread;
+    std::mutex storeLock;
+    std::atomic<int> storeJob{0}; // 0: nothing; 1: fetching the list; 2: installing storeJobApp
+    std::atomic<uint64_t> storeDone{0}, storeTotal{0};
+    std::string storeJobApp;  // under storeLock
+    StoreCatalog store;       // under storeLock
+    std::wstring storeNote;   // under storeLock: how the last action went
+    bool storeFetched = false, storeOpen = false, storeReadInstalled = false;
+    int storeFocus = 0, storeButton = 0;
+    HANDLE appProcess = nullptr;
+
+    bool StoreAppRunning() {
+        if (appProcess == nullptr) return false;
+        if (WaitForSingleObject(appProcess, 0) == WAIT_TIMEOUT) return true;
+        CloseHandle(appProcess);
+        appProcess = nullptr;
+        // Back from the app: the Ranga in front again.
+        SetForegroundWindow(window);
+        return false;
+    }
+
+    void OpenStoreApp(const StoreApp& app) {
+        if (StoreAppRunning()) return;
+        if (runner.Busy()) {
+            AddToast(app.name, "Feche o jogo antes de abrir o app.", "");
+            return;
+        }
+        const std::wstring exe = StoreAppExe(library.Root(), app), folder = StoreAppFolder(library.Root(), app.id);
+        // From the TV mode it gets the TV's arguments too (Ranga TV: full screen and bigger).
+        std::wstring command = L"\"" + exe + L"\"";
+        if (!app.args.empty()) command += L" " + app.args;
+        if (tvMode && !app.tvArgs.empty()) command += L" " + app.tvArgs;
+        STARTUPINFOW startup{sizeof(startup)};
+        PROCESS_INFORMATION process{};
+        // Ranga is in front now: Windows lets the program it opens come to the front only with this (else the app's
+        // window opens behind, and the controller would go nowhere).
+        AllowSetForegroundWindow(ASFW_ANY);
+        if (!CreateProcessW(exe.c_str(), command.data(), nullptr, nullptr, FALSE, 0, nullptr, folder.c_str(), &startup, &process)) {
+            AddToast(app.name, "Não deu para abrir o app.", "");
+            return;
+        }
+        CloseHandle(process.hThread);
+        appProcess = process.hProcess;
+    }
+
+    // install: downloads and installs (or updates) that app, then fetches the list again; else only the list.
+    void StartStoreJob(const StoreApp* install) {
+        if (storeJob != 0) return;
+        if (storeThread.joinable()) storeThread.join();
+        storeJob = install != nullptr ? 2 : 1;
+        storeDone = 0;
+        storeTotal = install != nullptr ? install->size : 0;
+        {
+            std::lock_guard guard(storeLock);
+            storeJobApp = install != nullptr ? install->id : "";
+        }
+        std::optional<StoreApp> app;
+        if (install != nullptr) app = *install;
+        storeThread = std::thread([this, app] {
+            const std::wstring root = library.Root();
+            std::wstring note;
+            if (app) {
+                note = InstallStoreApp(root, *app, [this](uint64_t done, uint64_t total) {
+                    storeDone = done;
+                    storeTotal = total;
+                });
+                if (note.empty()) note = Wide(app->name) + L" está pronto: é só abrir.";
+            }
+            StoreCatalog fetched = FetchStore(root);
+            std::lock_guard guard(storeLock);
+            store = fetched;
+            // Only fetching the list keeps the last note ("removido").
+            if (app) storeNote = note;
+            storeFetched = true;
+            storeJobApp.clear();
+            storeJob = 0;
+        });
+    }
+
+    void OpenStore() {
+        storeOpen = true;
+        newsOpen = false;
+        profileOpen = false;
+        enginesPage = false;
+        storeFocus = storeButton = 0;
+        {
+            std::lock_guard guard(storeLock);
+            storeNote.clear();
+        }
+        StartStoreJob(nullptr);
+    }
+
+    template <typename NavT> void StorePage(float scale, const NavT& nav) {
+        if (nav.back) {
+            storeOpen = false;
+            return;
+        }
+        const std::wstring root = library.Root();
+        const float left = 40 * scale;
+        ImGui::SetCursorPos(ImVec2(left, 22 * scale));
+        if (ImGui::Button("<  Voltar", ImVec2(0, 36 * scale))) {
+            storeOpen = false;
+            return;
+        }
+        ImGui::SameLine(0, 18 * scale);
+        ImGui::PushFont(semibold, 28);
+        ImGui::TextUnformatted("Apps");
+        ImGui::PopFont();
+        ImGui::SetCursorPos(ImVec2(left, 76 * scale));
+        ImGui::TextDisabled("Programas do Ranga para o PC. Ative o que quiser: ele baixa assinado, é conferido e abre por aqui, com o controle.");
+        const bool running = StoreAppRunning();
+        const int job = storeJob;
+        std::lock_guard guard(storeLock);
+        // Before the first answer: what is installed shows at once (read once, not every frame).
+        if (!storeFetched && !storeReadInstalled) {
+            store.apps = InstalledApps(root);
+            storeReadInstalled = true;
+        }
+        const auto& apps = store.apps;
+
+        // The gamepad: up and down pick the app, left and right its button, A presses it.
+        storeFocus = std::clamp(storeFocus + (nav.down ? 1 : 0) - (nav.up ? 1 : 0), 0, std::max(0, static_cast<int>(apps.size()) - 1));
+        if (nav.up || nav.down) storeButton = 0;
+        storeButton = std::max(0, storeButton + (nav.right ? 1 : 0) - (nav.left ? 1 : 0));
+
+        ImGui::SetCursorPos(ImVec2(left, 110 * scale));
+        ImGui::BeginChild("##store", ImVec2(ImGui::GetContentRegionAvail().x - left, 0), ImGuiChildFlags_None);
+        if (apps.empty()) ImGui::TextDisabled("%s", job == 1 ? "Buscando a lista de apps..." : Utf8(store.error).c_str());
+        ImDrawList* draw = ImGui::GetWindowDrawList();
+        for (size_t i = 0; i < apps.size(); ++i) {
+            const StoreApp& app = apps[i];
+            const bool focused = static_cast<int>(i) == storeFocus;
+            const bool busyHere = job == 2 && storeJobApp == app.id;
+            const ImVec2 top = ImGui::GetCursorScreenPos();
+            const float width = std::min(ImGui::GetContentRegionAvail().x, 900 * scale), pad = 18 * scale;
+            ImGui::PushID(static_cast<int>(i));
+            draw->ChannelsSplit(2);
+            draw->ChannelsSetCurrent(1);
+            ImGui::SetCursorScreenPos(ImVec2(top.x + pad, top.y + pad));
+            ImGui::BeginGroup();
+            ImGui::PushFont(semibold, 24);
+            ImGui::TextUnformatted(app.name.c_str());
+            ImGui::PopFont();
+            const std::string megabytes = std::to_string(std::max<uint64_t>(1, app.size / 1048576)) + " MB";
+            std::string status;
+            if (app.installed && app.newer) status = "Instalado (" + app.installedVersion + ")  ·  versão " + app.version + " disponível";
+            else if (app.installed) status = "Instalado  ·  versão " + app.installedVersion + (running ? "  ·  aberto agora" : "");
+            else status = "Versão " + app.version + "  ·  " + megabytes;
+            ImGui::TextDisabled("%s", status.c_str());
+            ImGui::PushTextWrapPos(top.x + width - pad);
+            if (!app.description.empty()) ImGui::TextWrapped("%s", app.description.c_str());
+            ImGui::PopTextWrapPos();
+            ImGui::Dummy(ImVec2(0, 6 * scale));
+            if (busyHere) {
+                const uint64_t total = std::max<uint64_t>(storeTotal, 1);
+                ImGui::Text("Baixando... %.0f de %.0f MB", static_cast<double>(storeDone) / 1048576.0, static_cast<double>(total) / 1048576.0);
+                ImGui::ProgressBar(static_cast<float>(static_cast<double>(storeDone) / static_cast<double>(total)), ImVec2(420 * scale, 0));
+            } else {
+                // The buttons, in the order the gamepad walks them.
+                std::vector<int> actions; // 0 open, 1 turn on, 2 update, 3 remove
+                if (app.installed) actions.push_back(0);
+                else if (!app.sha256.empty()) actions.push_back(1);
+                if (app.installed && app.newer) actions.push_back(2);
+                if (app.installed) actions.push_back(3);
+                if (focused) storeButton = std::min(storeButton, std::max(0, static_cast<int>(actions.size()) - 1));
+                ImGui::BeginDisabled(job != 0 || running);
+                for (size_t b = 0; b < actions.size(); ++b) {
+                    if (b > 0) ImGui::SameLine(0, 10 * scale);
+                    const int action = actions[b];
+                    const bool primary = b == 0 && action != 3;
+                    std::string label = action == 0 ? "Abrir" : action == 1 ? "Ativar e baixar (" + megabytes + ")" : action == 2 ? "Atualizar (" + megabytes + ")" : "Remover";
+                    label += "##" + std::to_string(action);
+                    if (primary) {
+                        ImGui::PushStyleColor(ImGuiCol_Button, Color(kAccent));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Color(kAccentHover));
+                        ImGui::PushStyleColor(ImGuiCol_Text, Color(0xffffff));
+                    }
+                    const bool pressed = ImGui::Button(label.c_str(), ImVec2(0, 40 * scale)) ||
+                                         (focused && storeButton == static_cast<int>(b) && nav.accept && job == 0 && !running);
+                    if (primary) ImGui::PopStyleColor(3);
+                    FocusLast(focused && storeButton == static_cast<int>(b), scale);
+                    if (!pressed) continue;
+                    if (action == 0) {
+                        pending = [this, app] { OpenStoreApp(app); };
+                    } else if (action == 1 || action == 2) {
+                        pending = [this, app] { StartStoreJob(&app); };
+                    } else {
+                        const std::wstring error = RemoveStoreApp(root, app.id);
+                        storeNote = error.empty() ? Wide(app.name) + L" removido. O que ele guarda fora da pasta (listas, favoritos) fica." : error;
+                        pending = [this] { StartStoreJob(nullptr); };
+                    }
+                }
+                ImGui::EndDisabled();
+            }
+            ImGui::EndGroup();
+            const ImVec2 bottom(top.x + width, ImGui::GetItemRectMax().y + pad);
+            draw->ChannelsSetCurrent(0);
+            draw->AddRectFilled(top, bottom, Packed(kSurface), 12 * scale);
+            if (focused) draw->AddRect(top, bottom, Packed(kAccent, 0.6f), 12 * scale, 0, 2 * scale);
+            draw->ChannelsMerge();
+            ImGui::SetCursorScreenPos(ImVec2(top.x, bottom.y + 14 * scale));
+            ImGui::Dummy(ImVec2(0, 0));
+            ImGui::PopID();
+        }
+        if (!storeNote.empty()) ImGui::TextDisabled("%s", Utf8(storeNote).c_str());
+        if (!store.error.empty() && !apps.empty()) ImGui::TextDisabled("%s", Utf8(store.error).c_str());
+        if (!apps.empty()) {
+            ImGui::Dummy(ImVec2(0, 8 * scale));
+            ImGui::TextDisabled("Direcional: escolher    A: apertar    B: voltar");
+        }
         ImGui::EndChild();
     }
 
@@ -1275,6 +1497,7 @@ struct Client {
                 enginesPage = true;
                 profileOpen = false;
                 newsOpen = false;
+                storeOpen = false;
                 RefreshEngines();
                 openBackupTab = true;
             };
@@ -2514,7 +2737,7 @@ struct Client {
     // Adicionar jogo and Emuladores; first is Adicionar jogo's place on the top row (TopBar).
     void TopButtons(float scale, float right, int first) {
         const float wide = 170 * scale, narrow = 130 * scale, height = 36 * scale;
-        ImGui::SetCursorPos(ImVec2(right - wide - 4 * narrow - 40 * scale, 22 * scale));
+        ImGui::SetCursorPos(ImVec2(right - wide - 5 * narrow - 50 * scale, 22 * scale));
         if (ImGui::Button("+  Adicionar jogo", ImVec2(wide, height)) || barPress == first) ImGui::OpenPopup("##add");
         FocusLast(barFocus == first, scale);
         AddMenu(scale);
@@ -2523,6 +2746,7 @@ struct Client {
             enginesPage = true;
             profileOpen = false;
             newsOpen = false;
+            storeOpen = false;
             RefreshEngines();
         }
         FocusLast(barFocus == first + 1, scale);
@@ -2558,6 +2782,10 @@ struct Client {
         if (ImGui::Button(friendsLabel.c_str(), ImVec2(narrow, height)) || barPress == first + 4) friendsPanel = !friendsPanel;
         if (online > 0) ImGui::PopStyleColor();
         FocusLast(barFocus == first + 4, scale);
+        ImGui::SameLine(0, 10 * scale);
+        // Apps: the store of the owner's programs (Ranga TV and the next ones).
+        if (ImGui::Button("Apps", ImVec2(narrow, height)) || barPress == first + 5) pending = [this] { OpenStore(); };
+        FocusLast(barFocus == first + 5, scale);
     }
 
     // The art of a game in a box: its own square art fills it; box art of another shape sits whole on the console's
@@ -2695,7 +2923,7 @@ struct Client {
 
     void Home(float scale, const Nav& input) {
         // On the top row (Adicionar jogo, Emuladores) the gamepad moves nothing else; up from the consoles reaches it.
-        const bool inBar = TopBar(input, 5);
+        const bool inBar = TopBar(input, 6);
         const Nav nav = inBar ? Nav{} : input;
         if (!inBar && homeRow == 0 && input.up) barFocus = 0;
         const auto shelves = Shelves();
@@ -3115,7 +3343,7 @@ struct Client {
             keyFocus = 0;
         }
         const bool typing = SearchKeyboard(input, scale);
-        const bool inBar = !typing && TopBar(input, 6);
+        const bool inBar = !typing && TopBar(input, 7);
         const Nav nav = inBar || typing ? Nav{} : input;
         if (nav.back) {
             page = Page::Home;
@@ -6153,6 +6381,7 @@ struct Client {
         profileOpen = true;
         enginesPage = false;
         newsOpen = false;
+        storeOpen = false;
         profileViewing.clear();
         SyncProfiles(true);
     }
@@ -8582,8 +8811,8 @@ struct Client {
         for (const auto& titleId : covers.TakeDone()) {
             for (const auto& game : library.Games()) if (game.titleId == titleId) ForgetArt(game);
         }
-        // The controllers belong to the game while it runs.
-        if (runner.Busy()) gamepads.Stop();
+        // The controllers belong to the game while it runs, and to an app (Apps) while it is open.
+        if (runner.Busy() || StoreAppRunning()) gamepads.Stop();
         else gamepads.Start();
         Nav nav = ReadNav();
         // Big Picture: Start / Options or F11 turn the TV mode on and off; Select / View opens the friends' panel,
@@ -8648,7 +8877,7 @@ struct Client {
 
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
         const Game* shownGame = page == Page::Game ? Current() : nullptr;
-        const std::string pageKey = std::to_string(newsOpen) + std::to_string(profileOpen) + std::to_string(enginesPage) + std::to_string(static_cast<int>(page)) + profileViewing +
+        const std::string pageKey = std::to_string(storeOpen) + std::to_string(newsOpen) + std::to_string(profileOpen) + std::to_string(enginesPage) + std::to_string(static_cast<int>(page)) + profileViewing +
                                     (shownGame != nullptr ? Utf8(shownGame->titleId) : "") + (page == Page::Console ? Utf8(console) : "");
         if (pageKey != shownPage) {
             shownPage = pageKey;
@@ -8659,7 +8888,9 @@ struct Client {
         ImGui::SetNextWindowSize(viewport->WorkSize);
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.2f + 0.8f * appear);
         ImGui::Begin("##root", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus);
-        if (newsOpen) {
+        if (storeOpen) {
+            StorePage(scale, nav);
+        } else if (newsOpen) {
             NewsPage(scale, nav);
         } else if (profileOpen) {
             ProfilePage(scale, nav);
@@ -8785,7 +9016,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     // Publishing opens no window, so it runs beside an open Ranga instead of only bringing that one to the front (it
     // used to end there, saying nothing, and nothing was published). It reads the installed files, which an open
     // Ranga does not lock.
-    const bool publishing = commandLine != nullptr && wcsstr(commandLine, L"--publicar") != nullptr;
+    const bool publishing = commandLine != nullptr && (wcsstr(commandLine, L"--publicar") != nullptr || wcsstr(commandLine, L"--assinar-catalogo") != nullptr);
     if (single != nullptr && GetLastError() == ERROR_ALREADY_EXISTS && _wgetenv(L"RANGA_CLIENT_TEST_INPUT") == nullptr && !publishing) {
         if (HWND existing = FindWindowW(kWindowClass, nullptr)) {
             ShowWindow(existing, SW_RESTORE);
@@ -8801,6 +9032,20 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     // What an update left behind (the old RangaEmu.exe and cores, the download folder) goes once the new one runs.
     CleanUpdateLeftovers(root);
+    // RangaEmu.exe --assinar-catalogo "C:\...\catalogo.txt": signs the Apps catalog (Store.hpp) with this PC's key,
+    // writing catalogo.sig beside it; the result goes to salas\publicar.log. Only the PC that publishes has the key.
+    if (commandLine != nullptr && wcsstr(commandLine, L"--assinar-catalogo") != nullptr) {
+        std::wstring path = wcsstr(commandLine, L"--assinar-catalogo") + 18;
+        while (!path.empty() && (path.front() == L' ' || path.front() == L'"')) path.erase(0, 1);
+        while (!path.empty() && (path.back() == L' ' || path.back() == L'"')) path.pop_back();
+        const std::wstring error = SignStoreCatalog(root, path);
+        if (FILE* log = _wfopen((root + L"\\salas\\publicar.log").c_str(), L"ab")) {
+            const std::string line = error.empty() ? "catalogo assinado: " + Utf8(path) + "\n" : "catalogo NAO assinado: " + Utf8(error) + "\n";
+            std::fwrite(line.data(), 1, line.size(), log);
+            std::fclose(log);
+        }
+        return error.empty() ? 0 : 1;
+    }
     // RangaEmu.exe --publicar "o que mudou": publishes this PC's Ranga for the friends without opening the window;
     // the result goes to salas\publicar.log.
     if (commandLine != nullptr && wcsstr(commandLine, L"--publicar") != nullptr) {
