@@ -1130,6 +1130,16 @@ struct Client {
         std::wstring command = L"\"" + exe + L"\"";
         if (!app.args.empty()) command += L" " + app.args;
         if (tvMode && !app.tvArgs.empty()) command += L" " + app.tvArgs;
+        // An app made for Ranga (it takes --ranga-emu) also learns which monitor Ranga is on, so it opens there and not
+        // on Windows' main one (the TV may be the second screen).
+        if (app.args.find(L"--ranga-emu") != std::wstring::npos) {
+            MONITORINFO info{sizeof(info)};
+            if (GetMonitorInfoW(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST), &info)) {
+                const RECT& r = info.rcMonitor;
+                command += L" --monitor=" + std::to_wstring(r.left) + L"," + std::to_wstring(r.top) + L"," + std::to_wstring(r.right - r.left) + L"," +
+                           std::to_wstring(r.bottom - r.top);
+            }
+        }
         STARTUPINFOW startup{sizeof(startup)};
         PROCESS_INFORMATION process{};
         // Ranga is in front now: Windows lets the program it opens come to the front only with this (else the app's
