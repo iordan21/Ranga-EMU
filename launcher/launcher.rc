@@ -3,3 +3,6 @@
 
 // The program's icon (launcher/icon/make_icon.py draws it).
 1 ICON "ranga.ico"
+
+// The translations of Ranga's screens (Idioma.hpp).
+IDIOMAS RCDATA "idiomas.txt"

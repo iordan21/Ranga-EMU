@@ -43,6 +43,8 @@
 #include "imgui_impl_dx11.h"
 #include "imgui_impl_win32.h"
 #include "imgui_internal.h"
+// From here on ImGui:: is RangaUi:: (the screens in the chosen language).
+#include "ImGuiTr.hpp"
 
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
@@ -556,7 +558,7 @@ void ConsoleCard(ImDrawList* draw, ImFont* font, const Look& look, ImVec2 min, I
     const float text = std::max(13.0f, size * 0.12f);
     const ImVec2 extent = font->CalcTextSizeA(text, FLT_MAX, 0, look.tag);
     const ImVec2 at(min.x + (size - extent.x) / 2, max.y - size * 0.13f - text);
-    draw->AddText(font, text, at, Packed(chosen ? 0xffffff : kDim, alpha), look.tag);
+    draw->AddText(font, text, at, Packed(chosen ? 0xffffff : kDim, alpha), Idioma::Tr(look.tag));
     if (chosen) draw->AddRectFilled(ImVec2(at.x, at.y + text + 5 * scale), ImVec2(at.x + extent.x, at.y + text + 8 * scale), Packed(kAccent), 2 * scale);
 }
 
@@ -772,9 +774,10 @@ std::string FormatAgo(long long when) {
     const long long ago = static_cast<long long>(std::time(nullptr)) - when;
     if (when <= 0) return "nunca";
     if (ago < 120) return "há pouco";
-    if (ago < 3600) return "há " + std::to_string(ago / 60) + " min";
-    if (ago < 86400) return "há " + std::to_string(ago / 3600) + " h";
-    return "há " + std::to_string(ago / 86400) + (ago / 86400 == 1 ? " dia" : " dias");
+    // Whole sentences with the number inside: other languages put it elsewhere ("3 h ago").
+    if (ago < 3600) return Idioma::Format("há %lld min", ago / 60);
+    if (ago < 86400) return Idioma::Format("há %lld h", ago / 3600);
+    return Idioma::Format(ago / 86400 == 1 ? "há %lld dia" : "há %lld dias", ago / 86400);
 }
 
 const char* kLogFiles[] = {"game.err", "game.log", "prepare.log", "launcher.log", "dlss5.log"};
@@ -1208,6 +1211,7 @@ struct Client {
                 command += L" --monitor=" + std::to_wstring(r.left) + L"," + std::to_wstring(r.top) + L"," + std::to_wstring(r.right - r.left) + L"," +
                            std::to_wstring(r.bottom - r.top);
             }
+            command += L" --idioma=" + Wide(Idioma::Code(Idioma::Current()));
         }
         STARTUPINFOW startup{sizeof(startup)};
         PROCESS_INFORMATION process{};
@@ -2948,15 +2952,15 @@ struct Client {
     static std::string PlayedWhen(int64_t last) {
         const int64_t ago = static_cast<int64_t>(std::time(nullptr)) - last;
         if (ago < 3600) return "agora há pouco";
-        if (ago < 86400) return "há " + std::to_string(ago / 3600) + " h";
+        if (ago < 86400) return Idioma::Format("há %lld h", static_cast<long long>(ago / 3600));
         if (ago < 2 * 86400) return "ontem";
-        return "há " + std::to_string(ago / 86400) + " dias";
+        return Idioma::Format("há %lld dias", static_cast<long long>(ago / 86400));
     }
 
     // Continuar jogando: the last games played, of any console, one card each with its art, name, console and when.
     void RecentPanel(ImDrawList* draw, const std::vector<int>& recent, ImVec2 at, float scale) {
         const float width = RecentPanelWidth(scale), card = 72 * scale, gap = 10 * scale, art = 56 * scale;
-        draw->AddText(semibold, 18 * scale, at, Packed(kText), "Continuar jogando");
+        draw->AddText(semibold, 18 * scale, at, Packed(kText), Idioma::Tr("Continuar jogando"));
         float y = at.y + 32 * scale;
         for (size_t k = 0; k < recent.size(); ++k) {
             const Game& game = library.Games()[static_cast<size_t>(recent[k])];
@@ -2977,7 +2981,7 @@ struct Client {
             std::string line = SystemName(game.system);
             if (const auto found = profile.games.find(game.titleId); found != profile.games.end()) line += "  ·  " + PlayedWhen(found->second.last);
             if (const std::string played = PlayedTime(game); !played.empty()) line += "  ·  " + played;
-            draw->AddText(nullptr, 13 * scale, ImVec2(textX, min.y + 39 * scale), Packed(LookFor(game.system).name), line.c_str(), nullptr, 0, &clip);
+            draw->AddText(nullptr, 13 * scale, ImVec2(textX, min.y + 39 * scale), Packed(LookFor(game.system).name), Idioma::Tr(line.c_str()), nullptr, 0, &clip);
             y += card + gap;
         }
     }
@@ -3208,7 +3212,7 @@ struct Client {
             ActivityPanel(draw, ImVec2(panelX, panelY), RecentPanelWidth(scale), origin.y + size.y - 40 * scale, scale);
         }
         const char* hint = "Setas ou direcional: escolher    Enter, X ou A: abrir    Esc, O ou B: voltar";
-        if (gamepads.Connected()) draw->AddText(nullptr, ImGui::GetFontSize() * 0.9f, ImVec2(origin.x + left, origin.y + size.y - 30 * scale), Packed(kDim), hint);
+        if (gamepads.Connected()) draw->AddText(nullptr, ImGui::GetFontSize() * 0.9f, ImVec2(origin.x + left, origin.y + size.y - 30 * scale), Packed(kDim), Idioma::Tr(hint));
     }
 
     std::array<char, 64> librarySearch{}; // what was typed in the console page's search
@@ -3546,13 +3550,13 @@ struct Client {
                 const ImVec2 extent = ImGui::GetFont()->CalcTextSizeA(small, FLT_MAX, 0, problem.c_str());
                 const ImVec2 badge(min.x + 8 * scale, min.y + 8 * scale);
                 grid->AddRectFilled(badge, ImVec2(badge.x + extent.x + 12 * scale, badge.y + extent.y + 6 * scale), Packed(0x000000, 0.7f), 6 * scale);
-                grid->AddText(nullptr, small, ImVec2(badge.x + 6 * scale, badge.y + 3 * scale), Packed(GameAvailable(game) ? kAmber : kRed), problem.c_str());
+                grid->AddText(nullptr, small, ImVec2(badge.x + 6 * scale, badge.y + 3 * scale), Packed(GameAvailable(game) ? kAmber : kRed), Idioma::Tr(problem.c_str()));
             }
             const std::string title = Utf8(game.title);
             ImGui::PushClipRect(ImVec2(min.x, max.y), ImVec2(max.x, max.y + label - 4 * scale), true);
             grid->AddText(semibold, ImGui::GetFontSize(), ImVec2(min.x + 2 * scale, max.y + 8 * scale), Packed(k == gridFocus ? 0xffffff : kText), title.c_str(), nullptr, tile - 4 * scale);
             if (const std::string played = PlayedTime(game); !played.empty())
-                grid->AddText(nullptr, ImGui::GetFontSize() * 0.85f, ImVec2(min.x + 2 * scale, max.y + 8 * scale + ImGui::GetFontSize() * 1.35f), Packed(kDim), played.c_str());
+                grid->AddText(nullptr, ImGui::GetFontSize() * 0.85f, ImVec2(min.x + 2 * scale, max.y + 8 * scale + ImGui::GetFontSize() * 1.35f), Packed(kDim), Idioma::Tr(played.c_str()));
             ImGui::PopClipRect();
             if (IsFavorite(game)) {
                 // On the cover's top right corner, on a dark round so it shows on any art.
@@ -5094,6 +5098,29 @@ struct Client {
         ImGui::PopStyleColor();
     }
 
+    // The language of Ranga's screens and of the apps it opens (Idioma.hpp); each in its own name.
+    void LanguageTab(float scale) {
+        ImGui::Dummy(ImVec2(0, 6 * scale));
+        ImGui::TextDisabled("O idioma das telas do Ranga e dos apps da loja. Os nomes dos jogos e o que os amigos escrevem ficam como estão.");
+        ImGui::Dummy(ImVec2(0, 6 * scale));
+        for (int i = 0; i < Idioma::Count; ++i) {
+            const auto lang = static_cast<Idioma::Lang>(i);
+            const bool chosen = Idioma::Current() == lang;
+            if (i > 0) ImGui::SameLine(0, 10 * scale);
+            if (chosen) {
+                ImGui::PushStyleColor(ImGuiCol_Button, Color(kAccent));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Color(kAccentHover));
+                ImGui::PushStyleColor(ImGuiCol_Text, Color(0xffffff));
+            }
+            // "##" keeps the id; the name is never translated.
+            const std::string label = std::string(Idioma::Name(lang)) + "##idioma" + std::to_string(i);
+            if (::ImGui::Button(label.c_str(), ImVec2(160 * scale, 40 * scale)) && !chosen) Idioma::Set(library.Root(), lang);
+            if (chosen) ImGui::PopStyleColor(3);
+        }
+        ImGui::Dummy(ImVec2(0, 8 * scale));
+        ImGui::TextDisabled("Os apps abertos agora mudam quando forem abertos de novo.");
+    }
+
     void EnginesPage(float scale) {
         const float pad = 32 * scale;
         ImGui::BeginChild("##engines", ImVec2(0, 0), ImGuiChildFlags_None);
@@ -5113,7 +5140,7 @@ struct Client {
         }
         if (ImGui::Button("Voltar")) enginesPage = false;
         ImGui::Dummy(ImVec2(0, 4 * scale));
-        bool filesTab = false, backupTab = false;
+        bool filesTab = false, backupTab = false, languageTab = false;
         if (ImGui::BeginTabBar("##enginesTabs")) {
             if (ImGui::BeginTabItem("Emuladores")) ImGui::EndTabItem();
             if (ImGui::BeginTabItem("Arquivos do Ranga")) {
@@ -5124,12 +5151,18 @@ struct Client {
                 backupTab = true;
                 ImGui::EndTabItem();
             }
+            // In the language chosen and in English, so it is found by someone who reads neither.
+            if (ImGui::BeginTabItem(Idioma::Current() == Idioma::En ? "Language###idioma" : (std::string(Idioma::Tr("Idioma")) + " (Language)###idioma").c_str())) {
+                languageTab = true;
+                ImGui::EndTabItem();
+            }
             ImGui::EndTabBar();
         }
         openBackupTab = false;
-        if (filesTab || backupTab) {
+        if (filesTab || backupTab || languageTab) {
             if (filesTab) IntegrityTab(scale);
-            else BackupTab(scale);
+            else if (backupTab) BackupTab(scale);
+            else LanguageTab(scale);
             ImGui::PopTextWrapPos();
             ImGui::EndGroup();
             ImGui::Dummy(ImVec2(0, 20 * scale));
@@ -6623,8 +6656,8 @@ struct Client {
         for (int i = 0; i < 4; ++i) {
             const ImVec2 min(origin.x + left + i * (tileWidth + gap), origin.y + tilesY);
             draw->AddRectFilled(min, ImVec2(min.x + tileWidth, min.y + tileHeight), Packed(kSurface), 8 * scale);
-            draw->AddText(semibold, 24 * scale, ImVec2(min.x + 16 * scale, min.y + 9 * scale), Packed(kText), tiles[i][0].c_str());
-            draw->AddText(nullptr, ImGui::GetFontSize() * 0.92f, ImVec2(min.x + 16 * scale, min.y + 40 * scale), Packed(kDim), tiles[i][1].c_str());
+            draw->AddText(semibold, 24 * scale, ImVec2(min.x + 16 * scale, min.y + 9 * scale), Packed(kText), Idioma::Tr(tiles[i][0].c_str()));
+            draw->AddText(nullptr, ImGui::GetFontSize() * 0.92f, ImVec2(min.x + 16 * scale, min.y + 40 * scale), Packed(kDim), Idioma::Tr(tiles[i][1].c_str()));
         }
 
         ImGui::SetCursorPos(ImVec2(left, tilesY + tileHeight + 18 * scale));
@@ -7327,7 +7360,7 @@ struct Client {
                     const ImVec4 clip(textX, min.y, max.x - buttonWidth - 8 * scale, max.y);
                     draw->AddText(semibold, 15 * scale, ImVec2(textX, min.y + 9 * scale), Packed(on ? kText : kDim), card->name.c_str(), nullptr, 0, &clip);
                     const std::string status = !on ? "Visto " + FormatAgo(card->seen) : card->playing.empty() ? "Online" : card->playing;
-                    draw->AddText(nullptr, 13 * scale, ImVec2(textX, min.y + 29 * scale), Packed(on && !card->playing.empty() ? kGreen : kDim), status.c_str(), nullptr, 0, &clip);
+                    draw->AddText(nullptr, 13 * scale, ImVec2(textX, min.y + 29 * scale), Packed(on && !card->playing.empty() ? kGreen : kDim), Idioma::Tr(status.c_str()), nullptr, 0, &clip);
                     if (const int count = unread[card->id]; count > 0) {
                         const std::string number = std::to_string(count);
                         const ImVec2 center(max.x - buttonWidth - 16 * scale, min.y + row / 2);
@@ -7407,7 +7440,7 @@ struct Client {
         const size_t fits = static_cast<size_t>(std::max(0.0f, (bottom - at.y - 34 * scale) / row));
         const auto items = FriendActivity(std::min<size_t>(fits, 6));
         if (items.empty()) return;
-        draw->AddText(semibold, 18 * scale, at, Packed(kText), "Atividade dos amigos");
+        draw->AddText(semibold, 18 * scale, at, Packed(kText), Idioma::Tr("Atividade dos amigos"));
         float y = at.y + 32 * scale;
         std::map<std::string, PlayerCard> cards;
         {
@@ -7427,9 +7460,9 @@ struct Client {
             if (const auto found = cards.find(item.id); found != cards.end()) DrawAvatar(draw, ImVec2(min.x + 8 * scale, min.y + (max.y - min.y - side) / 2), side, found->second, scale);
             const float textX = min.x + side + 18 * scale;
             const ImVec4 clip(textX, min.y, max.x - 8 * scale, max.y);
-            draw->AddText(nullptr, 14 * scale, ImVec2(textX, min.y + 5 * scale), Packed(kText), item.what.c_str(), nullptr, 0, &clip);
+            draw->AddText(nullptr, 14 * scale, ImVec2(textX, min.y + 5 * scale), Packed(kText), Idioma::Tr(item.what.c_str()), nullptr, 0, &clip);
             const std::string line = item.detail + "  ·  " + FormatAgo(item.when);
-            draw->AddText(nullptr, 12 * scale, ImVec2(textX, min.y + 24 * scale), Packed(kDim), line.c_str(), nullptr, 0, &clip);
+            draw->AddText(nullptr, 12 * scale, ImVec2(textX, min.y + 24 * scale), Packed(kDim), Idioma::Tr(line.c_str()), nullptr, 0, &clip);
             y += row;
         }
     }
@@ -7766,7 +7799,7 @@ struct Client {
             if (!inGroup) head->AddCircleFilled(ImVec2(at.x + side + 33 * scale, at.y + 42 * scale), 4 * scale, Packed(isOnline(*peer) ? kGreen : kDim), 12);
             const float statusX = at.x + side + (inGroup ? 28 : 42) * scale;
             const ImVec4 statusClip(statusX, at.y, at.x + right - 420 * scale, at.y + headerHeight);
-            head->AddText(nullptr, 13 * scale, ImVec2(statusX, at.y + 34 * scale), Packed(kDim), statusOf(*peer).c_str(), nullptr, 0, &statusClip);
+            head->AddText(nullptr, 13 * scale, ImVec2(statusX, at.y + 34 * scale), Packed(kDim), Idioma::Tr(statusOf(*peer).c_str()), nullptr, 0, &statusClip);
             // Joining what the friend plays online, and inviting them to a game of this library; the group's or the
             // friend's own menu.
             float buttonsX = right - 16 * scale;
@@ -7855,7 +7888,7 @@ struct Client {
                 const float middle = at2.x + logWidth / 2;
                 log->AddRectFilled(ImVec2(middle - size.x / 2 - 12 * scale, at2.y + 4 * scale), ImVec2(middle + size.x / 2 + 12 * scale, at2.y + size.y + 12 * scale),
                                    Packed(kSelected), 10 * scale);
-                log->AddText(ImVec2(middle - size.x / 2, at2.y + 8 * scale), Packed(kDim), label.c_str());
+                log->AddText(ImVec2(middle - size.x / 2, at2.y + 8 * scale), Packed(kDim), Idioma::Tr(label.c_str()));
                 ImGui::Dummy(ImVec2(0, size.y + 22 * scale));
             }
             // Messages from the same person a few minutes apart sit together; the time goes under the last one.
@@ -7885,10 +7918,10 @@ struct Client {
                 else log->AddRectFilled(artMin, ImVec2(artMin.x + art, artMin.y + art), Packed(kSelected), 8 * scale);
                 const float textX = artMin.x + art + 12 * scale;
                 const ImVec4 clip(textX, min.y, max.x - 10 * scale, max.y);
-                log->AddText(nullptr, 12 * scale, ImVec2(textX, min.y + 12 * scale), Packed(kDim), mine ? "Você convidou para jogar" : "Convite para jogar", nullptr, 0, &clip);
+                log->AddText(nullptr, 12 * scale, ImVec2(textX, min.y + 12 * scale), Packed(kDim), Idioma::Tr(mine ? "Você convidou para jogar" : "Convite para jogar"), nullptr, 0, &clip);
                 log->AddText(semibold, 16 * scale, ImVec2(textX, min.y + 28 * scale), Packed(kText), invite.title.c_str(), nullptr, 0, &clip);
                 const std::string where = SystemName(Wide(invite.system)) + (invite.mode.empty() ? "" : "  ·  online");
-                log->AddText(nullptr, 12 * scale, ImVec2(textX, min.y + 48 * scale), Packed(LookFor(Wide(invite.system)).name), where.c_str(), nullptr, 0, &clip);
+                log->AddText(nullptr, 12 * scale, ImVec2(textX, min.y + 48 * scale), Packed(LookFor(Wide(invite.system)).name), Idioma::Tr(where.c_str()), nullptr, 0, &clip);
                 if (!mine) {
                     ImGui::SetCursorScreenPos(ImVec2(textX, max.y - 30 * scale));
                     ImGui::PushID(static_cast<int>(message.number));
@@ -7927,7 +7960,7 @@ struct Client {
                     log->AddRectFilled(min, max, Packed(kSelected), 12 * scale);
                     const char* waiting = "Carregando imagem...";
                     const ImVec2 size = ImGui::CalcTextSize(waiting);
-                    log->AddText(ImVec2(min.x + (w - size.x) / 2, min.y + (h - size.y) / 2), Packed(kDim), waiting);
+                    log->AddText(ImVec2(min.x + (w - size.x) / 2, min.y + (h - size.y) / 2), Packed(kDim), Idioma::Tr(waiting));
                 }
                 ImGui::SetCursorScreenPos(at);
                 ImGui::Dummy(ImVec2(0, h + (groupEnds ? 2 : 4) * scale));
@@ -7960,7 +7993,7 @@ struct Client {
             const int dots = static_cast<int>(ImGui::GetTime() * 3) % 3 + 1;
             const std::string typingText = FriendName(chatPeer) + " está digitando" + std::string(static_cast<size_t>(dots), '.');
             const ImVec2 at = ImGui::GetCursorScreenPos();
-            log->AddText(nullptr, 13 * scale, ImVec2(at.x + 20 * scale, at.y), Packed(kDim), typingText.c_str());
+            log->AddText(nullptr, 13 * scale, ImVec2(at.x + 20 * scale, at.y), Packed(kDim), Idioma::Tr(typingText.c_str()));
             ImGui::Dummy(ImVec2(0, 22 * scale));
             animating = true;
         }
@@ -8287,11 +8320,11 @@ struct Client {
             const float x = min.x + 16 * scale + side + 16 * scale;
             draw->AddText(semibold, 18 * scale, ImVec2(x, min.y + 14 * scale), Packed(kText), card.name.c_str());
             const std::string level = "Nível " + std::to_string(LevelFor(card.xp).level) + "   ·   " + FormatPlayed(card.seconds);
-            draw->AddText(nullptr, ImGui::GetFontSize() * 0.92f, ImVec2(x, min.y + 40 * scale), Packed(kDim), level.c_str());
+            draw->AddText(nullptr, ImGui::GetFontSize() * 0.92f, ImVec2(x, min.y + 40 * scale), Packed(kDim), Idioma::Tr(level.c_str()));
             const bool online = !card.closed && now - card.seen < 300;
             const std::string status = online ? (card.playing.empty() ? "Online" : "Jogando " + card.playing) : "Visto " + FormatAgo(card.seen);
             const ImVec4 clip(x, min.y, max.x - 8 * scale, max.y);
-            draw->AddText(nullptr, ImGui::GetFontSize() * 0.92f, ImVec2(x, min.y + 62 * scale), Packed(online ? kGreen : kDim), status.c_str(), nullptr, 0, &clip);
+            draw->AddText(nullptr, ImGui::GetFontSize() * 0.92f, ImVec2(x, min.y + 62 * scale), Packed(online ? kGreen : kDim), Idioma::Tr(status.c_str()), nullptr, 0, &clip);
             if (clicked) pending = [this, id = card.id] { profileViewing = id; };
         }
 
@@ -9247,6 +9280,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
         timing += std::string(what) + ": " + std::to_string((now.QuadPart - mark.QuadPart) * 1000 / frequency.QuadPart) + " ms\r\n";
         mark = now;
     };
+    Idioma::Init(root);
     Client client(root);
     client.window = hwnd;
     client.semibold = semibold != nullptr ? semibold : regular;
@@ -9318,6 +9352,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
         // to ImGui itself (Frame), so a DualSense moves the focus too.
         ImGui::GetIO().BackendFlags |= ImGuiBackendFlags_HasGamepad;
         client.RefreshIniCache();
+        Idioma::NewFrame();
         ImGui::NewFrame();
         // The TV mode is everything a third bigger, for a TV seen from the couch.
         const float shownScale = scale * (client.tvMode ? 1.35f : 1.0f);

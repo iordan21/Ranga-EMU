@@ -1,0 +1,5827 @@
+# Traducoes das telas do Ranga (Idioma.hpp): para cada texto, portugues, ingles, russo e espanhol, uma linha
+# cada, com os escapes do C++ (\n, \"); uma linha em branco entre os textos. Gerado por juntar_idiomas.py.
+
+Escolha primeiro a pasta do backup.
+Choose the backup folder first.
+Сначала выберите папку для резервной копии.
+Primero elige la carpeta de la copia de seguridad.
+
+A pasta do backup não existe mais: 
+The backup folder no longer exists: 
+Папки резервной копии больше нет: 
+La carpeta de la copia de seguridad ya no existe: 
+
+A pasta do backup não pode ficar dentro da pasta do Ranga.
+The backup folder can't be inside Ranga's folder.
+Папка резервной копии не может находиться внутри папки Ranga.
+La carpeta de la copia no puede estar dentro de la carpeta de Ranga.
+
+Ainda não há nenhum save para copiar.
+There are no saves to copy yet.
+Пока нет сохранений для копирования.
+Todavía no hay ninguna partida guardada para copiar.
+
+Não deu para copiar 
+Couldn't copy 
+Не удалось скопировать 
+No se pudo copiar 
+
+ (disco cheio ou arquivo em uso?).
+ (disk full or file in use?).
+ (диск заполнен или файл занят?).
+ (¿disco lleno o archivo en uso?).
+
+Não deu para fechar a cópia em 
+Couldn't finish the copy in 
+Не удалось завершить копирование в 
+No se pudo terminar la copia en 
+
+há pouco
+just now
+только что
+hace poco
+
+ às 
+ at 
+ в 
+ a las 
+
+<  Voltar
+<  Back
+<  Назад
+<  Volver
+
+Novidades do Ranga
+What's new in Ranga
+Что нового в Ranga
+Novedades de Ranga
+
+O que mudou em cada versão. O Ranga se atualiza sozinho quando abre.
+What changed in each version. Ranga updates itself when it opens.
+Что изменилось в каждой версии. Ranga обновляется сам при запуске.
+Qué cambió en cada versión. Ranga se actualiza solo al abrirse.
+
+Buscando as novidades...
+Fetching what's new...
+Загружаем новости...
+Buscando las novedades...
+
+Ainda não deu para buscar as novidades (sem internet?).
+Couldn't fetch what's new yet (no internet?).
+Пока не удалось загрузить новости (нет интернета?).
+Todavía no se pudieron cargar las novedades (¿sin internet?).
+
+Versão 
+Version 
+Версия 
+Versión 
+
+a sua versão
+your version
+ваша версия
+tu versión
+
+Feche o jogo antes de abrir o app.
+Close the game before opening the app.
+Закройте игру, прежде чем открывать приложение.
+Cierra el juego antes de abrir la app.
+
+Não deu para abrir o app.
+Couldn't open the app.
+Не удалось открыть приложение.
+No se pudo abrir la app.
+
+ está pronto: é só abrir.
+ is ready: just open it.
+ готово: просто откройте.
+ está lista: solo ábrela.
+
+Apps
+Apps
+Приложения
+Apps
+
+Programas do Ranga para o PC. Ative o que quiser: ele baixa assinado, é conferido e abre por aqui, com o controle.
+Ranga's programs for the PC. Turn on whatever you want: it downloads signed, gets checked and opens from here, with the controller.
+Программы Ranga для ПК. Включайте любые: они скачиваются подписанными, проверяются и открываются отсюда, с геймпада.
+Programas de Ranga para el PC. Activa lo que quieras: se descarga firmado, se verifica y se abre desde aquí, con el mando.
+
+Buscando a lista de apps...
+Fetching the list of apps...
+Загружаем список приложений...
+Buscando la lista de apps...
+
+)  ·  versão 
+)  ·  version 
+)  ·  версия 
+)  ·  versión 
+
+ disponível
+ available
+ доступна
+ disponible
+
+Instalado  ·  versão 
+Installed  ·  version 
+Установлено  ·  версия 
+Instalada  ·  versión 
+
+  ·  aberto agora
+  ·  open now
+  ·  сейчас открыто
+  ·  abierta ahora
+
+Baixando... %.0f de %.0f MB
+Downloading... %.0f of %.0f MB
+Загрузка... %.0f из %.0f МБ
+Descargando... %.0f de %.0f MB
+
+Abrir
+Open
+Открыть
+Abrir
+
+Ativar e baixar (
+Turn on and download (
+Включить и скачать (
+Activar y descargar (
+
+Remover
+Remove
+Удалить
+Quitar
+
+ removido. O que ele guarda fora da pasta (listas, favoritos) fica.
+ removed. What it keeps outside its folder (lists, favorites) stays.
+ удалено. То, что оно хранит вне своей папки (списки, избранное), остаётся.
+ quitada. Lo que guarda fuera de su carpeta (listas, favoritos) se queda.
+
+Direcional: escolher    A: apertar    B: voltar
+D-pad: choose    A: press    B: back
+Крестовина: выбор    A: нажать    B: назад
+Cruceta: elegir    A: pulsar    B: volver
+
+No GitHub também: 
+On GitHub too: 
+И на GitHub: 
+También en GitHub: 
+
+ (os amigos baixam mesmo com este PC desligado).
+ (friends download it even with this PC off).
+ (друзья скачают, даже когда этот ПК выключен).
+ (los amigos la descargan aunque este PC esté apagado).
+
+Pacote pronto: 
+Package ready: 
+Пакет готов: 
+Paquete listo: 
+
+Não deu: 
+Didn't work: 
+Не получилось: 
+No funcionó: 
+
+Cópia feita: 
+Copy made: 
+Копия сделана: 
+Copia hecha: 
+
+ arquivos em 
+ files in 
+ файлов в 
+ archivos en 
+
+Nada mudou desde a última cópia.
+Nothing changed since the last copy.
+С последней копии ничего не изменилось.
+Nada cambió desde la última copia.
+
+Uma cópia dos seus saves numa pasta que você escolher (por exemplo a do Google Drive no PC, que sobe sozinha para a nuvem). Ela é feita sozinha quando você fecha um jogo, se algo mudou; ficam as últimas %d cópias, cada uma numa pasta com a data. Vão os saves dos jogos, os cartões de memória, os estados salvos e o seu perfil. Nunca jogos, BIOS, firmware ou chaves.
+A copy of your saves in a folder you choose (for example your Google Drive folder on the PC, which uploads to the cloud by itself). It's made automatically when you close a game, if something changed; the last %d copies are kept, each in a folder with the date. It includes game saves, memory cards, save states and your profile. Never games, BIOS, firmware or keys.
+Копия ваших сохранений в выбранной папке (например, в папке Google Диска на ПК, которая сама загружается в облако). Она делается автоматически при закрытии игры, если что-то изменилось; хранятся последние %d копий, каждая в папке с датой. Сохраняются сейвы игр, карты памяти, сохранённые состояния и ваш профиль. Никогда — игры, BIOS, прошивки или ключи.
+Una copia de tus partidas guardadas en una carpeta que elijas (por ejemplo la de Google Drive en el PC, que se sube sola a la nube). Se hace sola cuando cierras un juego, si algo cambió; se guardan las últimas %d copias, cada una en una carpeta con la fecha. Van las partidas de los juegos, las tarjetas de memoria, los estados guardados y tu perfil. Nunca juegos, BIOS, firmware ni claves.
+
+Pasta do backup: %s
+Backup folder: %s
+Папка резервной копии: %s
+Carpeta de la copia: %s
+
+nenhuma (backup desligado)
+none (backup off)
+нет (резервное копирование выключено)
+ninguna (copia desactivada)
+
+Escolher a pasta
+Choose the folder
+Выбрать папку
+Elegir la carpeta
+
+Trocar a pasta
+Change the folder
+Сменить папку
+Cambiar la carpeta
+
+Escolha a pasta do backup dos saves
+Choose the folder for the saves backup
+Выберите папку для резервной копии сохранений
+Elige la carpeta de la copia de las partidas
+
+Fazer cópia agora
+Make a copy now
+Сделать копию сейчас
+Hacer una copia ahora
+
+Abrir a pasta
+Open the folder
+Открыть папку
+Abrir la carpeta
+
+Desligar
+Turn off
+Выключить
+Desactivar
+
+Última cópia: %s
+Last copy: %s
+Последняя копия: %s
+Última copia: %s
+
+Para voltar um save: feche o Ranga, abra a cópia que quiser e copie a pasta de dentro dela por cima da do Ranga.
+To bring a save back: close Ranga, open the copy you want and copy the folder inside it over Ranga's.
+Чтобы вернуть сохранение: закройте Ranga, откройте нужную копию и скопируйте папку из неё поверх папки Ranga.
+Para recuperar una partida: cierra Ranga, abre la copia que quieras y copia la carpeta de dentro encima de la de Ranga.
+
+Feche o jogo antes de baixar os saves da nuvem.
+Close the game before downloading the saves from the cloud.
+Закройте игру, прежде чем скачивать сохранения из облака.
+Cierra el juego antes de descargar las partidas de la nube.
+
+Save na nuvem
+Cloud save
+Облачные сохранения
+Partida en la nube
+
+ (de 
+ (from 
+ (с 
+ (de 
+
+Saves mais novos na nuvem
+Newer saves in the cloud
+В облаке есть более новые сохранения
+Partidas más nuevas en la nube
+
+ arquivo(s)  ·  clique para baixar
+ file(s)  ·  click to download
+ файл(ов)  ·  нажмите, чтобы скачать
+ archivo(s)  ·  haz clic para descargar
+
+Baixar os saves mais novos da nuvem? Os que estão neste PC vão antes para backups\\nuvem, por garantia.
+Download the newest saves from the cloud? The ones on this PC go to backups\\nuvem first, just in case.
+Скачать самые новые сохранения из облака? Сохранения с этого ПК сначала переносятся в backups\\nuvem, на всякий случай.
+¿Descargar las partidas más nuevas de la nube? Las de este PC van antes a backups\\nuvem, por si acaso.
+
+Save na nuvem: escolha qual vale
+Cloud save: choose which one counts
+Облачные сохранения: выберите, какое оставить
+Partida en la nube: elige cuál vale
+
+ save(s) mudaram aqui e em outro PC  ·  clique para ver
+ save(s) changed here and on another PC  ·  click to see
+ сохранени(й) изменились здесь и на другом ПК  ·  нажмите, чтобы посмотреть
+ partida(s) cambiaron aquí y en otro PC  ·  haz clic para ver
+
+ save(s) baixados da nuvem
+ save(s) downloaded from the cloud
+ сохранени(й) скачано из облака
+ partida(s) descargadas de la nube
+
+Nada novo na nuvem
+Nothing new in the cloud
+В облаке ничего нового
+Nada nuevo en la nube
+
+Seus saves ficam guardados na sua conta do Ranga e você continua de outro PC: ao fechar um jogo, o que mudou sobe sozinho; ao abrir o Ranga em outro PC, ele avisa quando a nuvem tem um save mais novo. Vão só os saves e cartões de memória (nada de jogos, BIOS, chaves ou estados salvos), até 64 MB comprimidos por conta.
+Your saves are kept in your Ranga account and you can continue on another PC: when you close a game, what changed uploads by itself; when you open Ranga on another PC, it tells you when the cloud has a newer save. Only saves and memory cards go up (no games, BIOS, keys or save states), up to 64 MB compressed per account.
+Ваши сохранения хранятся в аккаунте Ranga, и вы можете продолжить на другом ПК: при закрытии игры изменения загружаются сами; при запуске Ranga на другом ПК он сообщит, если в облаке есть более новое сохранение. Загружаются только сохранения и карты памяти (без игр, BIOS, ключей и сохранённых состояний), до 64 МБ в сжатом виде на аккаунт.
+Tus partidas quedan guardadas en tu cuenta de Ranga y puedes seguir en otro PC: al cerrar un juego, lo que cambió se sube solo; al abrir Ranga en otro PC, te avisa cuando la nube tiene una partida más nueva. Solo van las partidas y las tarjetas de memoria (nada de juegos, BIOS, claves ni estados guardados), hasta 64 MB comprimidos por cuenta.
+
+Entre na sua conta do Ranga (Perfil) para usar.
+Sign in to your Ranga account (Profile) to use it.
+Войдите в аккаунт Ranga (Профиль), чтобы пользоваться этим.
+Inicia sesión en tu cuenta de Ranga (Perfil) para usarlo.
+
+Guardar meus saves na nuvem
+Keep my saves in the cloud
+Хранить мои сохранения в облаке
+Guardar mis partidas en la nube
+
+Enviar agora
+Upload now
+Отправить сейчас
+Subir ahora
+
+Baixar da nuvem
+Download from the cloud
+Скачать из облака
+Descargar de la nube
+
+Conferir
+Check
+Проверить
+Comprobar
+
+Apagar da nuvem
+Delete from the cloud
+Удалить из облака
+Borrar de la nube
+
+Apagar todos os seus saves da nuvem? Os deste PC ficam; só a cópia na sua conta some.
+Delete all your saves from the cloud? The ones on this PC stay; only the copy in your account goes away.
+Удалить все ваши сохранения из облака? Сохранения на этом ПК останутся; исчезнет только копия в аккаунте.
+¿Borrar todas tus partidas de la nube? Las de este PC se quedan; solo desaparece la copia de tu cuenta.
+
+Falando com a nuvem... %d arquivo(s)
+Talking to the cloud... %d file(s)
+Связь с облаком... %d файл(ов)
+Hablando con la nube... %d archivo(s)
+
+Usado: %.1f de %.0f MB
+Used: %.1f of %.0f MB
+Занято: %.1f из %.0f МБ
+Usado: %.1f de %.0f MB
+
+%zu save(s) mais novos na nuvem%s: use Baixar da nuvem.
+%zu newer save(s) in the cloud%s: use Download from the cloud.
+В облаке более новых сохранений: %zu%s. Используйте «Скачать из облака».
+%zu partida(s) más nuevas en la nube%s: usa Descargar de la nube.
+
+%zu save(s) mudaram aqui e em outro PC desde a última vez. Escolha qual vale:
+%zu save(s) changed here and on another PC since last time. Choose which one counts:
+Сохранений, изменённых здесь и на другом ПК с прошлого раза: %zu. Выберите, какие оставить:
+%zu partida(s) cambiaron aquí y en otro PC desde la última vez. Elige cuál vale:
+
+e mais %zu
+and %zu more
+и ещё %zu
+y %zu más
+
+Usar os da nuvem
+Use the cloud ones
+Взять из облака
+Usar las de la nube
+
+Trocar os saves deste PC pelos da nuvem? Os daqui vão antes para backups\\nuvem.
+Replace this PC's saves with the cloud ones? The ones here go to backups\\nuvem first.
+Заменить сохранения этого ПК облачными? Здешние сначала переносятся в backups\\nuvem.
+¿Cambiar las partidas de este PC por las de la nube? Las de aquí van antes a backups\\nuvem.
+
+Usar os deste PC
+Use this PC's
+Взять с этого ПК
+Usar las de este PC
+
+Mandar os saves deste PC por cima dos da nuvem? A versão do outro PC sai da nuvem.
+Send this PC's saves over the cloud ones? The other PC's version leaves the cloud.
+Записать сохранения этого ПК поверх облачных? Версия с другого ПК будет удалена из облака.
+¿Enviar las partidas de este PC encima de las de la nube? La versión del otro PC sale de la nube.
+
+Tudo em dia%s.
+All up to date%s.
+Всё актуально%s.
+Todo al día%s.
+
+Confere o RangaEmu.exe, o ranga_retro.exe e os núcleos (cores) com a lista assinada da última versão: o que faltar ou estiver diferente (corrompido) pode ser baixado de novo. Emuladores, BIOS, saves e jogos não fazem parte da atualização e não entram aqui.
+Checks RangaEmu.exe, ranga_retro.exe and the cores against the signed list of the latest version: whatever is missing or different (corrupted) can be downloaded again. Emulators, BIOS, saves and games are not part of the update and are not checked here.
+Сверяет RangaEmu.exe, ranga_retro.exe и ядра (cores) с подписанным списком последней версии: недостающее или отличающееся (повреждённое) можно скачать заново. Эмуляторы, BIOS, сохранения и игры не входят в обновление и здесь не проверяются.
+Compara RangaEmu.exe, ranga_retro.exe y los núcleos (cores) con la lista firmada de la última versión: lo que falte o sea distinto (dañado) se puede volver a descargar. Emuladores, BIOS, partidas y juegos no forman parte de la actualización y no entran aquí.
+
+Verificar de novo
+Check again
+Проверить снова
+Volver a comprobar
+
+Verificar agora
+Check now
+Проверить сейчас
+Comprobar ahora
+
+Conferindo os arquivos... %d de %d
+Checking the files... %d of %d
+Проверка файлов... %d из %d
+Comprobando los archivos... %d de %d
+
+Tudo certo: %d arquivos conferidos com a versão %s.
+All good: %d files checked against version %s.
+Всё в порядке: проверено файлов — %d, версия %s.
+Todo bien: %d archivos comprobados con la versión %s.
+
+%d de %d arquivos com problema (versão %s):
+%d of %d files with problems (version %s):
+Файлов с проблемами: %d из %d (версия %s):
+%d de %d archivos con problemas (versión %s):
+
+%s  -  faltando
+%s  -  missing
+%s  -  отсутствует
+%s  -  falta
+
+%s  -  diferente (corrompido ou de outra versão)
+%s  -  different (corrupted or from another version)
+%s  -  отличается (повреждён или из другой версии)
+%s  -  distinto (dañado o de otra versión)
+
+Este PC é o que publica: aqui a comparação é com a versão publicada. Diferença costuma ser um Ranga mais novo que ainda não foi publicado; publique (sala dos clássicos) para igualar. Nada é baixado neste PC.
+This PC is the one that publishes: here the comparison is against the published version. A difference is usually a newer Ranga that hasn't been published yet; publish it (classics room) to match. Nothing is downloaded on this PC.
+Этот ПК публикует версии: здесь сравнение идёт с опубликованной версией. Разница обычно означает более новый Ranga, который ещё не опубликован; опубликуйте его (комната классики), чтобы сравнять. На этот ПК ничего не скачивается.
+Este PC es el que publica: aquí la comparación es con la versión publicada. La diferencia suele ser un Ranga más nuevo que aún no se publicó; publícalo (sala de los clásicos) para igualar. No se descarga nada en este PC.
+
+Este PC estava numa versão mais velha: parte disso é só a atualização, que vem junto.
+This PC was on an older version: part of this is just the update, which comes along.
+Этот ПК был на более старой версии: часть этого — просто обновление, которое придёт вместе.
+Este PC estaba en una versión más antigua: parte de esto es solo la actualización, que viene incluida.
+
+Baixar de novo (
+Download again (
+Скачать заново (
+Volver a descargar (
+
+Feche o jogo para consertar.
+Close the game to repair.
+Закройте игру, чтобы исправить.
+Cierra el juego para reparar.
+
+Só esses arquivos são baixados, e cada um é conferido antes de entrar no lugar. No fim o Ranga reabre já consertado.
+Only those files are downloaded, and each one is checked before going into place. At the end Ranga reopens already repaired.
+Скачиваются только эти файлы, и каждый проверяется перед установкой. В конце Ranga перезапустится уже исправленным.
+Solo se descargan esos archivos, y cada uno se comprueba antes de ponerse en su lugar. Al final Ranga se vuelve a abrir ya reparado.
+
+Atualização do Ranga disponível (%s), %.0f MB
+Ranga update available (%s), %.0f MB
+Доступно обновление Ranga (%s), %.0f МБ
+Actualización de Ranga disponible (%s), %.0f MB
+
+Atualizar agora
+Update now
+Обновить сейчас
+Actualizar ahora
+
+Depois
+Later
+Позже
+Después
+
+Feche o jogo para atualizar.
+Close the game to update.
+Закройте игру, чтобы обновить.
+Cierra el juego para actualizar.
+
+Baixando a atualização %s...
+Downloading update %s...
+Загрузка обновления %s...
+Descargando la actualización %s...
+
+Atualização %s baixada e conferida.
+Update %s downloaded and checked.
+Обновление %s скачано и проверено.
+Actualización %s descargada y comprobada.
+
+Reabrir o Ranga atualizado
+Reopen the updated Ranga
+Перезапустить обновлённый Ranga
+Reabrir Ranga actualizado
+
+A atualização não deu certo: %s
+The update didn't work: %s
+Обновление не удалось: %s
+La actualización no funcionó: %s
+
+Nada do Ranga foi trocado pela metade; ele segue como estava.
+Nothing in Ranga was left half-replaced; it stays as it was.
+Ничего в Ranga не было заменено наполовину; всё осталось как было.
+No se cambió nada de Ranga a medias; sigue como estaba.
+
+Tentar de novo
+Try again
+Повторить
+Reintentar
+
+Fechar
+Close
+Закрыть
+Cerrar
+
+ligado
+on
+вкл.
+activado
+
+Atualizar
+Update
+Обновить
+Actualizar
+
+Mostrar salas de outros jogos
+Show rooms for other games
+Показать комнаты других игр
+Mostrar salas de otros juegos
+
+%d salas · atualiza sozinha a cada 15 s (%s)
+%d rooms · refreshes by itself every 15 s (%s)
+Комнат: %d · обновляется само каждые 15 с (%s)
+%d salas · se actualiza sola cada 15 s (%s)
+
+Buscando as salas...
+Fetching the rooms...
+Загружаем комнаты...
+Buscando las salas...
+
+Sala
+Room
+Комната
+Sala
+
+Neste jogo
+In this game
+В этой игре
+En este juego
+
+Na sala
+In the room
+В комнате
+En la sala
+
+Senha
+Password
+Пароль
+Contraseña
+
+  (no menu)
+  (in the menu)
+  (в меню)
+  (en el menú)
+
+%s\nJogo da sala: %s\n%s:%d\n\n%s
+%s\nRoom's game: %s\n%s:%d\n\n%s
+%s\nИгра комнаты: %s\n%s:%d\n\n%s
+%s\nJuego de la sala: %s\n%s:%d\n\n%s
+
+Ninguém dentro agora.
+Nobody inside right now.
+Сейчас внутри никого нет.
+No hay nadie dentro ahora.
+
+%d jogando
+%d playing
+Играют: %d
+%d jugando
+
+%d ms
+%d ms
+%d мс
+%d ms
+
+Nenhuma sala pública com este jogo agora. Marque \"Mostrar salas de outros jogos\" para ver todas.
+No public room with this game right now. Check \"Show rooms for other games\" to see them all.
+Сейчас нет открытых комнат с этой игрой. Отметьте «Показать комнаты других игр», чтобы увидеть все.
+Ninguna sala pública con este juego ahora. Marca \"Mostrar salas de otros juegos\" para verlas todas.
+
+Escolhida: %s
+Chosen: %s
+Выбрана: %s
+Elegida: %s
+
+Esta sala tem senha:
+This room has a password:
+У этой комнаты есть пароль:
+Esta sala tiene contraseña:
+
+Clique numa sala para entrar nela quando o jogo abrir.
+Click a room to join it when the game opens.
+Нажмите на комнату, чтобы войти в неё при запуске игры.
+Haz clic en una sala para entrar cuando se abra el juego.
+
+Este arquivo é um jogo inteiro, não uma atualização nem DLC:\n\n
+This file is a whole game, not an update or DLC:\n\n
+Этот файл — целая игра, а не обновление или DLC:\n\n
+Este archivo es un juego completo, no una actualización ni un DLC:\n\n
+
+Este arquivo é de outro jogo (
+This file is from another game (
+Этот файл от другой игры (
+Este archivo es de otro juego (
+
+), não de 
+), not from 
+), а не от 
+), no de 
+
+Escolha a pasta do jogo (PS5, Bloodborne, PS3, Xbox 360 ou Wii U)
+Choose the game folder (PS5, Bloodborne, PS3, Xbox 360 or Wii U)
+Выберите папку игры (PS5, Bloodborne, PS3, Xbox 360 или Wii U)
+Elige la carpeta del juego (PS5, Bloodborne, PS3, Xbox 360 o Wii U)
+
+Escolha a pasta do jogo (PS3, Xbox 360 ou Wii U)
+Choose the game folder (PS3, Xbox 360 or Wii U)
+Выберите папку игры (PS3, Xbox 360 или Wii U)
+Elige la carpeta del juego (PS3, Xbox 360 o Wii U)
+
+Escolha o arquivo do jogo (ISO, ROM, NSP...)
+Choose the game file (ISO, ROM, NSP...)
+Выберите файл игры (ISO, ROM, NSP...)
+Elige el archivo del juego (ISO, ROM, NSP...)
+
+O Ranga não sabe qual console abre arquivos 
+Ranga doesn't know which console opens files 
+Ranga не знает, какая консоль открывает файлы 
+Ranga no sabe qué consola abre archivos 
+
+sem extensão
+without extension
+без расширения
+sin extensión
+
+Escolha a pasta com os jogos (ROMs, ISOs, CHDs...)
+Choose the folder with the games (ROMs, ISOs, CHDs...)
+Выберите папку с играми (ROM, ISO, CHD...)
+Elige la carpeta con los juegos (ROMs, ISOs, CHDs...)
+
+ jogo(s) adicionado(s).
+ game(s) added.
+ игр(а) добавлено.
+ juego(s) añadido(s).
+
+ arquivo(s) servem para mais de um console e o Ranga não conseguiu ler qual: adicione esses por \"Arquivo do jogo\".
+ file(s) fit more than one console and Ranga couldn't tell which: add those with \"Game file\".
+ файл(ов) подходят для нескольких консолей, и Ranga не смог определить, для какой: добавьте их через «Файл игры».
+ archivo(s) sirven para más de una consola y Ranga no pudo saber cuál: añádelos con \"Archivo del juego\".
+
+ arquivo(s) não são de nenhum console que o Ranga conhece.
+ file(s) are not from any console Ranga knows.
+ файл(ов) не относятся ни к одной известной Ranga консоли.
+ archivo(s) no son de ninguna consola que Ranga conozca.
+
+Este tipo de arquivo serve para mais de um console e o Ranga não conseguiu ler qual é.
+This file type fits more than one console and Ranga couldn't tell which it is.
+Этот тип файла подходит для нескольких консолей, и Ranga не смог определить, для какой.
+Este tipo de archivo sirve para más de una consola y Ranga no pudo saber cuál es.
+
+Cancelar
+Cancel
+Отмена
+Cancelar
+
+Sim
+Yes
+Да
+Sí
+
+Não
+No
+Нет
+No
+
+Área de trabalho
+Desktop
+Рабочий стол
+Escritorio
+
+Documentos
+Documents
+Документы
+Documentos
+
+Pasta do Ranga
+Ranga folder
+Папка Ranga
+Carpeta de Ranga
+
+Escolher esta pasta
+Choose this folder
+Выбрать эту папку
+Elegir esta carpeta
+
+Voltar uma pasta
+Up one folder
+На папку выше
+Subir una carpeta
+
+A: abrir a pasta    B: voltar uma pasta
+A: open the folder    B: up one folder
+A: открыть папку    B: на папку выше
+A: abrir la carpeta    B: subir una carpeta
+
+A: abrir a pasta ou escolher o arquivo    B: voltar uma pasta
+A: open the folder or choose the file    B: up one folder
+A: открыть папку или выбрать файл    B: на папку выше
+A: abrir la carpeta o elegir el archivo    B: subir una carpeta
+
+Nenhuma pasta nem arquivo que sirva aqui.
+No folder or file that fits here.
+Здесь нет подходящих папок или файлов.
+Ninguna carpeta ni archivo que sirva aquí.
+
+Abrir o menu do PS2
+Open the PS2 menu
+Открыть меню PS2
+Abrir el menú de PS2
+
+Abrir o painel do Xbox
+Open the Xbox dashboard
+Открыть панель Xbox
+Abrir el panel de Xbox
+
+Abrir o editor de Mii
+Open the Mii editor
+Открыть редактор Mii
+Abrir el editor de Mii
+
+Roda no próprio Ranga
+Runs in Ranga itself
+Работает в самом Ranga
+Funciona en el propio Ranga
+
+Só o Bloodborne, como experimento
+Only Bloodborne, as an experiment
+Только Bloodborne, в качестве эксперимента
+Solo Bloodborne, como experimento
+
+Roda dentro do Ranga
+Runs inside Ranga
+Работает внутри Ranga
+Funciona dentro de Ranga
+
+Falta: 
+Missing: 
+Не хватает: 
+Falta: 
+
+Sem emulador: escolha um em Emuladores
+No emulator: choose one in Emulators
+Нет эмулятора: выберите его в разделе «Эмуляторы»
+Sin emulador: elige uno en Emuladores
+
++  Adicionar jogo
++  Add game
++  Добавить игру
++  Añadir juego
+
+Emuladores
+Emulators
+Эмуляторы
+Emuladores
+
+agora há pouco
+just now
+только что
+hace un momento
+
+Continuar jogando
+Continue playing
+Продолжить игру
+Seguir jugando
+
+versão %s
+version %s
+версия %s
+versión %s
+
+Publicada em %s
+Published on %s
+Опубликовано %s
+Publicada el %s
+
+Nenhum jogo ainda
+No games yet
+Пока нет игр
+Ningún juego todavía
+
+1 jogo
+1 game
+1 игра
+1 juego
+
+ jogos
+ games
+ игр
+ juegos
+
+Abrir biblioteca
+Open library
+Открыть библиотеку
+Abrir biblioteca
+
+Ver console
+See console
+Открыть консоль
+Ver consola
+
+Setas ou direcional: escolher    Enter, X ou A: abrir    Esc, O ou B: voltar
+Arrows or d-pad: choose    Enter, X or A: open    Esc, O or B: back
+Стрелки или крестовина: выбор    Enter, X или A: открыть    Esc, O или B: назад
+Flechas o cruceta: elegir    Enter, X o A: abrir    Esc, O o B: volver
+
+Ninguém na sala agora.
+Nobody in the room right now.
+Сейчас в комнате никого нет.
+No hay nadie en la sala ahora.
+
+Este servidor ainda não sabe listar (precisa da versão 1.0.1).
+This server can't list yet (it needs version 1.0.1).
+Этот сервер пока не умеет показывать список (нужна версия 1.0.1).
+Este servidor todavía no sabe listar (necesita la versión 1.0.1).
+
+A sala não respondeu.
+The room didn't answer.
+Комната не ответила.
+La sala no respondió.
+
+Testar
+Test
+Проверить
+Probar
+
+respondeu em 
+answered in 
+ответ за 
+respondió en 
+
+não respondeu (endereço, porta, túnel ou servidor desligado)
+didn't answer (address, port, tunnel or server off)
+не ответила (адрес, порт, туннель или сервер выключен)
+no respondió (dirección, puerto, túnel o servidor apagado)
+
+Favoritos
+Favorites
+Избранное
+Favoritos
+
+Espaço
+Space
+Пробел
+Espacio
+
+Apagar
+Delete
+Стереть
+Borrar
+
+Limpar
+Clear
+Очистить
+Limpiar
+
+Pronto
+Done
+Готово
+Listo
+
+Enviar
+Send
+Отправить
+Enviar
+
+Buscar:
+Search:
+Поиск:
+Buscar:
+
+Direcional: escolher    A: digitar    B: fechar
+D-pad: choose    A: type    B: close
+Крестовина: выбор    A: ввод    B: закрыть
+Cruceta: elegir    A: escribir    B: cerrar
+
+<  Consoles
+<  Consoles
+<  Консоли
+<  Consolas
+
+Pasta de jogos
+Games folder
+Папка игр
+Carpeta de juegos
+
+Abre a pasta deste console. O que você colocar nela entra na lista sozinho.
+Opens this console's folder. Whatever you put in it joins the list by itself.
+Открывает папку этой консоли. Всё, что вы туда положите, само появится в списке.
+Abre la carpeta de esta consola. Lo que pongas en ella entra solo en la lista.
+
+Buscar jogo...
+Search game...
+Поиск игры...
+Buscar juego...
+
+Nenhum jogo deste console ainda
+No games for this console yet
+Для этой консоли пока нет игр
+Ningún juego de esta consola todavía
+
+Pasta do jogo...
+Game folder...
+Папка игры...
+Carpeta del juego...
+
+Arquivo do jogo...
+Game file...
+Файл игры...
+Archivo del juego...
+
+Pasta de ROMs...
+ROMs folder...
+Папка ROM...
+Carpeta de ROMs...
+
+Abrir pasta de jogos
+Open games folder
+Открыть папку игр
+Abrir carpeta de juegos
+
+Cada console tem a sua pasta de jogos: o que você colocar nela entra na lista sozinho.
+Each console has its own games folder: whatever you put in it joins the list by itself.
+У каждой консоли своя папка игр: всё, что вы туда положите, само появится в списке.
+Cada consola tiene su carpeta de juegos: lo que pongas en ella entra solo en la lista.
+
+Nenhum jogo com \"%s\" no nome.
+No game with \"%s\" in the name.
+Нет игр с «%s» в названии.
+Ningún juego con \"%s\" en el nombre.
+
+não encontrado
+not found
+не найдено
+no encontrado
+
+Pasta de ROMs (vários jogos)...
+ROMs folder (many games)...
+Папка ROM (несколько игр)...
+Carpeta de ROMs (varios juegos)...
+
+   Todos os jogos da pasta de uma vez
+   Every game in the folder at once
+   Все игры из папки сразу
+   Todos los juegos de la carpeta a la vez
+
+Janela
+Window
+Окно
+Ventana
+
+Tela cheia sem borda
+Borderless full screen
+Полный экран без рамки
+Pantalla completa sin borde
+
+Tela
+Screen
+Экран
+Pantalla
+
+Fraco
+Weak
+Слабый
+Bajo
+
+Bom (padrão)
+Good (default)
+Хороший (по умолчанию)
+Bueno (predeterminado)
+
+Ótimo (PC forte)
+Great (strong PC)
+Отличный (мощный ПК)
+Excelente (PC potente)
+
+Qualidade
+Quality
+Качество
+Calidad
+
+Vale para todos os consoles que rodam no Ranga, a partir da próxima vez que o jogo abrir.
+Applies to every console that runs in Ranga, from the next time the game opens.
+Действует для всех консолей, которые работают в Ranga, со следующего запуска игры.
+Vale para todas las consolas que funcionan en Ranga, a partir de la próxima vez que se abra el juego.
+
+Resolução do console ou menor, sem esperar shaders: o mais leve possível; a imagem fica serrilhada.
+The console's resolution or lower, without waiting for shaders: as light as possible; the image gets jagged.
+Разрешение консоли или ниже, без ожидания шейдеров: максимально легко; изображение становится зубчатым.
+La resolución de la consola o menor, sin esperar shaders: lo más ligero posible; la imagen queda dentada.
+
+Resolução perto da original, sem esperar shaders: para placa de vídeo integrada ou antiga.
+Resolution close to the original, without waiting for shaders: for integrated or old graphics cards.
+Разрешение близкое к оригиналу, без ожидания шейдеров: для встроенной или старой видеокарты.
+Resolución cercana a la original, sin esperar shaders: para tarjeta gráfica integrada o antigua.
+
+Por volta de 1080p: o que o Ranga sempre usou.
+Around 1080p: what Ranga has always used.
+Около 1080p: то, что Ranga использовал всегда.
+Alrededor de 1080p: lo que Ranga siempre usó.
+
+Por volta de 1440p a 4K: para placa de vídeo forte; pesa bem mais.
+Around 1440p to 4K: for a strong graphics card; much heavier.
+Около 1440p–4K: для мощной видеокарты; нагрузка намного выше.
+Alrededor de 1440p a 4K: para tarjeta gráfica potente; exige mucho más.
+
+Gráficos do 
+Graphics for 
+Графика для 
+Gráficos de 
+
+ (só este jogo)
+ (this game only)
+ (только эта игра)
+ (solo este juego)
+
+Automático segue a Qualidade acima ou o padrão do console. Vale quando o jogo abrir de novo; no jogo, o menu (Esc ou botão PS/Guide) > Opções do core mostra todas as opções do console.
+Automatic follows the Quality above or the console's default. Applies when the game opens again; in the game, the menu (Esc or the PS/Guide button) > Core options shows all of the console's options.
+«Автоматически» следует качеству выше или настройке консоли по умолчанию. Действует при следующем запуске игры; в игре меню (Esc или кнопка PS/Guide) > «Параметры ядра» показывает все параметры консоли.
+Automático sigue la Calidad de arriba o el valor predeterminado de la consola. Vale cuando el juego se vuelva a abrir; en el juego, el menú (Esc o botón PS/Guide) > Opciones del núcleo muestra todas las opciones de la consola.
+
+Manter a do jogo
+Keep the game's
+Оставить как в игре
+Mantener la del juego
+
+Resolução
+Resolution
+Разрешение
+Resolución
+
+Resoluções menores aliviam a placa de vídeo.
+Lower resolutions take load off the graphics card.
+Более низкое разрешение разгружает видеокарту.
+Las resoluciones menores alivian la tarjeta gráfica.
+
+Pular a intro
+Skip the intro
+Пропустить вступление
+Saltar la intro
+
+Pular diálogos
+Skip dialogue
+Пропускать диалоги
+Saltar diálogos
+
+X / A / Enter pula a fala atual
+X / A / Enter skips the current line
+X / A / Enter пропускает текущую реплику
+X / A / Enter salta la línea actual
+
+Sem limite
+No limit
+Без ограничений
+Sin límite
+
+Quadros
+Frames
+Кадры
+Fotogramas
+
+Experimento: o Ranga não roda jogos de PS4, só este. Roda pelo port nativo do Bloodborne (deadinside28, Mrsuss60 e shadPS4, licença GPL), não pelo emulador de PS5. Precisa da versão 1.09 com a atualização mesclada na pasta do jogo e do Python 3.10 ou mais novo.
+Experiment: Ranga doesn't run PS4 games, only this one. It runs through the native Bloodborne port (deadinside28, Mrsuss60 and shadPS4, GPL license), not through the PS5 emulator. It needs version 1.09 with the update merged into the game folder, and Python 3.10 or newer.
+Эксперимент: Ranga не запускает игры PS4, только эту. Она работает через нативный порт Bloodborne (deadinside28, Mrsuss60 и shadPS4, лицензия GPL), а не через эмулятор PS5. Нужна версия 1.09 с обновлением, объединённым в папке игры, и Python 3.10 или новее.
+Experimento: Ranga no ejecuta juegos de PS4, solo este. Funciona con el port nativo de Bloodborne (deadinside28, Mrsuss60 y shadPS4, licencia GPL), no con el emulador de PS5. Necesita la versión 1.09 con la actualización combinada en la carpeta del juego y Python 3.10 o más nuevo.
+
+No jogo, Insert ou L3 + R3 abre o menu de gráficos e FSR.
+In the game, Insert or L3 + R3 opens the graphics and FSR menu.
+В игре Insert или L3 + R3 открывает меню графики и FSR.
+En el juego, Insert o L3 + R3 abre el menú de gráficos y FSR.
+
+Emulador
+Emulator
+Эмулятор
+Emulador
+
+Jogo experimental: o Ranga Emu só foi testado com God of War Sons of Sparta. Este jogo pode travar ou nem abrir. Se der erro, a aba Log mostra o que aconteceu.
+Experimental game: Ranga Emu has only been tested with God of War Sons of Sparta. This game may freeze or not even open. If there's an error, the Log tab shows what happened.
+Экспериментальная игра: Ranga Emu проверен только с God of War Sons of Sparta. Эта игра может зависнуть или вовсе не запуститься. Если будет ошибка, вкладка «Журнал» покажет, что случилось.
+Juego experimental: Ranga Emu solo se probó con God of War Sons of Sparta. Este juego puede colgarse o ni abrir. Si da error, la pestaña Log muestra lo que pasó.
+
+Desligada
+Off
+Выкл.
+Desactivada
+
+Entrar em uma sala
+Join a room
+Войти в комнату
+Entrar en una sala
+
+Criar uma sala
+Create a room
+Создать комнату
+Crear una sala
+
+Nome do jogador
+Player name
+Имя игрока
+Nombre del jugador
+
+Aparece nos jogos de Switch no lugar de \"Eden\" e é o seu apelido na sala.
+Shows in Switch games instead of \"Eden\" and is your nickname in the room.
+Показывается в играх Switch вместо «Eden» и служит вашим ником в комнате.
+Aparece en los juegos de Switch en lugar de \"Eden\" y es tu apodo en la sala.
+
+Sala online
+Online room
+Онлайн-комната
+Sala en línea
+
+Tipo de sala
+Room type
+Тип комнаты
+Tipo de sala
+
+Privada (a sua, pelo playit)
+Private (yours, through playit)
+Приватная (ваша, через playit)
+Privada (la tuya, por playit)
+
+Pública (lista do Eden)
+Public (Eden's list)
+Публичная (список Eden)
+Pública (lista de Eden)
+
+Endereço
+Address
+Адрес
+Dirección
+
+Porta
+Port
+Порт
+Puerto
+
+%s (a do endereço)
+%s (the address's)
+%s (из адреса)
+%s (la de la dirección)
+
+Para a sala, o nome do jogador precisa de 4 a 20 letras ou números, sem acento.
+For the room, the player name needs 4 to 20 letters or numbers, without accents.
+Для комнаты имя игрока должно содержать от 4 до 20 латинских букв или цифр, без диакритики.
+Para la sala, el nombre del jugador necesita de 4 a 20 letras o números, sin tildes.
+
+Escolha uma sala na lista.
+Choose a room from the list.
+Выберите комнату в списке.
+Elige una sala de la lista.
+
+Falta o endereço que o dono da sala passou.
+The address the room's owner gave you is missing.
+Не указан адрес, который дал владелец комнаты.
+Falta la dirección que te pasó el dueño de la sala.
+
+Sala pública: outras pessoas podem estar nela e ver o seu apelido; no jogo, só joga com você quem entrar na mesma partida. A sala é de outra pessoa e pode sair do ar.
+Public room: other people may be in it and see your nickname; in the game, only those who join the same match play with you. The room belongs to someone else and may go offline.
+Публичная комната: в ней могут быть другие люди, и они увидят ваш ник; в игре с вами играют только те, кто зайдёт в тот же матч. Комната принадлежит другому человеку и может отключиться.
+Sala pública: otras personas pueden estar en ella y ver tu apodo; en el juego, solo juega contigo quien entre en la misma partida. La sala es de otra persona y puede desconectarse.
+
+Cole o endereço como o dono da sala passou; \"endereço:porta\" junto também serve, e aí a porta pode ficar vazia. Senha só se a sala tiver.
+Paste the address the way the room's owner gave it; \"address:port\" together also works, and then the port can stay empty. Password only if the room has one.
+Вставьте адрес так, как его дал владелец комнаты; можно и вместе «адрес:порт» — тогда порт можно оставить пустым. Пароль — только если он есть у комнаты.
+Pega la dirección tal como te la pasó el dueño de la sala; \"dirección:puerto\" junto también sirve, y entonces el puerto puede quedar vacío. Contraseña solo si la sala tiene.
+
+A sala abre junto com o jogo, na porta escolhida (vazia = 24872), em UDP. Para amigos de fora entrarem, aponte um túnel UDP (playit, por exemplo) para 127.0.0.1 nessa porta e passe a eles o endereço do túnel.
+The room opens with the game, on the chosen port (empty = 24872), over UDP. For friends outside to join, point a UDP tunnel (playit, for example) to 127.0.0.1 on that port and give them the tunnel's address.
+Комната открывается вместе с игрой на выбранном порту (пусто = 24872), по UDP. Чтобы друзья извне могли войти, направьте UDP-туннель (например, playit) на 127.0.0.1 на этом порту и дайте им адрес туннеля.
+La sala se abre junto con el juego, en el puerto elegido (vacío = 24872), por UDP. Para que entren amigos de fuera, apunta un túnel UDP (playit, por ejemplo) a 127.0.0.1 en ese puerto y pásales la dirección del túnel.
+
+No jogo, todos escolhem o modo sem fio local / LAN, não o online da Nintendo. Todos precisam da mesma versão do emulador e do jogo.
+In the game, everyone chooses local wireless / LAN mode, not Nintendo's online. Everyone needs the same version of the emulator and of the game.
+В игре все выбирают локальный беспроводной режим / LAN, а не онлайн Nintendo. У всех должна быть одна и та же версия эмулятора и игры.
+En el juego, todos eligen el modo inalámbrico local / LAN, no el online de Nintendo. Todos necesitan la misma versión del emulador y del juego.
+
+Feche o jogo para mudar a sala.
+Close the game to change the room.
+Закройте игру, чтобы сменить комнату.
+Cierra el juego para cambiar la sala.
+
+Arquivo do jogo
+Game file
+Файл игры
+Archivo del juego
+
+Pasta do jogo
+Game folder
+Папка игры
+Carpeta del juego
+
+Abrir pasta
+Open folder
+Открыть папку
+Abrir carpeta
+
+Escolha o novo arquivo do jogo
+Choose the new game file
+Выберите новый файл игры
+Elige el nuevo archivo del juego
+
+Escolha a nova pasta do jogo
+Choose the new game folder
+Выберите новую папку игры
+Elige la nueva carpeta del juego
+
+Escolha uma imagem PNG para a capa
+Choose a PNG image for the cover
+Выберите PNG-изображение для обложки
+Elige una imagen PNG para la portada
+
+Remover da lista
+Remove from the list
+Убрать из списка
+Quitar de la lista
+
+ da lista?\n\nOs arquivos do jogo e os saves não são apagados.
+ from the list?\n\nThe game files and saves are not deleted.
+ из списка?\n\nФайлы игры и сохранения не удаляются.
+ de la lista?\n\nLos archivos del juego y las partidas no se borran.
+
+Feche o jogo para ligar ou desligar.
+Close the game to turn it on or off.
+Закройте игру, чтобы включить или выключить.
+Cierra el juego para activarlo o desactivarlo.
+
+Este jogo desenha com %s no Ranga: o DLSS 5 só pega em jogos que desenham com Vulkan.
+This game draws with %s in Ranga: DLSS 5 only works in games that draw with Vulkan.
+Эта игра рисует через %s в Ranga: DLSS 5 работает только в играх, которые рисуют через Vulkan.
+Este juego dibuja con %s en Ranga: DLSS 5 solo funciona en juegos que dibujan con Vulkan.
+
+a própria janela do emulador
+the emulator's own window
+собственное окно эмулятора
+la propia ventana del emulador
+
+ligado, arquivos prontos
+on, files ready
+включено, файлы готовы
+activado, archivos listos
+
+Ainda não dá: %s
+Not yet: %s
+Пока нельзя: %s
+Todavía no: %s
+
+Como o DLSS 5 Swapper faz com emuladores: ReShade + DLSS5-Feeder + um add-on neural, com os arquivos que você colocar na pasta do DLSS 5. O Ranga não baixa nenhum deles. Só placa RTX 50, e pesa: o FPS pode cair perto da metade.
+The way DLSS 5 Swapper does it with emulators: ReShade + DLSS5-Feeder + a neural add-on, with the files you put in the DLSS 5 folder. Ranga doesn't download any of them. RTX 50 cards only, and it's heavy: FPS can drop by about half.
+Так же, как DLSS 5 Swapper делает с эмуляторами: ReShade + DLSS5-Feeder + нейронный аддон, с файлами, которые вы положите в папку DLSS 5. Ranga ничего из этого не скачивает. Только видеокарты RTX 50, и это тяжело: FPS может упасть почти вдвое.
+Como hace DLSS 5 Swapper con emuladores: ReShade + DLSS5-Feeder + un add-on neural, con los archivos que pongas en la carpeta de DLSS 5. Ranga no descarga ninguno. Solo tarjetas RTX 50, y exige mucho: los FPS pueden caer cerca de la mitad.
+
+Abra o jogo uma vez: o Ranga anota se ele desenha com Vulkan, o único jeito que o DLSS 5 pega.
+Open the game once: Ranga notes whether it draws with Vulkan, the only way DLSS 5 works.
+Откройте игру один раз: Ranga запомнит, рисует ли она через Vulkan — только так работает DLSS 5.
+Abre el juego una vez: Ranga anota si dibuja con Vulkan, la única forma en que funciona DLSS 5.
+
+Em outro emulador, só pega se ele estiver desenhando com Vulkan (escolha Vulkan nas configurações de vídeo dele).
+In another emulator, it only works if it's drawing with Vulkan (choose Vulkan in its video settings).
+В другом эмуляторе это работает, только если он рисует через Vulkan (выберите Vulkan в его настройках видео).
+En otro emulador, solo funciona si dibuja con Vulkan (elige Vulkan en su configuración de video).
+
+Abrir pasta do DLSS 5
+Open DLSS 5 folder
+Открыть папку DLSS 5
+Abrir carpeta de DLSS 5
+
+Marcados aqui já começam ligados. As teclas ligam e desligam durante o jogo.
+The ones checked here start turned on. The keys turn them on and off during the game.
+Отмеченные здесь включаются сразу. Клавиши включают и выключают их во время игры.
+Los marcados aquí empiezan activados. Las teclas los activan y desactivan durante el juego.
+
+Desligado
+Off
+Выключено
+Desactivado
+
+Multiplicador de dano (F4)
+Damage multiplier (F4)
+Множитель урона (F4)
+Multiplicador de daño (F4)
+
+F8  +10 materiais de melhoria
+F8  +10 upgrade materials
+F8  +10 материалов улучшения
+F8  +10 materiales de mejora
+
+Jogar online
+Play online
+Играть онлайн
+Jugar en línea
+
+desligado
+off
+выключено
+desactivado
+
+ligado: o jogo entra na sala quando abrir
+on: the game joins the room when it opens
+включено: игра заходит в комнату при запуске
+activado: el juego entra en la sala al abrirse
+
+Endereço da sala
+Room address
+Адрес комнаты
+Dirección de la sala
+
+Seu nome
+Your name
+Ваше имя
+Tu nombre
+
+Atraso
+Delay
+Задержка
+Retraso
+
+%d quadros
+%d frames
+%d кадр(ов)
+%d fotogramas
+
+Quem hospeda mede o ping de cada amigo e ajusta o atraso sozinho durante o jogo (vale o de quem hospeda).
+The host measures each friend's ping and adjusts the delay by itself during the game (the host's setting counts).
+Хост измеряет пинг каждого друга и сам подстраивает задержку во время игры (действует настройка хоста).
+Quien hospeda mide el ping de cada amigo y ajusta el retraso solo durante el juego (vale el de quien hospeda).
+
+Vale o atraso de quem hospeda: menos é mais rápido, mais aguenta conexão ruim sem engasgar.
+The host's delay counts: less is faster, more handles a bad connection without stuttering.
+Действует задержка хоста: меньше — быстрее, больше — выдерживает плохое соединение без рывков.
+Vale el retraso de quien hospeda: menos es más rápido, más aguanta una conexión mala sin trabarse.
+
+Falta o endereço da sala (o do playit que o dono passou).
+The room address is missing (the playit one the owner gave you).
+Не указан адрес комнаты (адрес playit, который дал владелец).
+Falta la dirección de la sala (la de playit que te pasó el dueño).
+
+Todos abrem o mesmo jogo (o mesmo arquivo) com o mesmo endereço. Quem abrir primeiro é o anfitrião: os outros entram no jogo dele, até 4 jogadores, cada um com o próprio controle. Os estados (salvar/carregar) ficam desligados enquanto joga online, e o save de quem entra não é mexido.
+Everyone opens the same game (the same file) with the same address. Whoever opens first is the host: the others join their game, up to 4 players, each with their own controller. States (save/load) are off while playing online, and the save of whoever joins isn't touched.
+Все открывают одну и ту же игру (один и тот же файл) с одним адресом. Кто откроет первым — хост: остальные заходят в его игру, до 4 игроков, у каждого свой геймпад. Состояния (сохранить/загрузить) отключены во время онлайн-игры, а сохранения тех, кто заходит, не затрагиваются.
+Todos abren el mismo juego (el mismo archivo) con la misma dirección. Quien abra primero es el anfitrión: los demás entran en su juego, hasta 4 jugadores, cada uno con su propio mando. Los estados (guardar/cargar) quedan desactivados mientras se juega en línea, y la partida de quien entra no se toca.
+
+Atraso: quanto maior, menos o jogo para esperando o amigo, mas os botões respondem um pouco depois. 4 serve para quase todos; suba se o título mostrar \"esperando o outro jogador\" com frequência.
+Delay: the higher it is, the less the game stops waiting for your friend, but the buttons respond a bit later. 4 works for almost everyone; raise it if the title often shows \"waiting for the other player\".
+Задержка: чем она больше, тем реже игра останавливается в ожидании друга, но кнопки срабатывают чуть позже. 4 подходит почти всем; увеличьте, если в заголовке часто видно «ожидание другого игрока».
+Retraso: cuanto mayor, menos se detiene el juego esperando al amigo, pero los botones responden un poco después. 4 sirve para casi todos; súbelo si el título muestra \"esperando al otro jugador\" a menudo.
+
+Neste console o online é experimental: o estado do jogo é grande e pode demorar alguns segundos para o amigo entrar.
+On this console online play is experimental: the game state is large and it may take a few seconds for your friend to join.
+На этой консоли онлайн экспериментальный: состояние игры большое, и другу может потребоваться несколько секунд, чтобы войти.
+En esta consola el online es experimental: el estado del juego es grande y el amigo puede tardar unos segundos en entrar.
+
+Feche o jogo para mudar o online.
+Close the game to change online play.
+Закройте игру, чтобы изменить онлайн-настройки.
+Cierra el juego para cambiar el online.
+
+ligada: o jogo entra na sala quando abrir
+on: the game joins the room when it opens
+включена: игра заходит в комнату при запуске
+activada: el juego entra en la sala al abrirse
+
+Igual à sala do Switch: todos entram na mesma sala e, no jogo, escolhem o multijogador local (sem fio). Cada um precisa de um nome diferente. É a sala do 3DS, com endereço próprio (não serve o do Switch).
+Like the Switch room: everyone joins the same room and, in the game, chooses local (wireless) multiplayer. Each one needs a different name. It's the 3DS room, with its own address (the Switch one doesn't work).
+Как комната Switch: все заходят в одну комнату и в игре выбирают локальный (беспроводной) мультиплеер. У каждого должно быть своё имя. Это комната 3DS со своим адресом (адрес Switch не подойдёт).
+Igual que la sala de Switch: todos entran en la misma sala y, en el juego, eligen el multijugador local (inalámbrico). Cada uno necesita un nombre distinto. Es la sala de 3DS, con dirección propia (no sirve la de Switch).
+
+ligado: o Xbox entra na rede do hub quando o jogo abrir
+on: the Xbox joins the hub's network when the game opens
+включено: Xbox подключается к сети хаба при запуске игры
+activado: la Xbox entra en la red del hub al abrirse el juego
+
+Endereço do hub
+Hub address
+Адрес хаба
+Dirección del hub
+
+Para jogos com System Link no menu (Halo, por exemplo). Todos põem o mesmo endereço: o do túnel UDP do playit para a porta %d do PC que hospeda (ou, na mesma casa, o 192.168... desse PC com a porta %d). No jogo, escolha System Link. O hub roda junto com a sala dos clássicos.
+For games with System Link in the menu (Halo, for example). Everyone puts the same address: the playit UDP tunnel's for port %d of the hosting PC (or, in the same house, that PC's 192.168... with port %d). In the game, choose System Link. The hub runs along with the classics room.
+Для игр с System Link в меню (например, Halo). Все указывают один адрес: UDP-туннеля playit на порт %d ПК-хоста (или, в одном доме, 192.168... этого ПК с портом %d). В игре выберите System Link. Хаб работает вместе с комнатой классики.
+Para juegos con System Link en el menú (Halo, por ejemplo). Todos ponen la misma dirección: la del túnel UDP de playit al puerto %d del PC que hospeda (o, en la misma casa, la 192.168... de ese PC con el puerto %d). En el juego, elige System Link. El hub funciona junto con la sala de los clásicos.
+
+Cache de shaders
+Shader cache
+Кэш шейдеров
+Caché de shaders
+
+%.1f MB neste PC
+%.1f MB on this PC
+%.1f МБ на этом ПК
+%.1f MB en este PC
+
+O PC que hospeda não respondeu ou ainda não tem cache deste jogo.
+The hosting PC didn't answer or doesn't have a cache for this game yet.
+ПК-хост не ответил или у него ещё нет кэша для этой игры.
+El PC que hospeda no respondió o todavía no tiene caché de este juego.
+
+O seu cache já é do mesmo tamanho ou maior: nada mudou.
+Your cache is already the same size or bigger: nothing changed.
+Ваш кэш уже того же размера или больше: ничего не изменилось.
+Tu caché ya es del mismo tamaño o mayor: nada cambió.
+
+Cache de %.1f MB baixado: as primeiras corridas não devem mais travar.
+%.1f MB cache downloaded: the first runs shouldn't stutter anymore.
+Кэш %.1f МБ скачан: первые запуски больше не должны подтормаживать.
+Caché de %.1f MB descargada: las primeras partidas ya no deberían trabarse.
+
+Este PC hospeda: o cache dele vai para os amigos sozinho, pela sala dos clássicos.
+This PC hosts: its cache goes to friends by itself, through the classics room.
+Этот ПК — хост: его кэш сам уходит друзьям через комнату классики.
+Este PC hospeda: su caché va sola a los amigos, por la sala de los clásicos.
+
+Os shaders que o PC que hospeda já compilou neste jogo, para as primeiras partidas não travarem. Não contém o jogo.
+The shaders the hosting PC has already compiled for this game, so the first matches don't stutter. It doesn't contain the game.
+Шейдеры, которые ПК-хост уже скомпилировал для этой игры, чтобы первые партии не подтормаживали. Самой игры там нет.
+Los shaders que el PC que hospeda ya compiló en este juego, para que las primeras partidas no se traben. No contiene el juego.
+
+ligado: o jogo entra no RPCN quando abrir
+on: the game joins RPCN when it opens
+включено: игра подключается к RPCN при запуске
+activado: el juego entra en RPCN al abrirse
+
+Servidor do Ranga (sem cadastro)
+Ranga's server (no sign-up)
+Сервер Ranga (без регистрации)
+Servidor de Ranga (sin registro)
+
+RPCN oficial (conta sua no rpcs3.net)
+Official RPCN (your account at rpcs3.net)
+Официальный RPCN (ваш аккаунт на rpcs3.net)
+RPCN oficial (tu cuenta en rpcs3.net)
+
+Servidor
+Server
+Сервер
+Servidor
+
+Endereço do servidor
+Server address
+Адрес сервера
+Dirección del servidor
+
+Seu nome no PS3: %s (o mesmo do online do Ranga; a conta é criada sozinha na primeira vez). O endereço é o do PC que liga o servidor do PS3: na mesma casa, o 192.168... dele com :31313; pela internet, o IP público dele com :31313, com as portas abertas no roteador dele. Os PS3 se ligam direto um no outro; o servidor abre esse caminho sozinho na maioria das internets (só falha em CGNAT dos dois lados).
+Your name on PS3: %s (the same as Ranga's online one; the account is created by itself the first time). The address is the one of the PC running the PS3 server: in the same house, its 192.168... with :31313; over the internet, its public IP with :31313, with the ports open on its router. The PS3s connect directly to each other; the server opens that path by itself on most connections (it only fails with CGNAT on both sides).
+Ваше имя на PS3: %s (то же, что в онлайне Ranga; аккаунт создаётся сам в первый раз). Адрес — это ПК, на котором запущен сервер PS3: в одном доме — его 192.168... с :31313; через интернет — его внешний IP с :31313 и открытыми портами на его роутере. PS3 подключаются напрямую друг к другу; сервер сам открывает этот путь в большинстве сетей (не получается только при CGNAT с обеих сторон).
+Tu nombre en PS3: %s (el mismo del online de Ranga; la cuenta se crea sola la primera vez). La dirección es la del PC que enciende el servidor de PS3: en la misma casa, su 192.168... con :31313; por internet, su IP pública con :31313, con los puertos abiertos en su router. Las PS3 se conectan directamente entre sí; el servidor abre ese camino solo en la mayoría de las conexiones (solo falla con CGNAT en los dos lados).
+
+Conta
+Account
+Аккаунт
+Cuenta
+
+Abrir o RPCS3 para criar a conta
+Open RPCS3 to create the account
+Открыть RPCS3, чтобы создать аккаунт
+Abrir RPCS3 para crear la cuenta
+
+Abrir o RPCS3 (conta do RPCN)
+Open RPCS3 (RPCN account)
+Открыть RPCS3 (аккаунт RPCN)
+Abrir RPCS3 (cuenta de RPCN)
+
+A conta do RPCN oficial é feita no RPCS3, em Configuração > RPCN, com seu e-mail e o token que chega por e-mail; o Ranga usa a mesma conta quando o jogo abrir. Cada roteador precisa de UPnP ligado.
+The official RPCN account is made in RPCS3, under Configuration > RPCN, with your e-mail and the token that arrives by e-mail; Ranga uses the same account when the game opens. Each router needs UPnP on.
+Официальный аккаунт RPCN создаётся в RPCS3, в разделе Configuration > RPCN, с вашей почтой и токеном, который придёт на почту; Ranga использует этот же аккаунт при запуске игры. На каждом роутере должен быть включён UPnP.
+La cuenta de RPCN oficial se crea en RPCS3, en Configuración > RPCN, con tu correo y el token que llega por correo; Ranga usa la misma cuenta cuando se abre el juego. Cada router necesita UPnP activado.
+
+Internet (servidor público)
+Internet (public server)
+Интернет (публичный сервер)
+Internet (servidor público)
+
+Rede de casa: este PC hospeda
+Home network: this PC hosts
+Домашняя сеть: этот ПК — хост
+Red de casa: este PC hospeda
+
+Rede de casa: entrar no PC de outro
+Home network: join someone else's PC
+Домашняя сеть: подключиться к чужому ПК
+Red de casa: entrar en el PC de otro
+
+Onde jogar
+Where to play
+Где играть
+Dónde jugar
+
+Para jogos com multijogador local do PSP (Monster Hunter, Tekken, Ridge Racer...). Todos escolhem o mesmo servidor e, no jogo, o modo ad hoc / multijogador local. É um servidor público de fãs, não o playit: os PSPs conversam direto entre si, então depende do roteador de cada um deixar passar (UPnP ligado). Se não conectar, é o roteador.
+For games with PSP local multiplayer (Monster Hunter, Tekken, Ridge Racer...). Everyone chooses the same server and, in the game, ad hoc / local multiplayer mode. It's a public fan server, not playit: the PSPs talk directly to each other, so it depends on each person's router letting it through (UPnP on). If it doesn't connect, it's the router.
+Для игр с локальным мультиплеером PSP (Monster Hunter, Tekken, Ridge Racer...). Все выбирают один сервер, а в игре — режим ad hoc / локальный мультиплеер. Это публичный фанатский сервер, а не playit: PSP общаются напрямую, поэтому всё зависит от того, пропускает ли это роутер каждого (UPnP включён). Если не подключается — дело в роутере.
+Para juegos con multijugador local de PSP (Monster Hunter, Tekken, Ridge Racer...). Todos eligen el mismo servidor y, en el juego, el modo ad hoc / multijugador local. Es un servidor público de fans, no playit: las PSP hablan directamente entre sí, así que depende de que el router de cada uno lo deje pasar (UPnP activado). Si no conecta, es el router.
+
+Este PC liga o servidor do PSP quando o jogo abrir. Os outros da casa escolhem \"entrar no PC de outro\" com o endereço %s. Depois, no jogo, todos entram no modo ad hoc / multijogador local. Se o Windows perguntar, permita a rede privada.
+This PC starts the PSP server when the game opens. The others in the house choose \"join someone else's PC\" with the address %s. Then, in the game, everyone enters ad hoc / local multiplayer mode. If Windows asks, allow the private network.
+Этот ПК запускает сервер PSP при открытии игры. Остальные в доме выбирают «подключиться к чужому ПК» с адресом %s. Затем в игре все входят в режим ad hoc / локальный мультиплеер. Если Windows спросит, разрешите частную сеть.
+Este PC enciende el servidor de PSP cuando se abre el juego. Los demás de la casa eligen \"entrar en el PC de otro\" con la dirección %s. Después, en el juego, todos entran en el modo ad hoc / multijugador local. Si Windows pregunta, permite la red privada.
+
+Endereço do PC
+PC address
+Адрес ПК
+Dirección del PC
+
+O endereço que aparece na página do jogo no PC que hospeda (192.168...).
+The address shown on the game's page on the hosting PC (192.168...).
+Адрес, который показан на странице игры на ПК-хосте (192.168...).
+La dirección que aparece en la página del juego en el PC que hospeda (192.168...).
+
+Sala dos clássicos deste PC (servidor)
+This PC's classics room (server)
+Комната классики этого ПК (сервер)
+Sala de los clásicos de este PC (servidor)
+
+Servidor do PS3 deste PC (RPCN)
+This PC's PS3 server (RPCN)
+Сервер PS3 этого ПК (RPCN)
+Servidor de PS3 de este PC (RPCN)
+
+Sala do 3DS deste PC (servidor)
+This PC's 3DS room (server)
+Комната 3DS этого ПК (сервер)
+Sala de 3DS de este PC (servidor)
+
+Uma sala só serve para todos os jogos clássicos. Precisa de um túnel TCP do playit para 127.0.0.1 nesta porta; o endereço do túnel é o que todos (você também, ou 127.0.0.1:porta) põem em \"Endereço da sala\". O hub do System Link do Xbox roda junto, na porta UDP %d (túnel UDP do playit para ela).
+One room works for every classic game. It needs a playit TCP tunnel to 127.0.0.1 on this port; the tunnel's address is what everyone (you too, or 127.0.0.1:port) puts in \"Room address\". The Xbox System Link hub runs along with it, on UDP port %d (a playit UDP tunnel to it).
+Одна комната подходит для всех классических игр. Нужен TCP-туннель playit на 127.0.0.1 на этом порту; адрес туннеля все (и вы тоже, или 127.0.0.1:порт) указывают в поле «Адрес комнаты». Вместе с ней работает хаб Xbox System Link на UDP-порту %d (UDP-туннель playit на него).
+Una sala sirve para todos los juegos clásicos. Necesita un túnel TCP de playit a 127.0.0.1 en este puerto; la dirección del túnel es la que todos (tú también, o 127.0.0.1:puerto) ponen en \"Dirección de la sala\". El hub de System Link de Xbox funciona junto, en el puerto UDP %d (túnel UDP de playit hacia él).
+
+O RPCN deste PC, sem e-mail e sem cadastro: cada PS3 cria a própria conta ao entrar. Na mesma casa, todos põem o 192.168... deste PC com a porta 31313. Pela internet, os PS3 se ligam direto um no outro, então o túnel do playit não serve: o roteador deste PC precisa encaminhar TCP 31313 e UDP 3657 para ele (uma vez, na página do roteador). Os jogadores não precisam abrir nada. O endereço, então, é o IP público deste PC com :31313.
+This PC's RPCN, without e-mail or sign-up: each PS3 creates its own account when it joins. In the same house, everyone puts this PC's 192.168... with port 31313. Over the internet, the PS3s connect directly to each other, so the playit tunnel doesn't work: this PC's router needs to forward TCP 31313 and UDP 3657 to it (once, on the router's page). The players don't need to open anything. The address, then, is this PC's public IP with :31313.
+RPCN этого ПК, без почты и регистрации: каждая PS3 создаёт свой аккаунт при входе. В одном доме все указывают 192.168... этого ПК с портом 31313. Через интернет PS3 подключаются напрямую, поэтому туннель playit не подходит: роутер этого ПК должен пробросить на него TCP 31313 и UDP 3657 (один раз, на странице роутера). Игрокам ничего открывать не нужно. Адрес тогда — внешний IP этого ПК с :31313.
+El RPCN de este PC, sin correo y sin registro: cada PS3 crea su propia cuenta al entrar. En la misma casa, todos ponen la 192.168... de este PC con el puerto 31313. Por internet, las PS3 se conectan directamente entre sí, así que el túnel de playit no sirve: el router de este PC tiene que redirigir TCP 31313 y UDP 3657 hacia él (una vez, en la página del router). Los jugadores no tienen que abrir nada. La dirección, entonces, es la IP pública de este PC con :31313.
+
+Uma sala serve para todos os jogos de 3DS. Precisa de um túnel UDP do playit para 127.0.0.1 nesta porta; o endereço do túnel é o que todos (você também, ou 127.0.0.1:porta) põem em \"Endereço da sala\".
+One room works for every 3DS game. It needs a playit UDP tunnel to 127.0.0.1 on this port; the tunnel's address is what everyone (you too, or 127.0.0.1:port) puts in \"Room address\".
+Одна комната подходит для всех игр 3DS. Нужен UDP-туннель playit на 127.0.0.1 на этом порту; адрес туннеля все (и вы тоже, или 127.0.0.1:порт) указывают в поле «Адрес комнаты».
+Una sala sirve para todos los juegos de 3DS. Necesita un túnel UDP de playit a 127.0.0.1 en este puerto; la dirección del túnel es la que todos (tú también, o 127.0.0.1:puerto) ponen en \"Dirección de la sala\".
+
+Rede de casa (LAN)
+Home network (LAN)
+Домашняя сеть (LAN)
+Red de casa (LAN)
+
+aceita quem está na mesma rede
+accepts anyone on the same network
+принимает всех в той же сети
+acepta a quien esté en la misma red
+
+só este PC e o túnel
+only this PC and the tunnel
+только этот ПК и туннель
+solo este PC y el túnel
+
+Na mesma casa, os outros põem em \"Endereço da sala\": %s (se o Windows perguntar, permita a rede privada).
+In the same house, the others put in \"Room address\": %s (if Windows asks, allow the private network).
+В одном доме остальные указывают в поле «Адрес комнаты»: %s (если Windows спросит, разрешите частную сеть).
+En la misma casa, los demás ponen en \"Dirección de la sala\": %s (si Windows pregunta, permite la red privada).
+
+Ligada na porta %d (TCP)
+On, port %d (TCP)
+Включена на порту %d (TCP)
+Activa en el puerto %d (TCP)
+
+Ligada na porta %d (UDP)
+On, port %d (UDP)
+Включена на порту %d (UDP)
+Activa en el puerto %d (UDP)
+
+Ligar
+Turn on
+Включить
+Activar
+
+Atualização para os amigos
+Update for friends
+Обновление для друзей
+Actualización para los amigos
+
+Publica o Ranga deste PC (programas e núcleos, nunca chaves, BIOS ou jogos), assinado. O Ranga dos amigos acha sozinho quando abrir, por esta mesma sala. Última publicada: %s.
+Publishes this PC's Ranga (programs and cores, never keys, BIOS or games), signed. Your friends' Ranga finds it by itself when it opens, through this same room. Last published: %s.
+Публикует Ranga этого ПК (программы и ядра, никогда ключи, BIOS или игры), с подписью. Ranga друзей сам найдёт его при запуске через эту же комнату. Последняя опубликованная: %s.
+Publica el Ranga de este PC (programas y núcleos, nunca claves, BIOS ni juegos), firmado. El Ranga de los amigos lo encuentra solo al abrirse, por esta misma sala. Última publicada: %s.
+
+O que mudou
+What changed
+Что изменилось
+Qué cambió
+
+Publicar atualização
+Publish update
+Опубликовать обновление
+Publicar actualización
+
+Publicada a versão 
+Published version 
+Опубликована версия 
+Publicada la versión 
+
+Mandando para o GitHub (uns minutos)...
+Sending to GitHub (a few minutes)...
+Отправка на GitHub (несколько минут)...
+Enviando a GitHub (unos minutos)...
+
+Gerando o pacote...
+Building the package...
+Сборка пакета...
+Generando el paquete...
+
+Pacote completo para um amigo
+Full package for a friend
+Полный пакет для друга
+Paquete completo para un amigo
+
+Onde salvar o pacote do amigo
+Where to save the friend's package
+Куда сохранить пакет для друга
+Dónde guardar el paquete del amigo
+
+Para quem não tem o Ranga (PC novo ou formatado): programas, núcleos e emuladores num zip. Sem BIOS, firmware, chaves, jogos, saves, perfil ou as suas chaves de dono.
+For someone who doesn't have Ranga (new or formatted PC): programs, cores and emulators in a zip. No BIOS, firmware, keys, games, saves, profile or your owner keys.
+Для тех, у кого нет Ranga (новый или отформатированный ПК): программы, ядра и эмуляторы в zip-архиве. Без BIOS, прошивок, ключей, игр, сохранений, профиля и ваших ключей владельца.
+Para quien no tiene Ranga (PC nuevo o formateado): programas, núcleos y emuladores en un zip. Sin BIOS, firmware, claves, juegos, partidas, perfil ni tus claves de dueño.
+
+Salas deste PC (servidor, sempre ligadas)
+This PC's rooms (server, always on)
+Комнаты этого ПК (сервер, всегда включены)
+Salas de este PC (servidor, siempre activas)
+
+A sala fica aberta sozinha, sem jogo aberto. Todos, inclusive você, usam \"Entrar em uma sala\"; qualquer um cria o grupo no jogo. Cada sala precisa de um túnel UDP do playit para 127.0.0.1 na porta dela.
+The room stays open by itself, with no game open. Everyone, you included, uses \"Join a room\"; anyone creates the group in the game. Each room needs a playit UDP tunnel to 127.0.0.1 on its port.
+Комната остаётся открытой сама, без запущенной игры. Все, включая вас, используют «Войти в комнату»; группу в игре может создать любой. Каждой комнате нужен UDP-туннель playit на 127.0.0.1 на её порту.
+La sala queda abierta sola, sin ningún juego abierto. Todos, tú incluido, usan \"Entrar en una sala\"; cualquiera crea el grupo en el juego. Cada sala necesita un túnel UDP de playit a 127.0.0.1 en su puerto.
+
+Nome
+Name
+Название
+Nombre
+
+Até
+Up to
+До
+Hasta
+
+%d pessoas
+%d people
+%d чел.
+%d personas
+
+Ligada na porta %d
+On, port %d
+Включена на порту %d
+Activa en el puerto %d
+
+Este jogo entra nela
+This game joins it
+Эта игра заходит в неё
+Este juego entra en ella
+
+Remover a sala \"
+Remove the room \"
+Удалить комнату «
+Quitar la sala \"
+
+Ligar as salas quando o Windows abrir
+Turn the rooms on when Windows starts
+Включать комнаты при запуске Windows
+Activar las salas al iniciar Windows
+
+Esconder (este PC não é servidor)
+Hide (this PC isn't a server)
+Скрыть (этот ПК не сервер)
+Ocultar (este PC no es servidor)
+
+Desligue as salas antes.
+Turn the rooms off first.
+Сначала выключите комнаты.
+Primero desactiva las salas.
+
+A sala \"%s\" já usa a porta %d: em vez de \"Criar uma sala\", use \"Este jogo entra nela\".
+The room \"%s\" already uses port %d: instead of \"Create a room\", use \"This game joins it\".
+Комната «%s» уже использует порт %d: вместо «Создать комнату» выберите «Эта игра заходит в неё».
+La sala \"%s\" ya usa el puerto %d: en lugar de \"Crear una sala\", usa \"Este juego entra en ella\".
+
+Imagem
+Image
+Изображение
+Imagen
+
+Automático
+Automatic
+Автоматически
+Automático
+
+0,5x (360p, PC bem fraco)
+0.5x (360p, very weak PC)
+0,5x (360p, очень слабый ПК)
+0,5x (360p, PC muy débil)
+
+1x (720p/1080p, original)
+1x (720p/1080p, original)
+1x (720p/1080p, оригинал)
+1x (720p/1080p, original)
+
+Quantas vezes a resolução do Switch. Vale quando o jogo abrir de novo.
+How many times the Switch's resolution. Applies when the game opens again.
+Во сколько раз больше разрешения Switch. Действует при следующем запуске игры.
+Cuántas veces la resolución de Switch. Vale cuando el juego se vuelva a abrir.
+
+Modo do console
+Console mode
+Режим консоли
+Modo de la consola
+
+Automático (na base)
+Automatic (docked)
+Автоматически (в доке)
+Automático (en la base)
+
+Na base (1080p)
+Docked (1080p)
+В доке (1080p)
+En la base (1080p)
+
+Portátil (720p, mais leve)
+Handheld (720p, lighter)
+Портативный (720p, легче)
+Portátil (720p, más ligero)
+
+Na base os jogos desenham em 1080p; no portátil, em 720p e mais leve. Vale ao reabrir.
+Docked, games draw at 1080p; handheld, at 720p and lighter. Applies when reopened.
+В доке игры рисуют в 1080p; в портативном режиме — в 720p и легче. Действует после перезапуска.
+En la base los juegos dibujan a 1080p; en portátil, a 720p y más ligero. Vale al reabrir.
+
+Proporção da tela
+Aspect ratio
+Соотношение сторон
+Proporción de pantalla
+
+Automático (16:9)
+Automatic (16:9)
+Автоматически (16:9)
+Automático (16:9)
+
+Esticar na janela
+Stretch to the window
+Растянуть на окно
+Estirar en la ventana
+
+Formato da imagem. Muda na hora.
+Image format. Changes right away.
+Формат изображения. Меняется сразу.
+Formato de la imagen. Cambia al instante.
+
+Modo do FSR
+FSR mode
+Режим FSR
+Modo de FSR
+
+Automático (pela Qualidade)
+Automatic (by Quality)
+Автоматически (по качеству)
+Automático (según la Calidad)
+
+Nativo + AA (como o DLAA): 100% + SMAA
+Native + AA (like DLAA): 100% + SMAA
+Нативное + AA (как DLAA): 100% + SMAA
+Nativo + AA (como DLAA): 100% + SMAA
+
+Qualidade: 75%
+Quality: 75%
+Качество: 75%
+Calidad: 75%
+
+Desempenho: 50%
+Performance: 50%
+Производительность: 50%
+Rendimiento: 50%
+
+Ultra desempenho: 25% (borrado)
+Ultra performance: 25% (blurry)
+Ультра производительность: 25% (размыто)
+Ultra rendimiento: 25% (borroso)
+
+O jogo desenha menor e o AMD FSR aumenta até a sua tela, como nos jogos de PC. O Eden só desenha em 25, 50, 75 ou 100%, por isso não há Equilibrado. Escolher um modo liga o filtro FSR; a resolução muda ao reabrir.
+The game draws smaller and AMD FSR scales it up to your screen, like in PC games. Eden only draws at 25, 50, 75 or 100%, so there's no Balanced. Choosing a mode turns the FSR filter on; the resolution changes when reopened.
+Игра рисует в меньшем разрешении, а AMD FSR увеличивает его до вашего экрана, как в играх для ПК. Eden рисует только в 25, 50, 75 или 100%, поэтому режима «Баланс» нет. Выбор режима включает фильтр FSR; разрешение меняется после перезапуска.
+El juego dibuja más pequeño y AMD FSR lo agranda hasta tu pantalla, como en los juegos de PC. Eden solo dibuja al 25, 50, 75 o 100%, por eso no hay Equilibrado. Elegir un modo activa el filtro FSR; la resolución cambia al reabrir.
+
+Filtro da imagem
+Image filter
+Фильтр изображения
+Filtro de imagen
+
+AMD FSR (mais nítido ao aumentar)
+AMD FSR (sharper when scaling up)
+AMD FSR (чётче при увеличении)
+AMD FSR (más nítido al agrandar)
+
+Bilinear (padrão)
+Bilinear (default)
+Билинейный (по умолчанию)
+Bilineal (predeterminado)
+
+Area (bom ao diminuir)
+Area (good when scaling down)
+Area (хорош при уменьшении)
+Area (bueno al reducir)
+
+Bicúbico
+Bicubic
+Бикубический
+Bicúbico
+
+Pixelado
+Pixelated
+Пикселизация
+Pixelado
+
+Como a imagem é esticada até a sua tela. O FSR da AMD deixa mais nítido quando a resolução está baixa. Muda na hora.
+How the image is stretched to your screen. AMD's FSR makes it sharper when the resolution is low. Changes right away.
+Как изображение растягивается до вашего экрана. FSR от AMD делает его чётче при низком разрешении. Меняется сразу.
+Cómo se estira la imagen hasta tu pantalla. El FSR de AMD la deja más nítida cuando la resolución es baja. Cambia al instante.
+
+Nitidez do FSR
+FSR sharpness
+Резкость FSR
+Nitidez de FSR
+
+0 (máxima)
+0 (maximum)
+0 (максимум)
+0 (máxima)
+
+25 (padrão)
+25 (default)
+25 (по умолчанию)
+25 (predeterminado)
+
+200 (mínima)
+200 (minimum)
+200 (минимум)
+200 (mínima)
+
+Só com o filtro FSR. Número menor = mais nítido. Muda na hora.
+Only with the FSR filter. Lower number = sharper. Changes right away.
+Только с фильтром FSR. Меньше число — чётче. Меняется сразу.
+Solo con el filtro FSR. Número menor = más nítido. Cambia al instante.
+
+Antisserrilhado
+Anti-aliasing
+Сглаживание
+Antialiasing
+
+Nenhum
+None
+Нет
+Ninguno
+
+SMAA (melhor, pesa um pouco)
+SMAA (better, a bit heavier)
+SMAA (лучше, чуть тяжелее)
+SMAA (mejor, exige un poco)
+
+Suaviza as bordas serrilhadas. Muda na hora.
+Smooths jagged edges. Changes right away.
+Сглаживает зубчатые края. Меняется сразу.
+Suaviza los bordes dentados. Cambia al instante.
+
+Filtragem anisotrópica
+Anisotropic filtering
+Анизотропная фильтрация
+Filtrado anisotrópico
+
+Nenhuma
+None
+Нет
+Ninguno
+
+Texturas do chão mais nítidas de longe. Vale ao reabrir.
+Floor textures sharper at a distance. Applies when reopened.
+Текстуры пола чётче вдали. Действует после перезапуска.
+Texturas del suelo más nítidas a lo lejos. Vale al reabrir.
+
+Desempenho
+Performance
+Производительность
+Rendimiento
+
+Limite de FPS
+FPS limit
+Ограничение FPS
+Límite de FPS
+
+jogo
+game
+игра
+juego
+
+O do jogo
+The game's
+Как в игре
+El del juego
+
+Ritmo em que o emulador entrega quadros. Jogando em sala, deixe igual nos dois PCs. Vale ao reabrir.
+Pace at which the emulator delivers frames. Playing in a room, keep it the same on both PCs. Applies when reopened.
+Темп, с которым эмулятор выдаёт кадры. При игре в комнате ставьте одинаково на обоих ПК. Действует после перезапуска.
+Ritmo con el que el emulador entrega fotogramas. Jugando en sala, déjalo igual en los dos PC. Vale al reabrir.
+
+Ligado (sem rasgo)
+On (no tearing)
+Вкл. (без разрывов)
+Activado (sin tearing)
+
+Desligado (menos atraso)
+Off (less lag)
+Выкл. (меньше задержка)
+Desactivado (menos retraso)
+
+Sincroniza com o monitor. Vale ao reabrir.
+Syncs with the monitor. Applies when reopened.
+Синхронизация с монитором. Действует после перезапуска.
+Sincroniza con el monitor. Vale al reabrir.
+
+Precisão da GPU
+GPU accuracy
+Точность GPU
+Precisión de la GPU
+
+Baixa (mais rápida)
+Low (faster)
+Низкая (быстрее)
+Baja (más rápida)
+
+Média (padrão)
+Medium (default)
+Средняя (по умолчанию)
+Media (predeterminado)
+
+Baixa ganha FPS; alta corrige efeitos raros. Vale ao reabrir.
+Low gains FPS; high fixes rare effects. Applies when reopened.
+Низкая даёт больше FPS; высокая исправляет редкие эффекты. Действует после перезапуска.
+Baja gana FPS; alta corrige efectos raros. Vale al reabrir.
+
+Shaders em segundo plano
+Background shaders
+Фоновые шейдеры
+Shaders en segundo plano
+
+Sim tira as travadas da primeira vez que um efeito aparece. Vale ao reabrir.
+Yes removes the stutter the first time an effect shows up. Applies when reopened.
+«Да» убирает подтормаживания при первом появлении эффекта. Действует после перезапуска.
+Sí quita los tirones de la primera vez que aparece un efecto. Vale al reabrir.
+
+Média
+Medium
+Средняя
+Media
+
+Alta
+High
+Высокая
+Alta
+
+Faz o jogo achar que a GPU do Switch é mais rápida; ajuda alguns jogos a ficarem em 60. Vale ao reabrir.
+Makes the game think the Switch's GPU is faster; helps some games stay at 60. Applies when reopened.
+Заставляет игру думать, что GPU Switch быстрее; помогает некоторым играм держать 60. Действует после перезапуска.
+Hace que el juego crea que la GPU de Switch es más rápida; ayuda a algunos juegos a mantenerse en 60. Vale al reabrir.
+
+Avançado
+Advanced
+Дополнительно
+Avanzado
+
+Guardar shaders no disco
+Keep shaders on disk
+Хранить шейдеры на диске
+Guardar shaders en el disco
+
+Automático (sim)
+Automatic (yes)
+Автоматически (да)
+Automático (sí)
+
+Guarda os shaders prontos para a próxima vez. Vale ao reabrir.
+Keeps the ready shaders for next time. Applies when reopened.
+Сохраняет готовые шейдеры на следующий раз. Действует после перезапуска.
+Guarda los shaders listos para la próxima vez. Vale al reabrir.
+
+Vídeos do jogo
+Game videos
+Видео в игре
+Videos del juego
+
+Automático (placa de vídeo)
+Automatic (graphics card)
+Автоматически (видеокарта)
+Automático (tarjeta gráfica)
+
+Na placa de vídeo
+On the graphics card
+На видеокарте
+En la tarjeta gráfica
+
+No processador
+On the processor
+На процессоре
+En el procesador
+
+Desligados
+Off
+Выключены
+Desactivados
+
+Cenas em vídeo. Se travarem, tente no processador. Vale ao reabrir.
+Video cutscenes. If they stutter, try the processor. Applies when reopened.
+Видеоролики. Если подтормаживают, попробуйте процессор. Действует после перезапуска.
+Escenas en video. Si se traban, prueba en el procesador. Vale al reabrir.
+
+Gráficos do Switch (só este jogo)
+Switch graphics (this game only)
+Графика Switch (только эта игра)
+Gráficos de Switch (solo este juego)
+
+Automático segue a Qualidade acima. Filtro, nitidez e antisserrilhado também mudam no menu do jogo (Esc ou botão PS/Guide), na hora; o resto vale ao reabrir.
+Automatic follows the Quality above. Filter, sharpness and anti-aliasing also change in the game's menu (Esc or the PS/Guide button), right away; the rest applies when reopened.
+«Автоматически» следует качеству выше. Фильтр, резкость и сглаживание меняются и в меню игры (Esc или кнопка PS/Guide) сразу; остальное — после перезапуска.
+Automático sigue la Calidad de arriba. Filtro, nitidez y antialiasing también cambian en el menú del juego (Esc o botón PS/Guide), al instante; lo demás vale al reabrir.
+
+Direcional ↑
+D-pad ↑
+Крестовина ↑
+Cruceta ↑
+
+Direcional ↓
+D-pad ↓
+Крестовина ↓
+Cruceta ↓
+
+Direcional ←
+D-pad ←
+Крестовина ←
+Cruceta ←
+
+Direcional →
+D-pad →
+Крестовина →
+Cruceta →
+
+A (direita)
+A (right)
+A (правая)
+A (derecha)
+
+L3 (aperta o analógico esq.)
+L3 (press the left stick)
+L3 (нажатие левого стика)
+L3 (presiona el stick izq.)
+
+R3 (aperta o analógico dir.)
+R3 (press the right stick)
+R3 (нажатие правого стика)
+R3 (presiona el stick der.)
+
+− (menos)
+− (minus)
+− (минус)
+− (menos)
+
+Triângulo (cima)
+Triangle (up)
+Треугольник (верх)
+Triángulo (arriba)
+
+A / Cruz (baixo)
+A / Cross (down)
+A / Крест (низ)
+A / Cruz (abajo)
+
+Y / Triângulo (cima)
+Y / Triangle (up)
+Y / Треугольник (верх)
+Y / Triángulo (arriba)
+
+Botão extra (Mic / Share)
+Extra button (Mic / Share)
+Доп. кнопка (Mic / Share)
+Botón extra (Mic / Share)
+
+Pá traseira 1
+Back paddle 1
+Задняя кнопка 1
+Paleta trasera 1
+
+Pá traseira 2
+Back paddle 2
+Задняя кнопка 2
+Paleta trasera 2
+
+Pá traseira 3
+Back paddle 3
+Задняя кнопка 3
+Paleta trasera 3
+
+Pá traseira 4
+Back paddle 4
+Задняя кнопка 4
+Paleta trasera 4
+
+Vale para todos os jogos de %s que rodam dentro do Ranga, a partir da próxima vez que o jogo abrir. O teclado do PC continua com as teclas de sempre.
+Applies to every %s game that runs inside Ranga, from the next time the game opens. The PC keyboard keeps its usual keys.
+Действует для всех игр %s, которые работают внутри Ranga, со следующего запуска игры. Клавиатура ПК сохраняет привычные клавиши.
+Vale para todos los juegos de %s que funcionan dentro de Ranga, a partir de la próxima vez que se abra el juego. El teclado del PC sigue con las teclas de siempre.
+
+Nenhum controle ligado: ligue um para poder trocar os botões.
+No controller connected: connect one to be able to change the buttons.
+Геймпад не подключён: подключите его, чтобы менять кнопки.
+Ningún mando conectado: conecta uno para poder cambiar los botones.
+
+solte os botões...
+release the buttons...
+отпустите кнопки...
+suelta los botones...
+
+aperte o botão novo... (%d s)
+press the new button... (%d s)
+нажмите новую кнопку... (%d с)
+pulsa el botón nuevo... (%d s)
+
+Mudar
+Change
+Изменить
+Cambiar
+
+Voltar ao padrão
+Back to default
+По умолчанию
+Volver al predeterminado
+
+Esc cancela a espera. O botão Guide / PS fica com o menu do Ranga.
+Esc cancels the wait. The Guide / PS button stays with Ranga's menu.
+Esc отменяет ожидание. Кнопка Guide / PS остаётся за меню Ranga.
+Esc cancela la espera. El botón Guide / PS se queda con el menú de Ranga.
+
++  Adicionar atualização ou DLC...
++  Add update or DLC...
++  Добавить обновление или DLC...
++  Añadir actualización o DLC...
+
+Escolha o arquivo da atualização ou da DLC
+Choose the update or DLC file
+Выберите файл обновления или DLC
+Elige el archivo de la actualización o del DLC
+
+Atualização ou DLC do Switch
+Switch update or DLC
+Обновление или DLC для Switch
+Actualización o DLC de Switch
+
+Feche o jogo para mudar a lista.
+Close the game to change the list.
+Закройте игру, чтобы изменить список.
+Cierra el juego para cambiar la lista.
+
+Vale na próxima vez que o jogo abrir.
+Applies the next time the game opens.
+Действует при следующем запуске игры.
+Vale la próxima vez que se abra el juego.
+
+O Ranga lê cada arquivo de onde ele está, sem copiar nem instalar: não mova nem apague. Atualização e DLC colocadas na pasta de jogos do Switch entram aqui sozinhas.
+Ranga reads each file from where it is, without copying or installing: don't move or delete them. Updates and DLC placed in the Switch games folder show up here by themselves.
+Ranga читает каждый файл с того места, где он лежит, без копирования и установки: не перемещайте и не удаляйте их. Обновления и DLC, положенные в папку игр Switch, появляются здесь сами.
+Ranga lee cada archivo desde donde está, sin copiar ni instalar: no lo muevas ni lo borres. Las actualizaciones y DLC que pongas en la carpeta de juegos de Switch aparecen aquí solas.
+
+Nenhuma atualização nem DLC.
+No updates or DLC.
+Нет обновлений и DLC.
+Ninguna actualización ni DLC.
+
+Atualização
+Update
+Обновление
+Actualización
+
+Tipo não identificado
+Unidentified type
+Неизвестный тип
+Tipo no identificado
+
+arquivo não encontrado
+file not found
+файл не найден
+archivo no encontrado
+
+Escolha a pasta da DLC (a que tem sce_sys\\param.json)
+Choose the DLC folder (the one with sce_sys\\param.json)
+Выберите папку DLC (ту, где есть sce_sys\\param.json)
+Elige la carpeta del DLC (la que tiene sce_sys\\param.json)
+
+Feche o jogo para instalar ou remover DLC.
+Close the game to install or remove DLC.
+Закройте игру, чтобы установить или удалить DLC.
+Cierra el juego para instalar o quitar DLC.
+
+A DLC precisa ter sido tirada do seu console.
+The DLC must have been taken from your own console.
+DLC должно быть снято с вашей собственной консоли.
+El DLC tiene que haberse sacado de tu propia consola.
+
+com arquivos
+with files
+с файлами
+con archivos
+
+só licença
+license only
+только лицензия
+solo licencia
+
+pasta não encontrada
+folder not found
+папка не найдена
+carpeta no encontrada
+
+Remover a DLC 
+Remove the DLC 
+Удалить DLC 
+¿Quitar el DLC 
+
+?\n\nA pasta dela não é apagada.
+?\n\nIts folder is not deleted.
+?\n\nЕго папка не удаляется.
+?\n\nSu carpeta no se borra.
+
+Jogo: 
+Game: 
+Игра: 
+Juego: 
+
+Emulador: 
+Emulator: 
+Эмулятор: 
+Emulador: 
+
+Última vez: 
+Last time: 
+Последний раз: 
+Última vez: 
+
+Relatório pronto: 
+Report ready: 
+Отчёт готов: 
+Informe listo: 
+
+\nMande esse .zip para quem for ajudar.
+\nSend this .zip to whoever is going to help.
+\nОтправьте этот .zip тому, кто будет помогать.
+\nManda ese .zip a quien te vaya a ayudar.
+
+Os logs estão em 
+The logs are in 
+Журналы находятся в 
+Los registros están en 
+
+ (não deu para fazer o .zip).
+ (couldn't make the .zip).
+ (не удалось создать .zip).
+ (no se pudo hacer el .zip).
+
+Abrir pasta de logs
+Open logs folder
+Открыть папку журналов
+Abrir carpeta de registros
+
+Relatório de erro
+Error report
+Отчёт об ошибке
+Informe de error
+
+Junta num .zip os logs deste jogo e do emulador, para mandar a quem for ajudar.
+Puts this game's and the emulator's logs in a .zip, to send to whoever is going to help.
+Собирает журналы этой игры и эмулятора в .zip, чтобы отправить тому, кто будет помогать.
+Junta en un .zip los registros de este juego y del emulador, para mandar a quien te vaya a ayudar.
+
+Seguir o fim
+Follow the end
+Следить за концом
+Seguir el final
+
+(vazio ou ainda não existe)
+(empty or doesn't exist yet)
+(пусто или ещё не создан)
+(vacío o todavía no existe)
+
+Cada console roda no emulador que você escolher aqui. O Ranga não baixa nenhum: baixe do site oficial, extraia onde quiser e aponte o .exe. BIOS, firmware e chaves vêm do seu próprio console.
+Each console runs on the emulator you choose here. Ranga doesn't download any: download from the official site, extract wherever you want and point to the .exe. BIOS, firmware and keys come from your own console.
+Каждая консоль работает в эмуляторе, который вы выберете здесь. Ranga ничего не скачивает: скачайте с официального сайта, распакуйте куда угодно и укажите .exe. BIOS, прошивки и ключи берутся с вашей собственной консоли.
+Cada consola funciona con el emulador que elijas aquí. Ranga no descarga ninguno: descárgalo del sitio oficial, extráelo donde quieras y apunta al .exe. BIOS, firmware y claves vienen de tu propia consola.
+
+Voltar
+Back
+Назад
+Volver
+
+Arquivos do Ranga
+Ranga files
+Файлы Ranga
+Archivos de Ranga
+
+Backup e nuvem
+Backup and cloud
+Резервная копия и облако
+Copia de seguridad y nube
+
+pronto (argumentos genéricos)
+ready (generic arguments)
+готово (общие аргументы)
+listo (argumentos genéricos)
+
+pronto  ·  
+ready  ·  
+готово  ·  
+listo  ·  
+
+sem emulador
+no emulator
+нет эмулятора
+sin emulador
+
+precisa de atenção
+needs attention
+требует внимания
+necesita atención
+
+Rodar dentro do Ranga (nativo)
+Run inside Ranga (native)
+Запускать внутри Ranga (нативно)
+Ejecutar dentro de Ranga (nativo)
+
+O jogo roda no Ranga Retro, com o core %s, sem abrir outro emulador. F11 tela cheia, F5 salva estado, F7 carrega.
+The game runs in Ranga Retro, with the %s core, without opening another emulator. F11 full screen, F5 save state, F7 load.
+Игра работает в Ranga Retro с ядром %s, без запуска другого эмулятора. F11 — полный экран, F5 — сохранить состояние, F7 — загрузить.
+El juego funciona en Ranga Retro, con el núcleo %s, sin abrir otro emulador. F11 pantalla completa, F5 guarda estado, F7 carga.
+
+Escolha o .exe do emulador de 
+Choose the emulator .exe for 
+Выберите .exe эмулятора для 
+Elige el .exe del emulador de 
+
+Programa
+Program
+Программа
+Programa
+
+Tirar
+Remove
+Убрать
+Quitar
+
+Ajustar para este PC
+Set up for this PC
+Настроить под этот ПК
+Ajustar para este PC
+
+Ajustes de 
+Settings for 
+Настройки для 
+Ajustes de 
+
+ (com o emulador fechado):\n\n
+ (with the emulator closed):\n\n
+ (при закрытом эмуляторе):\n\n
+ (con el emulador cerrado):\n\n
+
+Abrir pasta da BIOS
+Open BIOS folder
+Открыть папку BIOS
+Abrir carpeta de BIOS
+
+Usar o RetroArch
+Use RetroArch
+Использовать RetroArch
+Usar RetroArch
+
+Funciona com: %s
+Works with: %s
+Работает с: %s
+Funciona con: %s
+
+Argumentos
+Arguments
+Аргументы
+Argumentos
+
+Padrão
+Default
+По умолчанию
+Predeterminado
+
+Tela cheia
+Full screen
+Полный экран
+Pantalla completa
+
+A sala 
+The room 
+Комната 
+La sala 
+
+ não respondeu: o online não vai funcionar agora (servidor desligado, túnel do playit fora ou endereço errado).\n\nJogar mesmo assim?
+ didn't answer: online won't work right now (server off, playit tunnel down or wrong address).\n\nPlay anyway?
+ не ответила: онлайн сейчас работать не будет (сервер выключен, туннель playit не работает или неверный адрес).\n\nВсё равно играть?
+ no respondió: el online no va a funcionar ahora (servidor apagado, túnel de playit caído o dirección equivocada).\n\n¿Jugar de todos modos?
+
+falta arquivo do console
+console file missing
+не хватает файла консоли
+falta archivo de la consola
+
+Testando a sala...
+Testing the room...
+Проверка комнаты...
+Probando la sala...
+
+Jogar
+Play
+Играть
+Jugar
+
+Outro jogo está aberto.
+Another game is open.
+Открыта другая игра.
+Hay otro juego abierto.
+
+Primeira vez: o jogo é preparado para o seu processador (pode levar uns 10 minutos, com a CPU no máximo). Espere a barra \"Compilando os módulos PPU\" terminar; se fechar antes, começa do zero.
+First time: the game is prepared for your processor (it can take about 10 minutes, with the CPU at full load). Wait for the \"Compiling PPU modules\" bar to finish; if you close it before, it starts from scratch.
+Первый запуск: игра подготавливается под ваш процессор (может занять около 10 минут при полной загрузке CPU). Дождитесь окончания полосы «Compiling PPU modules»; если закрыть раньше, всё начнётся заново.
+Primera vez: el juego se prepara para tu procesador (puede tardar unos 10 minutos, con la CPU al máximo). Espera a que termine la barra \"Compiling PPU modules\"; si cierras antes, empieza de cero.
+
+Opções
+Options
+Параметры
+Opciones
+
+Controle
+Controller
+Геймпад
+Mando
+
+Atualizações e DLC
+Updates and DLC
+Обновления и DLC
+Actualizaciones y DLC
+
+Capturas
+Screenshots
+Скриншоты
+Capturas
+
+Log
+Log
+Журнал
+Registro
+
+Conquista desbloqueada
+Achievement unlocked
+Достижение получено
+Logro desbloqueado
+
+ fechou com erro (código 
+ closed with an error (code 
+ закрылся с ошибкой (код 
+ se cerró con un error (código 
+
+) depois de 
+) after 
+) через 
+) después de 
+
+ s.\n\nQuer gerar o relatório de erro (um .zip com os logs) para mandar a quem for ajudar?
+ s.\n\nDo you want to make the error report (a .zip with the logs) to send to whoever is going to help?
+ с.\n\nСоздать отчёт об ошибке (.zip с журналами), чтобы отправить тому, кто будет помогать?
+ s.\n\n¿Quieres generar el informe de error (un .zip con los registros) para mandarlo a quien te vaya a ayudar?
+
+Digite o usuário e a senha do RetroAchievements.
+Type your RetroAchievements username and password.
+Введите логин и пароль RetroAchievements.
+Escribe el usuario y la contraseña de RetroAchievements.
+
+A sessão acabou: entre na sua conta de novo.
+Your session ended: sign in to your account again.
+Сеанс завершён: войдите в аккаунт снова.
+La sesión terminó: vuelve a iniciar sesión en tu cuenta.
+
+O servidor do Ranga não respondeu. Confira a internet.
+Ranga's server didn't answer. Check your internet.
+Сервер Ranga не ответил. Проверьте интернет.
+El servidor de Ranga no respondió. Revisa tu internet.
+
+O servidor do Ranga respondeu com erro 
+Ranga's server answered with error 
+Сервер Ranga ответил ошибкой 
+El servidor de Ranga respondió con el error 
+
+Conta do Ranga
+Ranga account
+Аккаунт Ranga
+Cuenta de Ranga
+
+A sessão acabou. Entre de novo.
+Your session ended. Sign in again.
+Сеанс завершён. Войдите снова.
+La sesión terminó. Vuelve a iniciar sesión.
+
+Pedido de amizade
+Friend request
+Запрос в друзья
+Solicitud de amistad
+
+As duas senhas não são iguais.
+The two passwords don't match.
+Пароли не совпадают.
+Las dos contraseñas no coinciden.
+
+A verificação do PC não deu certo. Tente de novo.
+The PC check didn't work. Try again.
+Проверка ПК не удалась. Попробуйте снова.
+La verificación del PC no funcionó. Inténtalo de nuevo.
+
+Vocês agora são amigos!
+You're friends now!
+Теперь вы друзья!
+¡Ahora son amigos!
+
+Pedido enviado. Quando aceitarem, aparece aqui.
+Request sent. When they accept, it shows up here.
+Запрос отправлен. Когда его примут, он появится здесь.
+Solicitud enviada. Cuando la acepten, aparece aquí.
+
+Denúncia enviada ao dono do Ranga, com as últimas mensagens de vocês. Se quiser, bloqueie também.
+Report sent to Ranga's owner, with your latest messages. If you want, block them too.
+Жалоба отправлена владельцу Ranga вместе с вашими последними сообщениями. При желании заблокируйте и этого человека.
+Denuncia enviada al dueño de Ranga, con sus últimos mensajes. Si quieres, bloquéalo también.
+
+Adicionado ao grupo.
+Added to the group.
+Добавлен в группу.
+Añadido al grupo.
+
+Você saiu do grupo.
+You left the group.
+Вы вышли из группы.
+Saliste del grupo.
+
+O servidor do Ranga ainda não tem isso (falta atualizar a central).
+Ranga's server doesn't have this yet (the hub needs updating).
+На сервере Ranga этого пока нет (нужно обновить центральный сервер).
+El servidor de Ranga todavía no tiene esto (falta actualizar la central).
+
+Grupo
+Group
+Группа
+Grupo
+
+Amigo
+Friend
+Друг
+Amigo
+
+Não deu para converter esse arquivo.
+Couldn't convert that file.
+Не удалось преобразовать этот файл.
+No se pudo convertir ese archivo.
+
+<  Meu perfil
+<  My profile
+<  Мой профиль
+<  Mi perfil
+
+Jogando agora: %s (%s)
+Playing now: %s (%s)
+Сейчас играет: %s (%s)
+Jugando ahora: %s (%s)
+
+Visto %s
+Seen %s
+Был(а) в сети %s
+Visto %s
+
+Nível %d
+Level %d
+Уровень %d
+Nivel %d
+
+%d / %d XP
+%d / %d XP
+%d / %d XP
+%d / %d XP
+
+XP: 10 por hora jogada, 50 por conquista do Ranga e os pontos de cada conquista do RetroAchievements.
+XP: 10 per hour played, 50 per Ranga achievement and the points of each RetroAchievements achievement.
+XP: 10 за час игры, 50 за достижение Ranga и очки каждого достижения RetroAchievements.
+XP: 10 por hora jugada, 50 por logro de Ranga y los puntos de cada logro de RetroAchievements.
+
+Editar perfil
+Edit profile
+Изменить профиль
+Editar perfil
+
+Entrar ou criar conta
+Sign in or create an account
+Войти или создать аккаунт
+Iniciar sesión o crear cuenta
+
+Conversar
+Chat
+Написать
+Conversar
+
+Desfazer
+Undo
+Отменить
+Deshacer
+
+Desfazer a amizade com 
+Unfriend 
+Удалить из друзей 
+¿Dejar de ser amigo de 
+
+? Vocês param de ver o perfil e de conversar.
+? You stop seeing each other's profile and chatting.
+? Вы перестанете видеть профили друг друга и переписываться.
+? Dejan de ver el perfil del otro y de conversar.
+
+Desfazer a amizade
+Unfriend
+Удалить из друзей
+Dejar de ser amigos
+
+Bloquear
+Block
+Заблокировать
+Bloquear
+
+? A amizade acaba e essa pessoa não consegue mais te pedir amizade nem falar com você.
+? The friendship ends and this person can no longer send you friend requests or talk to you.
+? Дружба прекратится, и этот человек больше не сможет добавлять вас в друзья и писать вам.
+? La amistad termina y esa persona ya no puede pedirte amistad ni hablar contigo.
+
+jogos
+games
+игр
+juegos
+
+conquistas · 
+achievements · 
+достижений · 
+logros · 
+
+Visão geral
+Overview
+Обзор
+Resumen
+
+Conquistas
+Achievements
+Достижения
+Logros
+
+Jogos
+Games
+Игры
+Juegos
+
+Amigos
+Friends
+Друзья
+Amigos
+
+Vitrine de conquistas
+Achievement showcase
+Витрина достижений
+Vitrina de logros
+
+Nenhuma conquista ainda. Jogue um pouco: as primeiras aparecem aqui.
+No achievements yet. Play a bit: the first ones show up here.
+Пока нет достижений. Поиграйте немного: первые появятся здесь.
+Ningún logro todavía. Juega un poco: los primeros aparecen aquí.
+
+Jogos que tem (
+Games they have (
+Игры у них (
+Juegos que tiene (
+
+Vocês dois têm (dá para jogar juntos):
+You both have (you can play together):
+Есть у вас обоих (можно играть вместе):
+Ambos tienen (pueden jugar juntos):
+
+Só %s tem:
+Only %s has:
+Только у %s:
+Solo %s tiene:
+
+Jogos recentes
+Recent games
+Недавние игры
+Juegos recientes
+
+Nenhum jogo ainda.
+No games yet.
+Пока нет игр.
+Ningún juego todavía.
+
+%s   ·   %s no total   ·   última vez em %s
+%s   ·   %s in total   ·   last time on %s
+%s   ·   всего %s   ·   последний раз %s
+%s   ·   %s en total   ·   última vez el %s
+
+Do Ranga   (%d de %d)
+Ranga's   (%d of %d)
+Ranga   (%d из %d)
+De Ranga   (%d de %d)
+
+Valem em todos os consoles, Switch e 3DS também: vêm do tempo de jogo, dos consoles, do online e da biblioteca.
+They count on every console, Switch and 3DS too: they come from play time, the consoles, online play and the library.
+Засчитываются на всех консолях, включая Switch и 3DS: за время игры, консоли, онлайн и библиотеку.
+Valen en todas las consolas, Switch y 3DS también: vienen del tiempo de juego, las consolas, el online y la biblioteca.
+
+Desbloqueada em %s
+Unlocked on %s
+Получено %s
+Desbloqueado el %s
+
+Bloqueada
+Locked
+Не получено
+Bloqueado
+
+As conquistas de verdade de cada jogo clássico (NES, SNES, Mega Drive, Master System, Game Boy, GBA, N64, PS1, PS2, PSP, DS, Saturn, Dreamcast e outros), feitas pela comunidade do retroachievements.org. Crie uma conta grátis lá e conecte aqui.
+The real achievements of each classic game (NES, SNES, Mega Drive, Master System, Game Boy, GBA, N64, PS1, PS2, PSP, DS, Saturn, Dreamcast and others), made by the retroachievements.org community. Create a free account there and connect it here.
+Настоящие достижения каждой классической игры (NES, SNES, Mega Drive, Master System, Game Boy, GBA, N64, PS1, PS2, PSP, DS, Saturn, Dreamcast и другие), созданные сообществом retroachievements.org. Создайте там бесплатный аккаунт и подключите его здесь.
+Los logros de verdad de cada juego clásico (NES, SNES, Mega Drive, Master System, Game Boy, GBA, N64, PS1, PS2, PSP, DS, Saturn, Dreamcast y otros), hechos por la comunidad de retroachievements.org. Crea una cuenta gratis allí y conéctala aquí.
+
+Conectar conta
+Connect account
+Подключить аккаунт
+Conectar cuenta
+
+Conectado como %s. Abra um jogo clássico: as conquistas dele aparecem aqui.
+Connected as %s. Open a classic game: its achievements show up here.
+Подключено как %s. Откройте классическую игру: её достижения появятся здесь.
+Conectado como %s. Abre un juego clásico: sus logros aparecen aquí.
+
+Conectado como %s   ·   %d pontos
+Connected as %s   ·   %d points
+Подключено как %s   ·   %d очк.
+Conectado como %s   ·   %d puntos
+
+%d de %d   ·   %d de %d pontos
+%d of %d   ·   %d of %d points
+%d из %d   ·   %d из %d очк.
+%d de %d   ·   %d de %d puntos
+
+%s\n%s\n%d pontos   ·   %s
+%s\n%s\n%d points   ·   %s
+%s\n%s\n%d очк.   ·   %s
+%s\n%s\n%d puntos   ·   %s
+
+desbloqueada em 
+unlocked on 
+получено 
+desbloqueado el 
+
+Nenhum jogo jogado ainda. O tempo conta a partir de agora, em cada jogo que abrir pelo Ranga.
+No games played yet. Time counts from now on, in each game you open through Ranga.
+Пока не сыграно ни одной игры. Время считается с этого момента в каждой игре, открытой через Ranga.
+Ningún juego jugado todavía. El tiempo cuenta a partir de ahora, en cada juego que abras con Ranga.
+
+Jogo
+Game
+Игра
+Juego
+
+Console
+Console
+Консоль
+Consola
+
+Tempo
+Time
+Время
+Tiempo
+
+Vezes
+Times
+Раз
+Veces
+
+Última vez
+Last time
+Последний раз
+Última vez
+
+A mensagem não foi: o servidor do Ranga não respondeu.
+The message didn't go: Ranga's server didn't answer.
+Сообщение не отправлено: сервер Ranga не ответил.
+El mensaje no se envió: el servidor de Ranga no respondió.
+
+O servidor do Ranga não respondeu.
+Ranga's server didn't answer.
+Сервер Ranga не ответил.
+El servidor de Ranga no respondió.
+
+Enquanto o Ranga estava fechado
+While Ranga was closed
+Пока Ranga был закрыт
+Mientras Ranga estaba cerrado
+
+ em 
+ in 
+ в 
+ en 
+
+ convidou para jogar
+ invited you to play
+ приглашает поиграть
+ te invitó a jugar
+
+  ·  clique para entrar
+  ·  click to join
+  ·  нажмите, чтобы войти
+  ·  haz clic para entrar
+
+Mensagem de 
+Message from 
+Сообщение от 
+Mensaje de 
+
+Para ter amigos e conversar, crie sua conta do Ranga (ou entre, se já tiver).
+To have friends and chat, create your Ranga account (or sign in, if you already have one).
+Чтобы добавлять друзей и переписываться, создайте аккаунт Ranga (или войдите, если он уже есть).
+Para tener amigos y conversar, crea tu cuenta de Ranga (o inicia sesión, si ya tienes una).
+
+Só nome e senha, sem e-mail. Seus amigos te acham pelo seu Nome#1234 e só eles veem o seu perfil.
+Just a name and password, no e-mail. Your friends find you by your Name#1234 and only they see your profile.
+Только имя и пароль, без почты. Друзья находят вас по Имя#1234, и только они видят ваш профиль.
+Solo nombre y contraseña, sin correo. Tus amigos te encuentran por tu Nombre#1234 y solo ellos ven tu perfil.
+
+Criar conta
+Create account
+Создать аккаунт
+Crear cuenta
+
+Entrar
+Sign in
+Войти
+Iniciar sesión
+
+Convite para jogar 
+Invitation to play 
+Приглашение в 
+Invitación para jugar 
+
+Você não tem 
+You don't have 
+У вас нет 
+No tienes 
+
+) na sua biblioteca. Adicione o jogo para jogar junto.
+) in your library. Add the game to play together.
+) в библиотеке. Добавьте игру, чтобы играть вместе.
+) en tu biblioteca. Añade el juego para jugar juntos.
+
+Feche o jogo que está aberto antes de entrar em outro.
+Close the open game before joining another.
+Закройте открытую игру, прежде чем заходить в другую.
+Cierra el juego abierto antes de entrar en otro.
+
+Não deu para converter essa imagem.
+Couldn't convert that image.
+Не удалось преобразовать это изображение.
+No se pudo convertir esa imagen.
+
+A imagem não foi: o servidor do Ranga não respondeu.
+The image didn't go: Ranga's server didn't answer.
+Изображение не отправлено: сервер Ranga не ответил.
+La imagen no se envió: el servidor de Ranga no respondió.
+
+O servidor do Ranga ainda não recebe imagens (falta atualizar a central).
+Ranga's server doesn't take images yet (the hub needs updating).
+Сервер Ranga пока не принимает изображения (нужно обновить центральный сервер).
+El servidor de Ranga todavía no recibe imágenes (falta actualizar la central).
+
+ está jogando online
+ is playing online
+ играет онлайн
+ está jugando en línea
+
+ começou a jogar
+ started playing
+ начал(а) играть
+ empezó a jugar
+
+ está online
+ is online
+ в сети
+ está en línea
+
+Clique para conversar
+Click to chat
+Нажмите, чтобы написать
+Haz clic para conversar
+
+Entre na sua conta do Ranga para ver seus amigos aqui.
+Sign in to your Ranga account to see your friends here.
+Войдите в аккаунт Ranga, чтобы видеть здесь друзей.
+Inicia sesión en tu cuenta de Ranga para ver a tus amigos aquí.
+
+Abrir %s na mesma sala
+Open %s in the same room
+Открыть %s в той же комнате
+Abrir %s en la misma sala
+
+Jogando
+Playing
+Играет
+Jugando
+
+Offline
+Offline
+Не в сети
+Desconectado
+
+Nenhum amigo ainda. Adicione pelo Nome#1234 na aba Amigos do Perfil.
+No friends yet. Add them by Name#1234 in the Friends tab of the Profile.
+Пока нет друзей. Добавляйте их по Имя#1234 на вкладке «Друзья» в профиле.
+Ningún amigo todavía. Añádelos por Nombre#1234 en la pestaña Amigos del Perfil.
+
+A: conversar    Y: entrar no jogo    B: fechar
+A: chat    Y: join the game    B: close
+A: написать    Y: войти в игру    B: закрыть
+A: conversar    Y: entrar al juego    B: cerrar
+
+Adicionar amigo
+Add friend
+Добавить друга
+Añadir amigo
+
+Conquista do Ranga
+Ranga achievement
+Достижение Ranga
+Logro de Ranga
+
+Atividade dos amigos
+Friends' activity
+Активность друзей
+Actividad de los amigos
+
+Aperte F12 durante o jogo para tirar uma captura de tela. Elas aparecem aqui.
+Press F12 during the game to take a screenshot. They show up here.
+Нажмите F12 во время игры, чтобы сделать скриншот. Они появятся здесь.
+Pulsa F12 durante el juego para hacer una captura de pantalla. Aparecen aquí.
+
+Abrir o arquivo
+Open the file
+Открыть файл
+Abrir el archivo
+
+Mandar para um amigo
+Send to a friend
+Отправить другу
+Enviar a un amigo
+
+Captura
+Screenshot
+Скриншот
+Captura
+
+Mandando para 
+Sending to 
+Отправка: 
+Enviando a 
+
+Adicione amigos na aba Amigos para conversar.
+Add friends in the Friends tab to chat.
+Добавьте друзей на вкладке «Друзья», чтобы переписываться.
+Añade amigos en la pestaña Amigos para conversar.
+
+: você, 
+: you, 
+: вы, 
+: tú, 
+
+Online agora
+Online now
+Сейчас в сети
+En línea ahora
+
+Novo grupo
+New group
+Новая группа
+Nuevo grupo
+
+Nome do grupo
+Group name
+Название группы
+Nombre del grupo
+
+Quem entra (até 15 amigos):
+Who joins (up to 15 friends):
+Кто входит (до 15 друзей):
+Quién entra (hasta 15 amigos):
+
+Você ainda não tem amigos para pôr no grupo.
+You don't have friends to put in the group yet.
+У вас пока нет друзей, чтобы добавить их в группу.
+Todavía no tienes amigos para poner en el grupo.
+
+Criar grupo
+Create group
+Создать группу
+Crear grupo
+
+Você: 
+You: 
+Вы: 
+Tú: 
+
+Membros, nome e sair do grupo
+Members, name and leaving the group
+Участники, название и выход из группы
+Miembros, nombre y salir del grupo
+
+Perfil, bloquear e denunciar
+Profile, block and report
+Профиль, блокировка и жалоба
+Perfil, bloquear y denunciar
+
+Convidar para jogar
+Invite to play
+Пригласить поиграть
+Invitar a jugar
+
+Entrar no jogo
+Join the game
+Войти в игру
+Entrar al juego
+
+%s, na mesma sala
+%s, in the same room
+%s, в той же комнате
+%s, en la misma sala
+
+Convidar %s para:
+Invite %s to:
+Пригласить %s в:
+Invitar a %s a:
+
+Jogue algum jogo primeiro: os últimos aparecem aqui.
+Play some game first: the latest ones show up here.
+Сначала сыграйте в какую-нибудь игру: последние появятся здесь.
+Juega algún juego primero: los últimos aparecen aquí.
+
+, online)
+, online)
+, в сети)
+, en línea)
+
+ usa um Ranga mais antigo: convites, imagens e grupos podem chegar como texto estranho. Peça para atualizar.
+ uses an older Ranga: invitations, images and groups may arrive as strange text. Ask them to update.
+ пользуется старым Ranga: приглашения, изображения и группы могут прийти странным текстом. Попросите обновиться.
+ usa un Ranga más antiguo: invitaciones, imágenes y grupos pueden llegar como texto raro. Pídele que actualice.
+
+Nenhuma mensagem ainda em 
+No messages yet in 
+Пока нет сообщений в 
+Ningún mensaje todavía en 
+
+Nenhuma mensagem ainda com 
+No messages yet with 
+Пока нет сообщений с 
+Ningún mensaje todavía con 
+
+. Mande a primeira!
+. Send the first one!
+. Напишите первым!
+. ¡Manda el primero!
+
+Hoje
+Today
+Сегодня
+Hoy
+
+Ontem
+Yesterday
+Вчера
+Ayer
+
+Você convidou para jogar
+You invited them to play
+Вы пригласили поиграть
+Invitaste a jugar
+
+Convite para jogar
+Invitation to play
+Приглашение поиграть
+Invitación para jugar
+
+  ·  online
+  ·  online
+  ·  в сети
+  ·  en línea
+
+Não tenho esse jogo
+I don't have this game
+У меня нет этой игры
+No tengo este juego
+
+  ·  Visto
+  ·  Seen
+  ·  Просмотрено
+  ·  Visto
+
+ está digitando
+ is typing
+ печатает
+ está escribiendo
+
+Mandar uma imagem
+Send an image
+Отправить изображение
+Enviar una imagen
+
+Imagens
+Images
+Изображения
+Imágenes
+
+Mandando a imagem...
+Sending the image...
+Отправка изображения...
+Enviando la imagen...
+
+Mandar uma imagem (PNG, JPG ou GIF)
+Send an image (PNG, JPG or GIF)
+Отправить изображение (PNG, JPG или GIF)
+Enviar una imagen (PNG, JPG o GIF)
+
+Mensagem para 
+Message to 
+Сообщение для 
+Mensaje para 
+
+...   (Y: escrever com o controle)
+...   (Y: write with the controller)
+...   (Y: писать с геймпада)
+...   (Y: escribir con el mando)
+
+Ver perfil
+See profile
+Открыть профиль
+Ver perfil
+
+Denunciar %s
+Report %s
+Пожаловаться на %s
+Denunciar a %s
+
+A denúncia vai para o dono do Ranga junto com as últimas 30 mensagens de vocês, para ele ver o que aconteceu. A pessoa não fica sabendo.
+The report goes to Ranga's owner along with your last 30 messages, so they can see what happened. The other person isn't told.
+Жалоба уходит владельцу Ranga вместе с вашими последними 30 сообщениями, чтобы он увидел, что произошло. Другой человек об этом не узнает.
+La denuncia va al dueño de Ranga junto con sus últimos 30 mensajes, para que vea lo que pasó. La otra persona no se entera.
+
+Enviar denúncia
+Send report
+Отправить жалобу
+Enviar denuncia
+
+Renomear
+Rename
+Переименовать
+Renombrar
+
+Membros (%zu de 16)
+Members (%zu of 16)
+Участники (%zu из 16)
+Miembros (%zu de 16)
+
+  (você)
+  (you)
+  (вы)
+  (tú)
+
+ do grupo?
+ from the group?
+ из группы?
+ del grupo?
+
+Pôr um amigo no grupo:
+Put a friend in the group:
+Добавить друга в группу:
+Poner a un amigo en el grupo:
+
+Sair do grupo
+Leave the group
+Выйти из группы
+Salir del grupo
+
+Sair de 
+Leave 
+Выйти из 
+¿Salir de 
+
+? Você para de ver as mensagens dele.
+? You stop seeing its messages.
+? Вы перестанете видеть её сообщения.
+? Dejas de ver sus mensajes.
+
+ O grupo passa para o membro mais antigo.
+ The group passes to the oldest member.
+ Группа перейдёт к самому давнему участнику.
+ El grupo pasa al miembro más antiguo.
+
+Sua conta:
+Your account:
+Ваш аккаунт:
+Tu cuenta:
+
+Copiar
+Copy
+Копировать
+Copiar
+
+Copiado: 
+Copied: 
+Скопировано: 
+Copiado: 
+
+atualizado %s
+updated %s
+обновлено %s
+actualizado %s
+
+Nome#1234 do amigo
+Friend's Name#1234
+Имя#1234 друга
+Nombre#1234 del amigo
+
+Pedir amizade
+Send friend request
+Добавить в друзья
+Pedir amistad
+
+Pedidos de amizade
+Friend requests
+Запросы в друзья
+Solicitudes de amistad
+
+Aceitar
+Accept
+Принять
+Aceptar
+
+Recusar
+Decline
+Отклонить
+Rechazar
+
+Esperando resposta
+Waiting for an answer
+Ожидание ответа
+Esperando respuesta
+
+Cancelar pedido
+Cancel request
+Отменить запрос
+Cancelar solicitud
+
+Amigos   (%d)
+Friends   (%d)
+Друзья   (%d)
+Amigos   (%d)
+
+Nenhum amigo ainda. Passe o seu Nome#1234 para eles, ou peça a amizade pelo deles aqui em cima.
+No friends yet. Give them your Name#1234, or send a request using theirs up here.
+Пока нет друзей. Дайте им своё Имя#1234 или отправьте запрос по их имени здесь выше.
+Ningún amigo todavía. Pásales tu Nombre#1234, o pide amistad con el suyo aquí arriba.
+
+Nível 
+Level 
+Уровень 
+Nivel 
+
+Bloqueados
+Blocked
+Заблокированные
+Bloqueados
+
+Não te pedem amizade nem conversam com você. Para eles, você não existe.
+They can't send you friend requests or talk to you. To them, you don't exist.
+Они не могут добавлять вас в друзья и писать вам. Для них вас не существует.
+No te piden amistad ni hablan contigo. Para ellos, no existes.
+
+Desbloquear
+Unblock
+Разблокировать
+Desbloquear
+
+Servidor (avançado)
+Server (advanced)
+Сервер (дополнительно)
+Servidor (avanzado)
+
+Onde ficam as contas, os amigos e as conversas. Vazio: o do Ranga, na Cloudflare.
+Where the accounts, friends and chats are kept. Empty: Ranga's, on Cloudflare.
+Где хранятся аккаунты, друзья и переписка. Пусто — сервер Ranga в Cloudflare.
+Dónde quedan las cuentas, los amigos y las conversaciones. Vacío: el de Ranga, en Cloudflare.
+
+Salvar servidor
+Save server
+Сохранить сервер
+Guardar servidor
+
+A chave de dono não confere.
+The owner key doesn't match.
+Ключ владельца не совпадает.
+La clave de dueño no coincide.
+
+Dono do Ranga
+Ranga owner
+Владелец Ranga
+Dueño de Ranga
+
+Só aparece neste PC (salas\\chave-dono.txt; nunca vai na atualização). Banir fecha as sessões da conta, desfaz as amizades dela e impede o PC dela de criar outra conta. Desbanir desfaz.
+Only shows on this PC (salas\\chave-dono.txt; never goes in the update). Banning closes the account's sessions, undoes its friendships and keeps its PC from creating another account. Unbanning undoes it.
+Видно только на этом ПК (salas\\chave-dono.txt; никогда не попадает в обновление). Бан закрывает сеансы аккаунта, удаляет его дружбы и не даёт его ПК создать другой аккаунт. Разбан отменяет это.
+Solo aparece en este PC (salas\\chave-dono.txt; nunca va en la actualización). Banear cierra las sesiones de la cuenta, deshace sus amistades e impide que su PC cree otra cuenta. Desbanear lo deshace.
+
+buscar pelo nome (vazio: todas)
+search by name (empty: all)
+поиск по имени (пусто — все)
+buscar por nombre (vacío: todas)
+
+motivo do banimento
+ban reason
+причина бана
+motivo del baneo
+
+Buscar
+Search
+Найти
+Buscar
+
+Denúncias abertas: %zu
+Open reports: %zu
+Открытые жалобы: %zu
+Denuncias abiertas: %zu
+
+%s denunciou %s (%s): %s
+%s reported %s (%s): %s
+%s пожаловался на %s (%s): %s
+%s denunció a %s (%s): %s
+
+Mensagens antes da denúncia
+Messages before the report
+Сообщения до жалобы
+Mensajes antes de la denuncia
+
+(nenhuma mensagem entre os dois)
+(no messages between the two)
+(между ними нет сообщений)
+(ningún mensaje entre los dos)
+
+Denúncia: 
+Report: 
+Жалоба: 
+Denuncia: 
+
+? A conta sai do Ranga e o PC dela não cria outra.
+? The account leaves Ranga and its PC can't create another.
+? Аккаунт будет удалён из Ranga, а его ПК не сможет создать другой.
+? La cuenta sale de Ranga y su PC no crea otra.
+
+Arquivar
+Archive
+В архив
+Archivar
+
+Clique em Buscar para ver as contas.
+Click Search to see the accounts.
+Нажмите «Найти», чтобы увидеть аккаунты.
+Haz clic en Buscar para ver las cuentas.
+
+Criada
+Created
+Создан
+Creada
+
+Visto
+Seen
+Был(а)
+Visto
+
+Estado
+State
+Состояние
+Estado
+
+banida%s%s
+banned%s%s
+забанен%s%s
+baneada%s%s
+
+Desbanir
+Unban
+Разбанить
+Desbanear
+
+Banir
+Ban
+Забанить
+Banear
+
+Conta criada!
+Account created!
+Аккаунт создан!
+¡Cuenta creada!
+
+Sua conta: %s
+Your account: %s
+Ваш аккаунт: %s
+Tu cuenta: %s
+
+Guarde este código de recuperação. Ele é o único jeito de voltar para a conta se você esquecer a senha, e ele não aparece de novo:
+Keep this recovery code. It's the only way back into the account if you forget the password, and it won't be shown again:
+Сохраните этот код восстановления. Это единственный способ вернуться в аккаунт, если забудете пароль, и он больше не будет показан:
+Guarda este código de recuperación. Es la única forma de volver a la cuenta si olvidas la contraseña, y no aparece de nuevo:
+
+Copiar código
+Copy code
+Копировать код
+Copiar código
+
+Já guardei
+I've saved it
+Я сохранил(а)
+Ya lo guardé
+
+Entrar##modo
+Sign in##modo
+Войти##modo
+Entrar##modo
+
+Criar conta##modo
+Create account##modo
+Создать аккаунт##modo
+Crear cuenta##modo
+
+Esqueci a senha##modo
+Forgot password##modo
+Забыли пароль##modo
+Olvidé la contraseña##modo
+
+Nome (3 a 20 letras ou números)
+Name (3 to 20 letters or numbers)
+Имя (от 3 до 20 букв или цифр)
+Nombre (3 a 20 letras o números)
+
+Sua conta (Nome#1234)
+Your account (Name#1234)
+Ваш аккаунт (Имя#1234)
+Tu cuenta (Nombre#1234)
+
+Código de recuperação
+Recovery code
+Код восстановления
+Código de recuperación
+
+Senha nova
+New password
+Новый пароль
+Contraseña nueva
+
+Repita a senha
+Repeat the password
+Повторите пароль
+Repite la contraseña
+
+Sem e-mail. A tag (#1234) o Ranga sorteia. Ao criar, aparece um código de recuperação: guarde.
+No e-mail. Ranga draws the tag (#1234). When you create it, a recovery code shows up: keep it.
+Без почты. Тег (#1234) Ranga выбирает случайно. При создании появится код восстановления: сохраните его.
+Sin correo. La etiqueta (#1234) la sortea Ranga. Al crear, aparece un código de recuperación: guárdalo.
+
+O código que apareceu quando você criou a conta. Depois de usar, ele muda: o novo aparece na hora.
+The code that showed up when you created the account. After using it, it changes: the new one shows up right away.
+Код, который появился при создании аккаунта. После использования он меняется: новый появится сразу.
+El código que apareció cuando creaste la cuenta. Después de usarlo, cambia: el nuevo aparece al instante.
+
+Verificando o PC...
+Checking the PC...
+Проверка ПК...
+Verificando el PC...
+
+Esperando o servidor...
+Waiting for the server...
+Ожидание сервера...
+Esperando al servidor...
+
+Trocar a senha
+Change password
+Сменить пароль
+Cambiar la contraseña
+
+Foto e capa: imagem, GIF ou vídeo (até 5 s, sem som)
+Photo and cover: image, GIF or video (up to 5 s, no sound)
+Фото и обложка: изображение, GIF или видео (до 5 с, без звука)
+Foto y portada: imagen, GIF o video (hasta 5 s, sin sonido)
+
+Imagens, GIFs e vídeos
+Images, GIFs and videos
+Изображения, GIF и видео
+Imágenes, GIFs y videos
+
+Escolher a capa do perfil
+Choose the profile cover
+Выберите обложку профиля
+Elegir la portada del perfil
+
+Escolher a foto do perfil
+Choose the profile photo
+Выберите фото профиля
+Elegir la foto del perfil
+
+Tirar foto
+Remove photo
+Убрать фото
+Quitar foto
+
+Tirar capa
+Remove cover
+Убрать обложку
+Quitar portada
+
+Sair da conta
+Sign out
+Выйти из аккаунта
+Cerrar sesión
+
+Frase
+Motto
+Девиз
+Frase
+
+Conta grátis em retroachievements.org. A senha vai só para o RetroAchievements e não fica guardada: o Ranga guarda só a chave de acesso que ele devolve.
+Free account at retroachievements.org. The password goes only to RetroAchievements and isn't kept: Ranga keeps only the access key it returns.
+Бесплатный аккаунт на retroachievements.org. Пароль уходит только в RetroAchievements и не хранится: Ranga хранит только ключ доступа, который тот вернёт.
+Cuenta gratis en retroachievements.org. La contraseña va solo a RetroAchievements y no se guarda: Ranga guarda solo la clave de acceso que devuelve.
+
+Usuário
+Username
+Логин
+Usuario
+
+Conectado como %s
+Connected as %s
+Подключено как %s
+Conectado como %s
+
+As conquistas valem no modo normal (softcore) do RetroAchievements e aparecem no jogo e aqui no perfil.
+Achievements count in RetroAchievements' normal mode (softcore) and show up in the game and here in the profile.
+Достижения засчитываются в обычном режиме RetroAchievements (softcore) и показываются в игре и здесь, в профиле.
+Los logros valen en el modo normal (softcore) de RetroAchievements y aparecen en el juego y aquí en el perfil.
+
+Salvar
+Save
+Сохранить
+Guardar
+
+Para 
+To 
+Для 
+Para 
+
+Modo TV ligado
+TV mode on
+Режим ТВ включён
+Modo TV activado
+
+Modo TV desligado
+TV mode off
+Режим ТВ выключен
+Modo TV desactivado
+
+Start (ou F11) volta para a janela  ·  Select abre os amigos
+Start (or F11) goes back to the window  ·  Select opens friends
+Start (или F11) — обратно в окно  ·  Select открывает друзей
+Start (o F11) vuelve a la ventana  ·  Select abre los amigos
+
+Start (ou F11) liga de novo
+Start (or F11) turns it on again
+Start (или F11) включает снова
+Start (o F11) lo vuelve a activar
+
+O jogo ainda está sendo preparado. Fechar agora interrompe o preparo, que recomeça na próxima vez. Fechar mesmo assim?
+The game is still being prepared. Closing now stops the preparation, which starts over next time. Close anyway?
+Игра ещё готовится. Если закрыть сейчас, подготовка прервётся и начнётся заново в следующий раз. Всё равно закрыть?
+El juego todavía se está preparando. Cerrar ahora interrumpe la preparación, que vuelve a empezar la próxima vez. ¿Cerrar de todos modos?
+
+Não deu para iniciar o Direct3D 11 nesta placa de vídeo.
+Couldn't start Direct3D 11 on this graphics card.
+Не удалось запустить Direct3D 11 на этой видеокарте.
+No se pudo iniciar Direct3D 11 en esta tarjeta gráfica.
+
+O Ranga está numa pasta nova (
+Ranga is in a new folder (
+Ranga находится в новой папке (
+Ranga está en una carpeta nueva (
+
+ arquivo(s) de configuração foram ajustados para ela; as versões antigas ficaram em backups\\mudou-de-pasta.
+ settings file(s) were adjusted for it; the old versions stayed in backups\\mudou-de-pasta.
+ файл(ов) настроек изменено под неё; старые версии остались в backups\\mudou-de-pasta.
+ archivo(s) de configuración se ajustaron a ella; las versiones anteriores quedaron en backups\\mudou-de-pasta.
+
+O servidor do Ranga ainda não tem o save na nuvem.
+Ranga's server doesn't have cloud saves yet.
+На сервере Ranga пока нет облачных сохранений.
+El servidor de Ranga todavía no tiene partidas en la nube.
+
+Alguns saves do Switch ficaram na nuvem: abra um jogo de Switch neste PC uma vez e baixe de novo.
+Some Switch saves stayed in the cloud: open a Switch game on this PC once and download again.
+Некоторые сохранения Switch остались в облаке: один раз откройте игру Switch на этом ПК и скачайте снова.
+Algunas partidas de Switch quedaron en la nube: abre un juego de Switch en este PC una vez y vuelve a descargar.
+
+Um save veio estragado da nuvem e não foi usado: 
+A save came damaged from the cloud and wasn't used: 
+Одно сохранение пришло из облака повреждённым и не было использовано: 
+Una partida llegó dañada de la nube y no se usó: 
+
+Não deu para gravar 
+Couldn't write 
+Не удалось записать 
+No se pudo guardar 
+
+ (o jogo está aberto?).
+ (is the game open?).
+ (игра открыта?).
+ (¿el juego está abierto?).
+
+Ligado
+On
+Вкл.
+Activado
+
+Automático (pixel nítido)
+Automatic (sharp pixel)
+Автоматически (чёткий пиксель)
+Automático (píxel nítido)
+
+Pixel nítido
+Sharp pixel
+Чёткий пиксель
+Píxel nítido
+
+Suave
+Smooth
+Сглаженно
+Suave
+
+TV antiga (linhas de CRT)
+Old TV (CRT lines)
+Старый ТВ (линии ЭЛТ)
+TV antigua (líneas CRT)
+
+Pixel puro (sem nada)
+Pure pixel (nothing added)
+Чистый пиксель (без обработки)
+Píxel puro (sin nada)
+
+Como a imagem do console é aumentada até a sua tela. Pixel nítido deixa os pixels quadrados e limpos; TV antiga imita as linhas de uma TV de tubo. Vale ao reabrir.
+How the console's image is scaled up to your screen. Sharp pixel keeps the pixels square and clean; Old TV imitates the lines of a tube TV. Applies when reopened.
+Как изображение консоли увеличивается до вашего экрана. «Чёткий пиксель» оставляет пиксели квадратными и чистыми; «Старый ТВ» имитирует линии кинескопа. Действует после перезапуска.
+Cómo se agranda la imagen de la consola hasta tu pantalla. Píxel nítido deja los píxeles cuadrados y limpios; TV antigua imita las líneas de un televisor de tubo. Vale al reabrir.
+
+Tamanho na tela
+Size on screen
+Размер на экране
+Tamaño en pantalla
+
+Automático (preencher)
+Automatic (fill)
+Автоматически (заполнить)
+Automático (llenar)
+
+Preencher mantendo o formato
+Fill keeping the shape
+Заполнить с сохранением пропорций
+Llenar manteniendo el formato
+
+Esticar na tela toda
+Stretch over the whole screen
+Растянуть на весь экран
+Estirar en toda la pantalla
+
+Escala inteira deixa todos os pixels do mesmo tamanho, com uma borda preta em volta. Vale ao reabrir.
+Integer scale makes every pixel the same size, with a black border around. Applies when reopened.
+Целочисленный масштаб делает все пиксели одного размера, с чёрной рамкой вокруг. Действует после перезапуска.
+La escala entera deja todos los píxeles del mismo tamaño, con un borde negro alrededor. Vale al reabrir.
+
+Sinal de TV
+TV signal
+ТВ-сигнал
+Señal de TV
+
+Automático (nenhum)
+Automatic (none)
+Автоматически (нет)
+Automático (ninguno)
+
+Composto (como na TV)
+Composite (like on TV)
+Композитный (как на ТВ)
+Compuesto (como en la TV)
+
+Imita o cabo da TV da época: cores e bordas como eram no aparelho.
+Imitates the TV cable of the time: colors and edges as they were on the set.
+Имитирует ТВ-кабель тех лет: цвета и края, как на телевизоре.
+Imita el cable de la TV de la época: colores y bordes como eran en el aparato.
+
+Cores
+Colors
+Цвета
+Colores
+
+Console original
+Original console
+Оригинальная консоль
+Consola original
+
+Paleta de cores do NES.
+NES color palette.
+Палитра цветов NES.
+Paleta de colores de NES.
+
+Sem limite de sprites
+No sprite limit
+Без лимита спрайтов
+Sin límite de sprites
+
+Tira o pisca-pisca quando há muitos personagens na tela (o console original piscava).
+Removes the flicker when there are many characters on screen (the original console flickered).
+Убирает мерцание, когда на экране много персонажей (оригинальная консоль мерцала).
+Quita el parpadeo cuando hay muchos personajes en pantalla (la consola original parpadeaba).
+
+Proporção
+Aspect
+Пропорции
+Proporción
+
+Automático (4:3)
+Automatic (4:3)
+Автоматически (4:3)
+Automático (4:3)
+
+Pixels quadrados
+Square pixels
+Квадратные пиксели
+Píxeles cuadrados
+
+Formato da imagem.
+Image format.
+Формат изображения.
+Formato de la imagen.
+
+Bordas
+Borders
+Края
+Bordes
+
+Cortar as bordas
+Crop the borders
+Обрезать края
+Recortar los bordes
+
+Mostrar tudo
+Show everything
+Показать всё
+Mostrar todo
+
+Corta a faixa da borda que a TV escondia.
+Crops the border strip the TV used to hide.
+Обрезает полосу по краю, которую скрывал телевизор.
+Recorta la franja del borde que la TV ocultaba.
+
+Mistura em alta resolução
+High-resolution blending
+Смешивание в высоком разрешении
+Mezcla en alta resolución
+
+Automático (desligada)
+Automatic (off)
+Автоматически (выкл.)
+Automático (desactivada)
+
+Misturar
+Blend
+Смешивать
+Mezclar
+
+Desfocar
+Blur
+Размыть
+Desenfocar
+
+Alguns jogos (Kirby's Dream Land 3) usam transparência que só aparece misturando.
+Some games (Kirby's Dream Land 3) use transparency that only shows when blending.
+Некоторые игры (Kirby's Dream Land 3) используют прозрачность, которая видна только при смешивании.
+Algunos juegos (Kirby's Dream Land 3) usan transparencia que solo aparece mezclando.
+
+Tira o pisca-pisca com muitos personagens na tela.
+Removes the flicker with many characters on screen.
+Убирает мерцание при большом количестве персонажей на экране.
+Quita el parpadeo con muchos personajes en pantalla.
+
+Composto imita o cabo da época: as cachoeiras e sombras que \"piscavam\" ficam transparentes, como na TV.
+Composite imitates the cable of the time: the waterfalls and shadows that \"flickered\" become transparent, as on TV.
+Композитный имитирует кабель тех лет: «мерцавшие» водопады и тени становятся прозрачными, как на ТВ.
+Compuesto imita el cable de la época: las cascadas y sombras que \"parpadeaban\" quedan transparentes, como en la TV.
+
+Automático (sem)
+Automatic (none)
+Автоматически (без)
+Automático (sin)
+
+Sem bordas
+No borders
+Без краёв
+Sin bordes
+
+Com as bordas da TV
+With the TV's borders
+С краями ТВ
+Con los bordes de la TV
+
+Mostra a borda que a TV mostrava.
+Shows the border the TV used to show.
+Показывает край, который показывал телевизор.
+Muestra el borde que mostraba la TV.
+
+Rastro de LCD (Game Gear)
+LCD ghosting (Game Gear)
+Шлейф ЖК-экрана (Game Gear)
+Estela de LCD (Game Gear)
+
+Imita o rastro da tela do Game Gear.
+Imitates the Game Gear screen's ghosting.
+Имитирует шлейф экрана Game Gear.
+Imita la estela de la pantalla de Game Gear.
+
+Automático (RGB)
+Automatic (RGB)
+Автоматически (RGB)
+Automático (RGB)
+
+Paleta do console.
+The console's palette.
+Палитра консоли.
+Paleta de la consola.
+
+Composto
+Composite
+Композитный
+Compuesto
+
+Imita o cabo da TV da época.
+Imitates the TV cable of the time.
+Имитирует ТВ-кабель тех лет.
+Imita el cable de la TV de la época.
+
+Rastro do fósforo
+Phosphor trail
+Послесвечение люминофора
+Estela del fósforo
+
+60 (padrão)
+60 (default)
+60 (по умолчанию)
+60 (predeterminado)
+
+Mistura um quadro com o anterior, como o brilho que ficava na tela da TV (tira o pisca-pisca).
+Blends a frame with the previous one, like the glow that stayed on the TV screen (removes the flicker).
+Смешивает кадр с предыдущим, как послесвечение на экране ТВ (убирает мерцание).
+Mezcla un fotograma con el anterior, como el brillo que quedaba en la pantalla de la TV (quita el parpadeo).
+
+Cores da tela
+Screen colors
+Цвета экрана
+Colores de la pantalla
+
+Automático (sem correção)
+Automatic (no correction)
+Автоматически (без коррекции)
+Automático (sin corrección)
+
+Cores fortes
+Strong colors
+Насыщенные цвета
+Colores fuertes
+
+Como a tela do GBA
+Like the GBA screen
+Как экран GBA
+Como la pantalla de GBA
+
+Pelo jogo
+By game
+По игре
+Según el juego
+
+A tela do GBA era escura e lavada; os jogos usavam cores fortes para compensar. Como a tela do GBA deixa as cores como eram vistas.
+The GBA screen was dark and washed out; games used strong colors to make up for it. Like the GBA screen shows the colors as they were seen.
+Экран GBA был тёмным и блёклым; игры использовали насыщенные цвета, чтобы это компенсировать. «Как экран GBA» показывает цвета такими, какими их видели.
+La pantalla de GBA era oscura y lavada; los juegos usaban colores fuertes para compensar. Como la pantalla de GBA deja los colores como se veían.
+
+Rastro de LCD
+LCD ghosting
+Шлейф ЖК-экрана
+Estela de LCD
+
+Automático (desligado)
+Automatic (off)
+Автоматически (выкл.)
+Automático (desactivado)
+
+Misturar quadros
+Blend frames
+Смешивать кадры
+Mezclar fotogramas
+
+Rastro da tela
+Screen ghosting
+Шлейф экрана
+Estela de la pantalla
+
+Alguns jogos usam o rastro da tela para transparências (piscando a cada quadro).
+Some games use the screen's ghosting for transparency (flickering every frame).
+Некоторые игры используют шлейф экрана для прозрачности (мерцание каждый кадр).
+Algunos juegos usan la estela de la pantalla para transparencias (parpadeando cada fotograma).
+
+Cores do Game Boy
+Game Boy colors
+Цвета Game Boy
+Colores de Game Boy
+
+Verde original
+Original green
+Оригинальный зелёный
+Verde original
+
+Como no Game Boy Color
+Like on Game Boy Color
+Как на Game Boy Color
+Como en Game Boy Color
+
+Como no Super Game Boy
+Like on Super Game Boy
+Как на Super Game Boy
+Como en Super Game Boy
+
+Jogos do Game Boy clássico eram de 4 tons; o Color e o Super Game Boy davam cores.
+Classic Game Boy games had 4 shades; the Color and the Super Game Boy added colors.
+Игры классического Game Boy были в 4 оттенках; Color и Super Game Boy добавляли цвета.
+Los juegos de Game Boy clásico tenían 4 tonos; Color y Super Game Boy daban colores.
+
+Correção de cor (GBC)
+Color correction (GBC)
+Коррекция цвета (GBC)
+Corrección de color (GBC)
+
+Só no Color
+Only on Color
+Только на Color
+Solo en Color
+
+Sempre
+Always
+Всегда
+Siempre
+
+Deixa as cores como eram na tela do Game Boy Color.
+Keeps the colors as they were on the Game Boy Color screen.
+Оставляет цвета такими, какими они были на экране Game Boy Color.
+Deja los colores como eran en la pantalla de Game Boy Color.
+
+Suavizar na horizontal
+Smooth horizontally
+Сглаживать по горизонтали
+Suavizar en horizontal
+
+Mistura os pixels lado a lado: imita as transparências que os jogos faziam com pontilhado.
+Blends side-by-side pixels: imitates the transparency games made with dithering.
+Смешивает соседние пиксели: имитирует прозрачность, которую игры делали дизерингом.
+Mezcla los píxeles contiguos: imita las transparencias que los juegos hacían con tramado.
+
+1x (240p, original)
+1x (240p, original)
+1x (240p, оригинал)
+1x (240p, original)
+
+Quantas vezes a resolução do PS1. Vale ao reabrir.
+How many times the PS1's resolution. Applies when reopened.
+Во сколько раз больше разрешения PS1. Действует после перезапуска.
+Cuántas veces la resolución de PS1. Vale al reabrir.
+
+Filtro de textura
+Texture filter
+Фильтр текстур
+Filtro de texturas
+
+Suaviza as texturas, que no PS1 eram serrilhadas.
+Smooths the textures, which were jagged on the PS1.
+Сглаживает текстуры, которые на PS1 были зубчатыми.
+Suaviza las texturas, que en PS1 eran dentadas.
+
+Suaviza as bordas dos objetos.
+Smooths the edges of objects.
+Сглаживает края объектов.
+Suaviza los bordes de los objetos.
+
+Polígonos firmes (PGXP)
+Steady polygons (PGXP)
+Стабильные полигоны (PGXP)
+Polígonos firmes (PGXP)
+
+Corrige os polígonos que tremiam e se deformavam no PS1. Pode quebrar poucos jogos.
+Fixes the polygons that wobbled and warped on the PS1. May break a few games.
+Исправляет полигоны, которые на PS1 дрожали и искажались. Может сломать немногие игры.
+Corrige los polígonos que temblaban y se deformaban en PS1. Puede romper unos pocos juegos.
+
+Cores de 24 bits
+24-bit colors
+24-битные цвета
+Colores de 24 bits
+
+Tira o pontilhado das cores (o PS1 usava 16 bits).
+Removes color dithering (the PS1 used 16 bits).
+Убирает дизеринг цветов (PS1 использовала 16 бит).
+Quita el tramado de los colores (PS1 usaba 16 bits).
+
+Tela larga (16:9)
+Widescreen (16:9)
+Широкий экран (16:9)
+Pantalla ancha (16:9)
+
+Força o jogo a desenhar em 16:9. Pode cortar coisas nos menus.
+Forces the game to draw in 16:9. May cut things off in the menus.
+Заставляет игру рисовать в 16:9. В меню что-то может обрезаться.
+Obliga al juego a dibujar en 16:9. Puede recortar cosas en los menús.
+
+Placa de vídeo usa
+Graphics card uses
+Видеокарта использует
+La tarjeta gráfica usa
+
+Automático (Vulkan)
+Automatic (Vulkan)
+Автоматически (Vulkan)
+Automático (Vulkan)
+
+Se der tela preta ou travar, tente Direct3D 11. Vale ao reabrir.
+If you get a black screen or a freeze, try Direct3D 11. Applies when reopened.
+Если чёрный экран или зависание — попробуйте Direct3D 11. Действует после перезапуска.
+Si sale pantalla negra o se cuelga, prueba Direct3D 11. Vale al reabrir.
+
+Quantas vezes a resolução do N64. Vale ao reabrir.
+How many times the N64's resolution. Applies when reopened.
+Во сколько раз больше разрешения N64. Действует после перезапуска.
+Cuántas veces la resolución de N64. Vale al reabrir.
+
+16:9 (tela larga)
+16:9 (widescreen)
+16:9 (широкий экран)
+16:9 (pantalla ancha)
+
+Formato da imagem. Tela larga pode cortar coisas.
+Image format. Widescreen may cut things off.
+Формат изображения. Широкий экран может что-то обрезать.
+Formato de la imagen. La pantalla ancha puede recortar cosas.
+
+Antisserrilhado do console
+Console anti-aliasing
+Сглаживание консоли
+Antialiasing de la consola
+
+Automático (ligado)
+Automatic (on)
+Автоматически (вкл.)
+Automático (activado)
+
+O antisserrilhado que o próprio N64 fazia. Desligado fica mais nítido.
+The anti-aliasing the N64 itself did. Off is sharper.
+Сглаживание, которое делала сама N64. Выключенное — чётче.
+El antialiasing que hacía la propia N64. Desactivado queda más nítido.
+
+Filtro do console (desfoque)
+Console filter (blur)
+Фильтр консоли (размытие)
+Filtro de la consola (desenfoque)
+
+O desfoque típico do N64. Desligado deixa a imagem mais limpa.
+The typical N64 blur. Off makes the image cleaner.
+Типичное размытие N64. Выключенное делает изображение чище.
+El desenfoque típico de N64. Desactivado deja la imagen más limpia.
+
+Tirar pontilhado
+Remove dithering
+Убрать дизеринг
+Quitar tramado
+
+Esconde o pontilhado das cores.
+Hides color dithering.
+Скрывает дизеринг цветов.
+Oculta el tramado de los colores.
+
+1x (272p, original)
+1x (272p, original)
+1x (272p, оригинал)
+1x (272p, original)
+
+Vale ao reabrir.
+Applies when reopened.
+Действует после перезапуска.
+Vale al reabrir.
+
+Texturas do chão mais nítidas de longe.
+Floor textures sharper at a distance.
+Текстуры пола чётче вдали.
+Texturas del suelo más nítidas a lo lejos.
+
+Aumentar texturas
+Upscale textures
+Увеличить текстуры
+Agrandar texturas
+
+Automático (não)
+Automatic (no)
+Автоматически (нет)
+Automático (no)
+
+Redesenha as texturas maiores (xBRZ). Deixa desenhos e textos mais lisos.
+Redraws the textures bigger (xBRZ). Makes drawings and text smoother.
+Перерисовывает текстуры крупнее (xBRZ). Рисунки и текст становятся глаже.
+Redibuja las texturas más grandes (xBRZ). Deja dibujos y textos más lisos.
+
+Suaviza as texturas.
+Smooths the textures.
+Сглаживает текстуры.
+Suaviza las texturas.
+
+Pular quadros
+Skip frames
+Пропуск кадров
+Saltar fotogramas
+
+Para PC fraco: desenha menos quadros para o jogo não ficar lento.
+For weak PCs: draws fewer frames so the game doesn't slow down.
+Для слабых ПК: рисует меньше кадров, чтобы игра не тормозила.
+Para PC débil: dibuja menos fotogramas para que el juego no se ponga lento.
+
+Efeitos em resolução menor
+Effects at lower resolution
+Эффекты в меньшем разрешении
+Efectos a menor resolución
+
+Seguro
+Safe
+Безопасно
+Seguro
+
+Equilibrado
+Balanced
+Баланс
+Equilibrado
+
+Agressivo
+Aggressive
+Агрессивно
+Agresivo
+
+Desenha brilhos e sombras menores: mais leve.
+Draws glows and shadows smaller: lighter.
+Рисует свечение и тени в меньшем разрешении: легче.
+Dibuja brillos y sombras más pequeños: más ligero.
+
+1x (480p, original)
+1x (480p, original)
+1x (480p, оригинал)
+1x (480p, original)
+
+1,5x (720p)
+1.5x (720p)
+1,5x (720p)
+1,5x (720p)
+
+2,25x (1080p)
+2.25x (1080p)
+2,25x (1080p)
+2,25x (1080p)
+
+4,5x (4K)
+4.5x (4K)
+4,5x (4K)
+4,5x (4K)
+
+Redesenha as texturas maiores (xBRZ).
+Redraws the textures bigger (xBRZ).
+Перерисовывает текстуры крупнее (xBRZ).
+Redibuja las texturas más grandes (xBRZ).
+
+Tela larga (códigos)
+Widescreen (codes)
+Широкий экран (коды)
+Pantalla ancha (códigos)
+
+Tela larga sem defeitos nos jogos que têm código para isso.
+Widescreen without glitches in games that have a code for it.
+Широкий экран без дефектов в играх, для которых есть код.
+Pantalla ancha sin defectos en los juegos que tienen código para ello.
+
+Tela larga (forçada)
+Widescreen (forced)
+Широкий экран (принудительно)
+Pantalla ancha (forzada)
+
+Força 16:9 em qualquer jogo; pode aparecer coisa fora do lugar nas bordas.
+Forces 16:9 in any game; things may appear out of place at the edges.
+Принудительно 16:9 в любой игре; по краям что-то может оказаться не на месте.
+Fuerza 16:9 en cualquier juego; puede aparecer algo fuera de lugar en los bordes.
+
+Um pouco
+A little
+Немного
+Un poco
+
+Mais
+More
+Больше
+Más
+
+Para PC fraco: pula quadros quando o jogo ficaria lento.
+For weak PCs: skips frames when the game would slow down.
+Для слабых ПК: пропускает кадры, когда игра начинает тормозить.
+Para PC débil: salta fotogramas cuando el juego se pondría lento.
+
+4x (4K, pesado)
+4x (4K, heavy)
+4x (4K, тяжело)
+4x (4K, exigente)
+
+Automático (nenhuma)
+Automatic (none)
+Автоматически (нет)
+Automático (ninguna)
+
+Automático (como o PS2)
+Automatic (like the PS2)
+Автоматически (как на PS2)
+Automático (como PS2)
+
+Como o PS2
+Like the PS2
+Как на PS2
+Como PS2
+
+Sempre suave
+Always smooth
+Всегда сглаживать
+Siempre suave
+
+Suavização das texturas.
+Texture smoothing.
+Сглаживание текстур.
+Suavizado de texturas.
+
+Tela larga
+Widescreen
+Широкий экран
+Pantalla ancha
+
+Usa os códigos de tela larga do jogo, quando existem.
+Uses the game's widescreen codes, when they exist.
+Использует коды широкого экрана для игры, если они есть.
+Usa los códigos de pantalla ancha del juego, cuando existen.
+
+Entrelaçamento
+Deinterlacing
+Деинтерлейсинг
+Desentrelazado
+
+Adaptativo
+Adaptive
+Адаптивный
+Adaptativo
+
+Tira o tremor de linhas que alguns jogos têm.
+Removes the line shimmer some games have.
+Убирает дрожание строк, которое есть в некоторых играх.
+Quita el temblor de líneas que tienen algunos juegos.
+
+Precisão das transparências
+Blending accuracy
+Точность прозрачности
+Precisión de las transparencias
+
+Mínima (mais leve)
+Minimum (lighter)
+Минимальная (легче)
+Mínima (más ligera)
+
+Básica
+Basic
+Базовая
+Básica
+
+Mais alta corrige brilhos e sombras, mas pesa.
+Higher fixes glows and shadows, but it's heavier.
+Выше — исправляет свечение и тени, но тяжелее.
+Más alta corrige brillos y sombras, pero exige más.
+
+Força 16:9 em jogos que não têm; pode aparecer coisa cortada nas bordas.
+Forces 16:9 in games that don't have it; things may appear cut at the edges.
+Принудительно 16:9 в играх без поддержки; по краям что-то может обрезаться.
+Fuerza 16:9 en juegos que no lo tienen; puede aparecer algo recortado en los bordes.
+
+Automático (pelo jogo)
+Automatic (by game)
+Автоматически (по игре)
+Automático (según el juego)
+
+Esperar (trava na 1ª vez)
+Wait (stutters the 1st time)
+Ждать (подтормаживает в 1-й раз)
+Esperar (se traba la 1.ª vez)
+
+Ubershaders (sem travar, pesado)
+Ubershaders (no stutter, heavy)
+Ubershaders (без рывков, тяжело)
+Ubershaders (sin tirones, exigente)
+
+Em segundo plano
+In the background
+В фоне
+En segundo plano
+
+Em segundo plano, pula o quadro (mais leve)
+In the background, skip the frame (lighter)
+В фоне, с пропуском кадра (легче)
+En segundo plano, salta el fotograma (más ligero)
+
+Como os efeitos novos são preparados. Em segundo plano tira as travadas.
+How new effects are prepared. In the background removes the stutter.
+Как готовятся новые эффекты. «В фоне» убирает подтормаживания.
+Cómo se preparan los efectos nuevos. En segundo plano quita los tirones.
+
+Redesenha as texturas maiores.
+Redraws the textures bigger.
+Перерисовывает текстуры крупнее.
+Redibuja las texturas más grandes.
+
+Telas
+Screens
+Экраны
+Pantallas
+
+Automático (uma em cima da outra)
+Automatic (one above the other)
+Автоматически (один над другим)
+Automático (una encima de la otra)
+
+Uma em cima da outra
+One above the other
+Один над другим
+Una encima de la otra
+
+Só uma tela
+Only one screen
+Только один экран
+Solo una pantalla
+
+Lado a lado
+Side by side
+Рядом
+Lado a lado
+
+Como as duas telas do 3DS aparecem.
+How the 3DS's two screens show up.
+Как отображаются два экрана 3DS.
+Cómo aparecen las dos pantallas de 3DS.
+
+Tela principal
+Main screen
+Главный экран
+Pantalla principal
+
+Automático (a de cima)
+Automatic (the top one)
+Автоматически (верхний)
+Automático (la de arriba)
+
+A de cima
+The top one
+Верхний
+La de arriba
+
+A de baixo
+The bottom one
+Нижний
+La de abajo
+
+Qual tela fica em destaque.
+Which screen is highlighted.
+Какой экран выделен.
+Qué pantalla queda destacada.
+
+Guarda os shaders prontos para a próxima vez: menos travadas.
+Keeps the ready shaders for next time: less stutter.
+Сохраняет готовые шейдеры на следующий раз: меньше подтормаживаний.
+Guarda los shaders listos para la próxima vez: menos tirones.
+
+Resolução (3D)
+Resolution (3D)
+Разрешение (3D)
+Resolución (3D)
+
+Só para o desenho em 3D (OpenGL). Vale ao reabrir.
+Only for 3D drawing (OpenGL). Applies when reopened.
+Только для 3D-отрисовки (OpenGL). Действует после перезапуска.
+Solo para el dibujo en 3D (OpenGL). Vale al reabrir.
+
+a pasta addons\\dlss5 ainda não existe.
+the addons\\dlss5 folder doesn't exist yet.
+папки addons\\dlss5 пока нет.
+la carpeta addons\\dlss5 todavía no existe.
+
+a camada 
+the layer 
+слой 
+la capa 
+
+) precisa de um DLL que não está na pasta camada.
+) needs a DLL that isn't in the camada folder.
+) нужна DLL, которой нет в папке camada.
+) necesita una DLL que no está en la carpeta camada.
+
+falta a camada Vulkan do ReShade (ReShade64.json e ReShade64.dll) na pasta camada.
+ReShade's Vulkan layer (ReShade64.json and ReShade64.dll) is missing from the camada folder.
+В папке camada нет Vulkan-слоя ReShade (ReShade64.json и ReShade64.dll).
+Falta la capa Vulkan de ReShade (ReShade64.json y ReShade64.dll) en la carpeta camada.
+
+faltam os add-ons do ReShade na pasta jogo (o dlss5-feed.addon64 e um add-on neural).
+ReShade's add-ons are missing from the jogo folder (dlss5-feed.addon64 and a neural add-on).
+В папке jogo нет аддонов ReShade (dlss5-feed.addon64 и нейронного аддона).
+Faltan los add-ons de ReShade en la carpeta jogo (dlss5-feed.addon64 y un add-on neural).
+
+falta o nvngx_dlssnr.dll (o DLSS 5) na pasta jogo.
+nvngx_dlssnr.dll (DLSS 5) is missing from the jogo folder.
+В папке jogo нет nvngx_dlssnr.dll (DLSS 5).
+Falta nvngx_dlssnr.dll (DLSS 5) en la carpeta jogo.
+
+O DLSS 5 está ligado, mas 
+DLSS 5 is on, but 
+DLSS 5 включён, но 
+DLSS 5 está activado, pero 
+
+ Complete a pasta 
+ Complete the folder 
+ Дополните папку 
+ Completa la carpeta 
+
+ ou desligue o DLSS 5 nas opções.
+ or turn DLSS 5 off in the options.
+ или выключите DLSS 5 в параметрах.
+ o desactiva DLSS 5 en las opciones.
+
+Não reconheci o jogo nesta pasta:\n\n
+I didn't recognize the game in this folder:\n\n
+Не удалось распознать игру в этой папке:\n\n
+No reconocí el juego en esta carpeta:\n\n
+
+\n\nPasta de jogo é a de PS5 ou do Bloodborne (com eboot.bin e sce_sys), PS3 (com PS3_GAME ou USRDIR), Xbox 360 (com default.xex) ou Wii U (com code e meta). Para ISO, ROM e outros arquivos, use \"Arquivo do jogo\".
+\n\nA game folder is a PS5 or Bloodborne one (with eboot.bin and sce_sys), PS3 (with PS3_GAME or USRDIR), Xbox 360 (with default.xex) or Wii U (with code and meta). For ISO, ROM and other files, use \"Game file\".
+\n\nПапка игры — это папка PS5 или Bloodborne (с eboot.bin и sce_sys), PS3 (с PS3_GAME или USRDIR), Xbox 360 (с default.xex) или Wii U (с code и meta). Для ISO, ROM и других файлов используйте «Файл игры».
+\n\nLa carpeta de juego es la de PS5 o Bloodborne (con eboot.bin y sce_sys), PS3 (con PS3_GAME o USRDIR), Xbox 360 (con default.xex) o Wii U (con code y meta). Para ISO, ROM y otros archivos, usa \"Archivo del juego\".
+
+Não deu para ler sce_sys\\param.json (PS5) nem sce_sys\\param.sfo (PS4) em:\n\n
+Couldn't read sce_sys\\param.json (PS5) or sce_sys\\param.sfo (PS4) in:\n\n
+Не удалось прочитать sce_sys\\param.json (PS5) или sce_sys\\param.sfo (PS4) в:\n\n
+No se pudo leer sce_sys\\param.json (PS5) ni sce_sys\\param.sfo (PS4) en:\n\n
+
+O Ranga não roda jogos de PS4: 
+Ranga doesn't run PS4 games: 
+Ranga не запускает игры PS4: 
+Ranga no ejecuta juegos de PS4: 
+
+) ficou de fora. Do PS4, só o Bloodborne (CUSA03173), como experimento, pelo port dele.
+) was left out. From the PS4, only Bloodborne (CUSA03173), as an experiment, through its port.
+) не добавлена. Из PS4 — только Bloodborne (CUSA03173), в качестве эксперимента, через его порт.
+) quedó fuera. De PS4, solo Bloodborne (CUSA03173), como experimento, con su port.
+
+Não deu para salvar library.ini em:\n\n
+Couldn't save library.ini in:\n\n
+Не удалось сохранить library.ini в:\n\n
+No se pudo guardar library.ini en:\n\n
+
+Esta pasta não tem sce_sys\\param.json, então não parece uma DLC tirada do console:\n\n
+This folder doesn't have sce_sys\\param.json, so it doesn't look like a DLC taken from the console:\n\n
+В этой папке нет sce_sys\\param.json, значит, это не похоже на DLC, снятое с консоли:\n\n
+Esta carpeta no tiene sce_sys\\param.json, así que no parece un DLC sacado de la consola:\n\n
+
+Não deu para ler o código da DLC (contentId) no param.json:\n\n
+Couldn't read the DLC code (contentId) in param.json:\n\n
+Не удалось прочитать код DLC (contentId) в param.json:\n\n
+No se pudo leer el código del DLC (contentId) en param.json:\n\n
+
+Esta DLC é de outro jogo (
+This DLC is from another game (
+Это DLC от другой игры (
+Este DLC es de otro juego (
+
+Esta pasta é um jogo, não uma DLC. Use \"Adicionar jogo\" para ela.
+This folder is a game, not a DLC. Use \"Add game\" for it.
+Эта папка — игра, а не DLC. Используйте для неё «Добавить игру».
+Esta carpeta es un juego, no un DLC. Usa \"Añadir juego\" para ella.
+
+Não deu para salvar dlc.ini em:\n\n
+Couldn't save dlc.ini in:\n\n
+Не удалось сохранить dlc.ini в:\n\n
+No se pudo guardar dlc.ini en:\n\n
+
+Não deu para ligar a pasta da DLC em addcont. Veja link.log na aba Log.
+Couldn't link the DLC folder into addcont. See link.log in the Log tab.
+Не удалось подключить папку DLC в addcont. Посмотрите link.log на вкладке «Журнал».
+No se pudo enlazar la carpeta del DLC en addcont. Mira link.log en la pestaña Log.
+
+A lista de salas públicas não respondeu.
+The list of public rooms didn't answer.
+Список публичных комнат не ответил.
+La lista de salas públicas no respondió.
+
+A lista de salas públicas respondeu com erro 
+The list of public rooms answered with error 
+Список публичных комнат ответил ошибкой 
+La lista de salas públicas respondió con el error 
+
+A lista de salas públicas veio num formato que o Ranga não entende.
+The list of public rooms came in a format Ranga doesn't understand.
+Список публичных комнат пришёл в формате, который Ranga не понимает.
+La lista de salas públicas vino en un formato que Ranga no entiende.
+
+A lista de salas públicas veio vazia.
+The list of public rooms came empty.
+Список публичных комнат пуст.
+La lista de salas públicas vino vacía.
+
+Não deu para ler essa imagem (aceita PNG, JPG, BMP, GIF ou vídeo MP4).
+Couldn't read that image (it takes PNG, JPG, BMP, GIF or MP4 video).
+Не удалось прочитать изображение (подходят PNG, JPG, BMP, GIF или видео MP4).
+No se pudo leer esa imagen (acepta PNG, JPG, BMP, GIF o video MP4).
+
+Não deu para ler esse vídeo. Tente um MP4 (H.264) curto.
+Couldn't read that video. Try a short MP4 (H.264).
+Не удалось прочитать видео. Попробуйте короткий MP4 (H.264).
+No se pudo leer ese video. Prueba un MP4 (H.264) corto.
+
+Não deu para abrir o arquivo.
+Couldn't open the file.
+Не удалось открыть файл.
+No se pudo abrir el archivo.
+
+Não deu para ler essa imagem (aceita PNG, JPG, BMP ou GIF).
+Couldn't read that image (it takes PNG, JPG, BMP or GIF).
+Не удалось прочитать изображение (подходят PNG, JPG, BMP или GIF).
+No se pudo leer esa imagen (acepta PNG, JPG, BMP o GIF).
+
+Aperta o start
+Press start
+Жми старт
+Pulsa start
+
+Jogou um jogo pela primeira vez no Ranga.
+Played a game for the first time in Ranga.
+Впервые сыграл(а) в игру в Ranga.
+Jugó un juego por primera vez en Ranga.
+
+Cara nova
+New face
+Новое лицо
+Cara nueva
+
+Colocou uma foto no perfil.
+Added a profile photo.
+Поставил(а) фото в профиль.
+Puso una foto en el perfil.
+
+Esquentando
+Warming up
+Разогрев
+Calentando
+
+Uma hora de jogo, somando tudo.
+One hour of play, all added up.
+Один час игры в сумме.
+Una hora de juego, sumando todo.
+
+Jogador de verdade
+Real gamer
+Настоящий игрок
+Jugador de verdad
+
+Dez horas de jogo, somando tudo.
+Ten hours of play, all added up.
+Десять часов игры в сумме.
+Diez horas de juego, sumando todo.
+
+Sem vida social
+No social life
+Без личной жизни
+Sin vida social
+
+Cinquenta horas de jogo, somando tudo.
+Fifty hours of play, all added up.
+Пятьдесят часов игры в сумме.
+Cincuenta horas de juego, sumando todo.
+
+Lenda do Ranga
+Ranga legend
+Легенда Ranga
+Leyenda de Ranga
+
+Cem horas de jogo, somando tudo.
+A hundred hours of play, all added up.
+Сто часов игры в сумме.
+Cien horas de juego, sumando todo.
+
+Maratona
+Marathon
+Марафон
+Maratón
+
+Três horas seguidas no mesmo jogo.
+Three hours in a row in the same game.
+Три часа подряд в одной игре.
+Tres horas seguidas en el mismo juego.
+
+Coruja
+Night owl
+Сова
+Búho
+
+Jogou entre meia-noite e cinco da manhã.
+Played between midnight and five in the morning.
+Играл(а) с полуночи до пяти утра.
+Jugó entre la medianoche y las cinco de la mañana.
+
+Esse é o meu jogo
+This is my game
+Это моя игра
+Este es mi juego
+
+Dez horas num jogo só.
+Ten hours in a single game.
+Десять часов в одной игре.
+Diez horas en un solo juego.
+
+Turista
+Tourist
+Турист
+Turista
+
+Jogou em três consoles diferentes.
+Played on three different consoles.
+Играл(а) на трёх разных консолях.
+Jugó en tres consolas diferentes.
+
+Viajante do tempo
+Time traveler
+Путешественник во времени
+Viajero del tiempo
+
+Jogou em seis consoles diferentes.
+Played on six different consoles.
+Играл(а) на шести разных консолях.
+Jugó en seis consolas diferentes.
+
+Museu do videogame
+Video game museum
+Музей видеоигр
+Museo del videojuego
+
+Jogou em dez consoles diferentes.
+Played on ten different consoles.
+Играл(а) на десяти разных консолях.
+Jugó en diez consolas diferentes.
+
+Provador
+Taster
+Дегустатор
+Catador
+
+Jogou dez jogos diferentes.
+Played ten different games.
+Сыграл(а) в десять разных игр.
+Jugó diez juegos diferentes.
+
+Estante cheia
+Full shelf
+Полная полка
+Estante lleno
+
+Dez jogos na biblioteca.
+Ten games in the library.
+Десять игр в библиотеке.
+Diez juegos en la biblioteca.
+
+Colecionador
+Collector
+Коллекционер
+Coleccionista
+
+Cinquenta jogos na biblioteca.
+Fifty games in the library.
+Пятьдесят игр в библиотеке.
+Cincuenta juegos en la biblioteca.
+
+Uma semana sem largar
+A week without letting go
+Неделя без перерыва
+Una semana sin soltarlo
+
+Junto é melhor
+Better together
+Вместе лучше
+Juntos es mejor
+
+Parceiro de jogatina
+Gaming partner
+Напарник по играм
+Compañero de juego
+
+Conquista de verdade
+Real achievement
+Настоящее достижение
+Logro de verdad
+
+Primeira conquista do RetroAchievements.
+First RetroAchievements achievement.
+Первое достижение RetroAchievements.
+Primer logro de RetroAchievements.
+
+Caçador de troféus
+Trophy hunter
+Охотник за трофеями
+Cazador de trofeos
+
+Cinquenta conquistas do RetroAchievements.
+Fifty RetroAchievements achievements.
+Пятьдесят достижений RetroAchievements.
+Cincuenta logros de RetroAchievements.
+
+Platina
+Platinum
+Платина
+Platino
+
+Todas as conquistas do RetroAchievements de um jogo.
+Every RetroAchievements achievement in a game.
+Все достижения RetroAchievements в одной игре.
+Todos los logros de RetroAchievements de un juego.
+
+Jogador
+Player
+Игрок
+Jugador
+
+Sem resposta do RetroAchievements. Confira a internet.
+No answer from RetroAchievements. Check your internet.
+RetroAchievements не отвечает. Проверьте интернет.
+Sin respuesta de RetroAchievements. Revisa tu internet.
+
+Usuário ou senha errados.
+Wrong username or password.
+Неверный логин или пароль.
+Usuario o contraseña incorrectos.
+
+O RetroAchievements bloqueou esta conta. Veja no site retroachievements.org.
+RetroAchievements blocked this account. See the retroachievements.org site.
+RetroAchievements заблокировал этот аккаунт. Подробнее на сайте retroachievements.org.
+RetroAchievements bloqueó esta cuenta. Mira en el sitio retroachievements.org.
+
+O RetroAchievements recusou (código 
+RetroAchievements refused (code 
+RetroAchievements отказал (код 
+RetroAchievements lo rechazó (código 
+
+A resposta do servidor veio incompleta.
+The server's answer came incomplete.
+Ответ сервера пришёл неполным.
+La respuesta del servidor llegó incompleta.
+
+Sala do Ranga
+Ranga room
+Комната Ranga
+Sala de Ranga
+
+Falta o servidor de sala em 
+The room server is missing in 
+Не хватает сервера комнаты в 
+Falta el servidor de sala en 
+
+O servidor de sala não abriu (erro 
+The room server didn't open (error 
+Сервер комнаты не открылся (ошибка 
+El servidor de sala no se abrió (error 
+
+A sala \"
+The room \"
+Комната «
+La sala \"
+
+ deve estar em uso (outra sala, ou um jogo com \"Criar uma sala\" aberto). Veja salas\\
+ must be in use (another room, or a game with \"Create a room\" open). See salas\\
+ вероятно, занят (другая комната или игра с открытым «Создать комнату»). Смотрите salas\\
+ debe de estar en uso (otra sala, o un juego con \"Crear una sala\" abierto). Mira salas\\
+
+o servidor dos clássicos
+the classics server
+сервер классики
+el servidor de los clásicos
+
+a sala do 3DS
+the 3DS room
+комната 3DS
+la sala de 3DS
+
+o servidor do PS3
+the PS3 server
+сервер PS3
+el servidor de PS3
+
+ não abriu (erro 
+ didn't open (error 
+ не открылся (ошибка 
+ no se abrió (error 
+
+ fechou logo ao abrir: a porta 
+ closed right after opening: port 
+ закрылся сразу после запуска: порт 
+ se cerró justo al abrir: el puerto 
+
+ deve estar em uso. Veja salas\\
+ must be in use. See salas\\
+ вероятно, занят. Смотрите salas\\
+ debe de estar en uso. Mira salas\\
+
+Liga as salas online do Ranga Emu
+Turns on Ranga Emu's online rooms
+Включает онлайн-комнаты Ranga Emu
+Activa las salas en línea de Ranga Emu
+
+Conferindo os arquivos do jogo...
+Checking the game files...
+Проверка файлов игры...
+Comprobando los archivos del juego...
+
+Sistema do 
+System of 
+Система 
+Sistema de 
+
+Sistema
+System
+Система
+Sistema
+
+Os arquivos do jogo não estão mais em 
+The game files are no longer in 
+Файлов игры больше нет в 
+Los archivos del juego ya no están en 
+
+. Use \"Trocar pasta\" nas opções.
+. Use \"Change folder\" in the options.
+. Используйте «Сменить папку» в параметрах.
+. Usa \"Cambiar carpeta\" en las opciones.
+
+Faltam as pastas libs e tools ao lado do RangaEmu.exe. Extraia o download inteiro de novo.
+The libs and tools folders are missing next to RangaEmu.exe. Extract the whole download again.
+Рядом с RangaEmu.exe нет папок libs и tools. Распакуйте загрузку целиком заново.
+Faltan las carpetas libs y tools junto a RangaEmu.exe. Vuelve a extraer la descarga completa.
+
+O executável do jogo não está descriptografado. É preciso um eboot.bin ou eboot.elf descriptografado do seu próprio console.
+The game's executable isn't decrypted. A decrypted eboot.bin or eboot.elf from your own console is needed.
+Исполняемый файл игры не расшифрован. Нужен расшифрованный eboot.bin или eboot.elf с вашей собственной консоли.
+El ejecutable del juego no está descifrado. Se necesita un eboot.bin o eboot.elf descifrado de tu propia consola.
+
+Preparando o jogo a partir dos seus arquivos. Só acontece uma vez e leva uns 2 minutos...
+Preparing the game from your files. It only happens once and takes about 2 minutes...
+Подготовка игры из ваших файлов. Это происходит один раз и занимает около 2 минут...
+Preparando el juego a partir de tus archivos. Solo pasa una vez y tarda unos 2 minutos...
+
+Alguns módulos do jogo não puderam ser convertidos (
+Some of the game's modules couldn't be converted (
+Некоторые модули игры не удалось преобразовать (
+Algunos módulos del juego no se pudieron convertir (
+
+). Eles precisam vir descriptografados do seu console.
+). They need to come decrypted from your console.
+). Они должны быть расшифрованы с вашей консоли.
+). Tienen que venir descifrados de tu consola.
+
+Não deu para preparar o jogo (código 
+Couldn't prepare the game (code 
+Не удалось подготовить игру (код 
+No se pudo preparar el juego (código 
+
+). Veja prepare.log na aba Log.
+). See prepare.log in the Log tab.
+). Смотрите prepare.log на вкладке «Журнал».
+). Mira prepare.log en la pestaña Log.
+
+O jogo não pôde ser iniciado.
+The game couldn't be started.
+Не удалось запустить игру.
+No se pudo iniciar el juego.
+
+O jogo parou de repente (código 
+The game stopped suddenly (code 
+Игра внезапно остановилась (код 
+El juego se detuvo de repente (código 
+
+ na aba Log.
+ in the Log tab.
+ на вкладке «Журнал».
+ en la pestaña Log.
+
+O port do Bloodborne parou ao preparar o jogo (código 
+The Bloodborne port stopped while preparing the game (code 
+Порт Bloodborne остановился при подготовке игры (код 
+El port de Bloodborne se detuvo al preparar el juego (código 
+
+). Veja game.log na aba Log.
+). See game.log in the Log tab.
+). Смотрите game.log на вкладке «Журнал».
+). Mira game.log en la pestaña Log.
+
+Jogo fechado depois de 
+Game closed after 
+Игра закрыта через 
+Juego cerrado después de 
+
+Não há eboot.bin em 
+There's no eboot.bin in 
+Нет eboot.bin в 
+No hay eboot.bin en 
+
+Falta o port do Bloodborne em 
+The Bloodborne port is missing in 
+Не хватает порта Bloodborne в 
+Falta el port de Bloodborne en 
+
+ (run.bat e out\\bbport.exe).
+ (run.bat and out\\bbport.exe).
+ (run.bat и out\\bbport.exe).
+ (run.bat y out\\bbport.exe).
+
+O port do Bloodborne precisa do Python 3.10 ou mais novo (python.org ou Microsoft Store). Instale e tente de novo.
+The Bloodborne port needs Python 3.10 or newer (python.org or Microsoft Store). Install it and try again.
+Порту Bloodborne нужен Python 3.10 или новее (python.org или Microsoft Store). Установите и попробуйте снова.
+El port de Bloodborne necesita Python 3.10 o más nuevo (python.org o Microsoft Store). Instálalo y vuelve a intentarlo.
+
+O port do Bloodborne não pôde ser iniciado.
+The Bloodborne port couldn't be started.
+Не удалось запустить порт Bloodborne.
+No se pudo iniciar el port de Bloodborne.
+
+O jogo não está mais em 
+The game is no longer in 
+Игры больше нет в 
+El juego ya no está en 
+
+. Use \"Trocar\" nas opções.
+. Use \"Change\" in the options.
+. Используйте «Сменить» в параметрах.
+. Usa \"Cambiar\" en las opciones.
+
+O emulador não pôde ser iniciado (
+The emulator couldn't be started (
+Не удалось запустить эмулятор (
+No se pudo iniciar el emulador (
+
+A lista de apps não veio (sem internet, ou ainda não foi publicada).
+The list of apps didn't come (no internet, or it hasn't been published yet).
+Список приложений не загрузился (нет интернета или он ещё не опубликован).
+La lista de apps no llegó (sin internet, o todavía no se publicó).
+
+A lista de apps não tem a assinatura do Ranga: ignorada.
+The list of apps doesn't have Ranga's signature: ignored.
+У списка приложений нет подписи Ranga: проигнорирован.
+La lista de apps no tiene la firma de Ranga: ignorada.
+
+Esse app não veio certo na lista.
+That app didn't come right in the list.
+Это приложение пришло в списке с ошибкой.
+Esa app no vino bien en la lista.
+
+O download de 
+The download of 
+Загрузка 
+La descarga de 
+
+ parou (sem internet?).
+ stopped (no internet?).
+ остановилась (нет интернета?).
+ se detuvo (¿sin internet?).
+
+ chegou diferente do que foi publicado: não foi instalado.
+ arrived different from what was published: it wasn't installed.
+ пришло не таким, как было опубликовано: не установлено.
+ llegó distinta de lo que se publicó: no se instaló.
+
+Não deu para abrir o zip de 
+Couldn't open the zip of 
+Не удалось открыть zip 
+No se pudo abrir el zip de 
+
+ (código 
+ (code 
+ (код 
+ (código 
+
+ está aberto: feche e tente de novo.
+ is open: close it and try again.
+ открыто: закройте и попробуйте снова.
+ está abierta: ciérrala y vuelve a intentarlo.
+
+Não deu para pôr 
+Couldn't put 
+Не удалось установить 
+No se pudo poner 
+
+ no lugar.
+ in place.
+ на место.
+ en su lugar.
+
+Está aberto: feche e tente de novo.
+It's open: close it and try again.
+Оно открыто: закройте и попробуйте снова.
+Está abierta: ciérrala y vuelve a intentarlo.
+
+Não é um catálogo (a primeira linha tem que ser \"ranga-apps 1\").
+It's not a catalog (the first line must be \"ranga-apps 1\").
+Это не каталог (первая строка должна быть «ranga-apps 1»).
+No es un catálogo (la primera línea tiene que ser \"ranga-apps 1\").
+
+O catálogo tem 
+The catalog has 
+В каталоге 
+El catálogo tiene 
+
+ apps, mas só 
+ apps, but only 
+ приложений, но только 
+ apps, pero solo 
+
+ estão completos e seguros.
+ are complete and safe.
+ полные и безопасные.
+ están completas y seguras.
+
+A lista de atualização não tem a assinatura certa: ignorada.
+The update list doesn't have the right signature: ignored.
+У списка обновлений неверная подпись: проигнорирован.
+La lista de actualización no tiene la firma correcta: ignorada.
+
+Nem o GitHub nem o PC que hospeda responderam (sem internet?).
+Neither GitHub nor the hosting PC answered (no internet?).
+Не ответили ни GitHub, ни ПК-хост (нет интернета?).
+Ni GitHub ni el PC que hospeda respondieron (¿sin internet?).
+
+A lista de atualização veio vazia.
+The update list came empty.
+Список обновлений пуст.
+La lista de actualización vino vacía.
+
+Falta a chave de assinatura (salas\\chave-atualizacao.bin).
+The signing key is missing (salas\\chave-atualizacao.bin).
+Нет ключа подписи (salas\\chave-atualizacao.bin).
+Falta la clave de firma (salas\\chave-atualizacao.bin).
+
+Não deu para ler 
+Couldn't read 
+Не удалось прочитать 
+No se pudo leer 
+
+A assinatura falhou (a chave está estragada?).
+The signature failed (is the key damaged?).
+Подпись не удалась (ключ повреждён?).
+La firma falló (¿la clave está dañada?).
+
+Não deu para gravar a lista.
+Couldn't write the list.
+Не удалось записать список.
+No se pudo guardar la lista.
+
+Não deu para pôr a versão no lugar.
+Couldn't put the version in place.
+Не удалось установить версию.
+No se pudo poner la versión en su lugar.
+
+A pasta escolhida não existe.
+The chosen folder doesn't exist.
+Выбранной папки не существует.
+La carpeta elegida no existe.
+
+Escolha uma pasta fora da pasta do Ranga.
+Choose a folder outside Ranga's folder.
+Выберите папку вне папки Ranga.
+Elige una carpeta fuera de la carpeta de Ranga.
+
+Não deu para preparar o engines.ini.
+Couldn't prepare engines.ini.
+Не удалось подготовить engines.ini.
+No se pudo preparar engines.ini.
+
+Não deu para juntar os arquivos do pacote (disco cheio?).
+Couldn't gather the package files (disk full?).
+Не удалось собрать файлы пакета (диск заполнен?).
+No se pudieron juntar los archivos del paquete (¿disco lleno?).
+
+Não deu para abrir o tar.exe do Windows.
+Couldn't open Windows' tar.exe.
+Не удалось открыть tar.exe Windows.
+No se pudo abrir el tar.exe de Windows.
+
+O tar.exe não terminou o zip (código 
+tar.exe didn't finish the zip (code 
+tar.exe не завершил zip (код 
+tar.exe no terminó el zip (código 
+
+Nenhuma versão publicada para mandar.
+No published version to send.
+Нет опубликованной версии для отправки.
+Ninguna versión publicada para enviar.
+
+Falta o GitHub CLI (gh) neste PC: a versão ficou só nesta sala.
+The GitHub CLI (gh) is missing on this PC: the version stayed only in this room.
+На этом ПК нет GitHub CLI (gh): версия осталась только в этой комнате.
+Falta GitHub CLI (gh) en este PC: la versión quedó solo en esta sala.
+
+Não deu para preparar 
+Couldn't prepare 
+Не удалось подготовить 
+No se pudo preparar 
+
+O GitHub não aceitou a versão (
+GitHub didn't accept the version (
+GitHub не принял версию (
+GitHub no aceptó la versión (
+
+Nenhuma versão publicada ainda: publique uma para ter com o que comparar.
+No version published yet: publish one to have something to compare with.
+Ещё нет опубликованных версий: опубликуйте одну, чтобы было с чем сравнивать.
+Ninguna versión publicada todavía: publica una para tener con qué comparar.
+
+A lista dos arquivos não tem a assinatura certa: ignorada.
+The file list doesn't have the right signature: ignored.
+У списка файлов неверная подпись: проигнорирован.
+La lista de archivos no tiene la firma correcta: ignorada.
+
+A lista dos arquivos veio vazia.
+The file list came empty.
+Список файлов пуст.
+La lista de archivos vino vacía.
+
+ parou (o PC que hospeda caiu?).
+ stopped (did the hosting PC go down?).
+ остановилась (ПК-хост отключился?).
+ se detuvo (¿se cayó el PC que hospeda?).
+
+O arquivo 
+The file 
+Файл 
+El archivo 
+
+ chegou diferente do que foi publicado: nada foi trocado.
+ arrived different from what was published: nothing was replaced.
+ пришёл не таким, как был опубликован: ничего не заменено.
+ llegó distinto de lo que se publicó: no se cambió nada.
+
+Falta o arquivo baixado 
+The downloaded file is missing 
+Нет скачанного файла 
+Falta el archivo descargado 
+
+ está em uso: feche o jogo e tente de novo.
+ is in use: close the game and try again.
+ используется: закройте игру и попробуйте снова.
+ está en uso: cierra el juego y vuelve a intentarlo.
+
+Não deu para trocar 
+Couldn't replace 
+Не удалось заменить 
+No se pudo cambiar 
+
+Falta a chave de assinatura (salas\\chave-atualizacao.bin): só o PC que publica assina.
+The signing key is missing (salas\\chave-atualizacao.bin): only the publishing PC signs.
+Нет ключа подписи (salas\\chave-atualizacao.bin): подписывает только публикующий ПК.
+Falta la clave de firma (salas\\chave-atualizacao.bin): solo firma el PC que publica.
+
+Conquista desbloqueada  ·  
+Achievement unlocked  ·  
+Достижение получено  ·  
+Logro desbloqueado  ·  
+
+Jogo dominado!
+Game mastered!
+Игра пройдена полностью!
+¡Juego dominado!
+
+Você tem todas as conquistas deste jogo.
+You have every achievement in this game.
+У вас все достижения этой игры.
+Tienes todos los logros de este juego.
+
+Sem conexão
+No connection
+Нет соединения
+Sin conexión
+
+As conquistas ficam guardadas e vão quando a internet voltar.
+Achievements are kept and go out when the internet comes back.
+Достижения сохраняются и отправятся, когда вернётся интернет.
+Los logros quedan guardados y se envían cuando vuelva internet.
+
+Conectado de novo
+Connected again
+Снова в сети
+Conectado de nuevo
+
+As conquistas pendentes foram enviadas.
+The pending achievements were sent.
+Ожидавшие достижения отправлены.
+Se enviaron los logros pendientes.
+
+Jogo sem conquistas
+Game without achievements
+Игра без достижений
+Juego sin logros
+
+O RetroAchievements não reconhece este arquivo (ou é outra versão do jogo).
+RetroAchievements doesn't recognize this file (or it's another version of the game).
+RetroAchievements не узнаёт этот файл (или это другая версия игры).
+RetroAchievements no reconoce este archivo (o es otra versión del juego).
+
+Não carregou as conquistas
+Achievements didn't load
+Достижения не загрузились
+No se cargaron los logros
+
+Este jogo ainda não tem conquistas.
+This game has no achievements yet.
+У этой игры пока нет достижений.
+Este juego todavía no tiene logros.
+
+RetroAchievements  ·  modo normal
+RetroAchievements  ·  normal mode
+RetroAchievements  ·  обычный режим
+RetroAchievements  ·  modo normal
+
+ de 
+ of 
+ из 
+ de 
+
+ conquistas  ·  
+ achievements  ·  
+ достижений  ·  
+ logros  ·  
+
+Não entrou na conta
+Didn't sign in
+Вход не выполнен
+No se inició sesión
+
+Conecte a conta de novo em Editar perfil, no Ranga.
+Connect the account again in Edit profile, in Ranga.
+Подключите аккаунт снова в «Изменить профиль» в Ranga.
+Vuelve a conectar la cuenta en Editar perfil, en Ranga.
+
+Conquista desbloqueada  ·  10 pontos
+Achievement unlocked  ·  10 points
+Достижение получено  ·  10 очков
+Logro desbloqueado  ·  10 puntos
+
+Teste da insígnia
+Badge test
+Проверка значка
+Prueba de la insignia
+
+Aviso de teste do Ranga, com a imagem baixada do RetroAchievements.
+Ranga test notice, with the image downloaded from RetroAchievements.
+Тестовое уведомление Ranga с изображением, скачанным из RetroAchievements.
+Aviso de prueba de Ranga, con la imagen descargada de RetroAchievements.
+
+Online: entrou no jogo de 
+Online: joined the game of 
+Онлайн: вы вошли в игру 
+En línea: entraste en el juego de 
+
+Online: você é o anfitrião; esperando os amigos
+Online: you're the host; waiting for friends
+Онлайн: вы хост; ожидание друзей
+En línea: eres el anfitrión; esperando a los amigos
+
+Online: entrando no jogo de 
+Online: joining the game of 
+Онлайн: вход в игру 
+En línea: entrando en el juego de 
+
+Online: a mesa deste jogo já tem 4 jogadores
+Online: this game's table already has 4 players
+Онлайн: за этим столом уже 4 игрока
+En línea: la mesa de este juego ya tiene 4 jugadores
+
+Online: o endereço 
+Online: the address 
+Онлайн: адрес 
+En línea: la dirección 
+
+ não foi encontrado; jogando sozinho
+ wasn't found; playing alone
+ не найден; игра в одиночку
+ no se encontró; jugando solo
+
+Online: a sala em 
+Online: the room at 
+Онлайн: комната по адресу 
+En línea: la sala en 
+
+ não respondeu; jogando sozinho
+ didn't answer; playing alone
+ не ответила; игра в одиночку
+ no respondió; jugando solo
+
+ (automático)
+ (automatic)
+ (автоматически)
+ (automático)
+
+Online: o anfitrião saiu; o jogo segue sozinho
+Online: the host left; the game goes on alone
+Онлайн: хост вышел; игра продолжается в одиночку
+En línea: el anfitrión salió; el juego sigue solo
+
+Online: a sala caiu; o jogo segue sozinho
+Online: the room went down; the game goes on alone
+Онлайн: комната отключилась; игра продолжается в одиночку
+En línea: la sala se cayó; el juego sigue solo
+
+Online: a sala mandou algo que não é do Ranga
+Online: the room sent something that isn't from Ranga
+Онлайн: комната прислала что-то не от Ranga
+En línea: la sala envió algo que no es de Ranga
+
+online: conectando
+online: connecting
+онлайн: подключение
+en línea: conectando
+
+online: recebendo o jogo do anfitrião
+online: receiving the game from the host
+онлайн: получение игры от хоста
+en línea: recibiendo el juego del anfitrión
+
+online: esperando o outro jogador
+online: waiting for the other player
+онлайн: ожидание другого игрока
+en línea: esperando al otro jugador
+
+online: esperando amigos
+online: waiting for friends
+онлайн: ожидание друзей
+en línea: esperando amigos
+
+online: 
+online: 
+онлайн: 
+en línea: 
+
+ jogadores, atraso 
+ players, delay 
+ игроков, задержка 
+ jugadores, retraso 
+
+Não deu para tirar a captura
+Couldn't take the screenshot
+Не удалось сделать скриншот
+No se pudo hacer la captura
+
+Captura salva (veja em Capturas, na página do jogo)
+Screenshot saved (see Screenshots, on the game's page)
+Скриншот сохранён (смотрите «Скриншоты» на странице игры)
+Captura guardada (mírala en Capturas, en la página del juego)
+
+Não deu para salvar a captura
+Couldn't save the screenshot
+Не удалось сохранить скриншот
+No se pudo guardar la captura
+
+Estado salvo na posição 
+State saved in slot 
+Состояние сохранено в слот 
+Estado guardado en la posición 
+
+Este core não salva estado
+This core doesn't save states
+Это ядро не сохраняет состояния
+Este núcleo no guarda estados
+
+Estado carregado da posição 
+State loaded from slot 
+Состояние загружено из слота 
+Estado cargado de la posición 
+
+Nenhum estado na posição 
+No state in slot 
+Нет состояния в слоте 
+Ningún estado en la posición 
+
+bora!
+let's go!
+погнали!
+¡vamos!
+
+pera aí
+hang on
+секунду
+espera
+
+já volto
+be right back
+сейчас вернусь
+ya vuelvo
+
+partiu outra?
+another one?
+ещё разок?
+¿otra?
+
+posição 
+slot 
+слот 
+posición 
+
+entre na conta
+sign in
+войдите
+inicia sesión
+
+sem conta
+no account
+нет аккаунта
+sin cuenta
+
+Continuar
+Continue
+Продолжить
+Continuar
+
+Salvar estado
+Save state
+Сохранить состояние
+Guardar estado
+
+Carregar estado
+Load state
+Загрузить состояние
+Cargar estado
+
+Posição do estado
+State slot
+Слот состояния
+Posición del estado
+
+ de 5
+ of 5
+ из 5
+ de 5
+
+Opções do core
+Core options
+Параметры ядра
+Opciones del núcleo
+
+não
+no
+нет
+no
+
+Amigos e chat
+Friends and chat
+Друзья и чат
+Amigos y chat
+
+Reiniciar o jogo
+Restart the game
+Перезапустить игру
+Reiniciar el juego
+
+Sair do jogo
+Quit the game
+Выйти из игры
+Salir del juego
+
+Entre na sua conta no Ranga (Perfil) para ver os amigos aqui.
+Sign in to your account in Ranga (Profile) to see your friends here.
+Войдите в аккаунт в Ranga (Профиль), чтобы видеть здесь друзей.
+Inicia sesión en tu cuenta en Ranga (Perfil) para ver a los amigos aquí.
+
+Buscando os amigos...
+Fetching friends...
+Загрузка друзей...
+Buscando a los amigos...
+
+visto há 
+seen 
+был(а) 
+visto hace 
+
+Nenhum amigo ainda: adicione pelo Perfil do Ranga.
+No friends yet: add them through Ranga's Profile.
+Пока нет друзей: добавьте их через профиль Ranga.
+Ningún amigo todavía: añádelos desde el Perfil de Ranga.
+
+Você
+You
+Вы
+Tú
+
+Mandar \"
+Send \"
+Отправить «
+Enviar \"
+
+Convidar para este jogo
+Invite to this game
+Пригласить в эту игру
+Invitar a este juego
+
+Conecte o RetroAchievements em Editar perfil, no Ranga, para ter conquistas.
+Connect RetroAchievements in Edit profile, in Ranga, to get achievements.
+Подключите RetroAchievements в «Изменить профиль» в Ranga, чтобы получать достижения.
+Conecta RetroAchievements en Editar perfil, en Ranga, para tener logros.
+
+Este jogo não tem conquistas (ou ainda está carregando).
+This game has no achievements (or it's still loading).
+У этой игры нет достижений (или они ещё загружаются).
+Este juego no tiene logros (o todavía está cargando).
+
+Enter ou Start: mandar    Esc: cancelar
+Enter or Start: send    Esc: cancel
+Enter или Start: отправить    Esc: отмена
+Enter o Start: enviar    Esc: cancelar
+
+Convite mandado para 
+Invitation sent to 
+Приглашение отправлено: 
+Invitación enviada a 
+
+Menu do jogo
+Game menu
+Меню игры
+Menú del juego
+
+↑↓ escolher    ←→ mudar    A / Enter: ok    B / Esc: voltar ao jogo
+↑↓ choose    ←→ change    A / Enter: ok    B / Esc: back to the game
+↑↓ выбор    ←→ изменить    A / Enter: ок    B / Esc: вернуться в игру
+↑↓ elegir    ←→ cambiar    A / Enter: ok    B / Esc: volver al juego
+
+↑↓ escolher    ←→ mudar    B / Esc: voltar
+↑↓ choose    ←→ change    B / Esc: back
+↑↓ выбор    ←→ изменить    B / Esc: назад
+↑↓ elegir    ←→ cambiar    B / Esc: volver
+
+↑↓ escolher    A / Enter: conversar    B / Esc: voltar
+↑↓ choose    A / Enter: chat    B / Esc: back
+↑↓ выбор    A / Enter: написать    B / Esc: назад
+↑↓ elegir    A / Enter: conversar    B / Esc: volver
+
+A / Enter: mandar    B / Esc: voltar    (o jogo espera enquanto o menu está aberto)
+A / Enter: send    B / Esc: back    (the game waits while the menu is open)
+A / Enter: отправить    B / Esc: назад    (игра ждёт, пока меню открыто)
+A / Enter: enviar    B / Esc: volver    (el juego espera mientras el menú está abierto)
+
+↑↓ ver    B / Esc: voltar
+↑↓ see    B / Esc: back
+↑↓ смотреть    B / Esc: назад
+↑↓ ver    B / Esc: volver
+
+Opção alterada; alguns cores só aplicam ao reiniciar o jogo
+Option changed; some cores only apply it when the game restarts
+Параметр изменён; некоторые ядра применяют его только после перезапуска игры
+Opción cambiada; algunos núcleos solo la aplican al reiniciar el juego
+
+Maiúsc
+Shift
+Shift
+Mayús
+
+Digite o texto
+Type the text
+Введите текст
+Escribe el texto
+
+A tecla   B apaga   X espaço   Y maiúsc   Start OK   Guide/Esc cancela   ou digite no teclado do PC
+A key   B deletes   X space   Y shift   Start OK   Guide/Esc cancels   or type on the PC keyboard
+A клавиша   B стереть   X пробел   Y shift   Start ОК   Guide/Esc отмена   или печатайте на клавиатуре ПК
+A tecla   B borra   X espacio   Y mayús   Start OK   Guide/Esc cancela   o escribe en el teclado del PC
+
+ótimo
+great
+отлично
+genial
+
+Online: falta o endereço da sala; jogando sozinho
+Online: the room address is missing; playing alone
+Онлайн: не указан адрес комнаты; игра в одиночку
+En línea: falta la dirección de la sala; jugando solo
+
+Online: este core não salva estado, então não joga online
+Online: this core doesn't save states, so it doesn't play online
+Онлайн: это ядро не сохраняет состояния, поэтому не играет онлайн
+En línea: este núcleo no guarda estados, así que no juega en línea
+
+<sem jogo>
+<no game>
+<нет игры>
+<sin juego>
+
+o core lê sozinho
+the core reads it by itself
+ядро читает само
+el núcleo lo lee solo
+
+Apelido do Mii
+Mii nickname
+Ник Mii
+Apodo del Mii
+
+Teste da caixa de texto
+Text box test
+Проверка поля ввода
+Prueba de la caja de texto
+
+Posição do estado: 
+State slot: 
+Слот состояния: 
+Posición del estado: 
+
+Online: estados ficam desligados enquanto joga com amigos
+Online: states are off while playing with friends
+Онлайн: состояния отключены во время игры с друзьями
+En línea: los estados quedan desactivados mientras juegas con amigos
+
+Online: só o anfitrião reinicia o jogo
+Online: only the host restarts the game
+Онлайн: перезапустить игру может только хост
+En línea: solo el anfitrión reinicia el juego
+
+A mensagem não foi
+The message didn't go
+Сообщение не отправлено
+El mensaje no se envió
+
+Sem conexão com a central.
+No connection to the hub.
+Нет связи с центральным сервером.
+Sin conexión con la central.
+
+Imagem (abra no Ranga para ver)
+Image (open in Ranga to see it)
+Изображение (откройте в Ranga, чтобы посмотреть)
+Imagen (ábrela en Ranga para verla)
+
+há %lld min
+%lld min ago
+%lld мин назад
+hace %lld min
+
+há %lld h
+%lld h ago
+%lld ч назад
+hace %lld h
+
+há %lld dia
+%lld day ago
+%lld день назад
+hace %lld día
+
+há %lld dias
+%lld days ago
+%lld дн. назад
+hace %lld días
+
+ontem
+yesterday
+вчера
+ayer
+
+nunca
+never
+никогда
+nunca
+
+Idioma
+Language
+Язык
+Idioma
+
+O idioma das telas do Ranga e dos apps da loja. Os nomes dos jogos e o que os amigos escrevem ficam como estão.
+The language of Ranga's screens and of the store apps. Game names and what your friends write stay as they are.
+Язык экранов Ranga и приложений из магазина. Названия игр и то, что пишут друзья, остаются как есть.
+El idioma de las pantallas de Ranga y de las apps de la tienda. Los nombres de los juegos y lo que escriben los amigos se quedan como están.
+
+Os apps abertos agora mudam quando forem abertos de novo.
+Apps that are open now change the next time they are opened.
+Открытые сейчас приложения сменят язык при следующем запуске.
+Las apps abiertas ahora cambian cuando se vuelvan a abrir.
+
+Novidades
+What's new
+Новости
+Novedades
+
+Novidades (
+What's new (
+Новости (
+Novedades (
+
+Perfil
+Profile
+Профиль
+Perfil
+
+Perfil (
+Profile (
+Профиль (
+Perfil (
+
+Amigos (
+Friends (
+Друзья (
+Amigos (
+
+Chat (
+Chat (
+Чат (
+Chat (
+
+Quem está na sala
+Who's in the room
+Кто в комнате
+Quién está en la sala
+
+Perguntando...
+Asking...
+Запрос...
+Preguntando...
+
+Baixando...
+Downloading...
+Загрузка...
+Descargando...
+
+Baixar dos amigos
+Download from friends
+Скачать у друзей
+Descargar de los amigos
+
+      Favorito
+      Favorite
+      В избранном
+      Favorito
+
+      Favoritar
+      Add to favorites
+      В избранное
+      Añadir a favoritos
+
+Player de IPTV: os canais abertos com o sinal oficial das emissoras (TV Brasil, TV Cultura, TV Câmara e outros), sem conta, e a sua lista IPTV (Xtream), se você tiver uma. Não traz lista nem canal pago. Anda com o controle: direcional, A abre, B volta, LB e RB trocam de aba.
+IPTV player: free-to-air channels with the broadcasters' official signal (TV Brasil, TV Cultura, TV Câmara and others), no account, and your IPTV list (Xtream), if you have one. It doesn't come with a list or paid channels. Works with the controller: d-pad, A opens, B goes back, LB and RB switch tabs.
+IPTV-плеер: открытые каналы с официальным сигналом телеканалов (TV Brasil, TV Cultura, TV Câmara и другие) без аккаунта, а также ваш IPTV-список (Xtream), если он есть. Списков и платных каналов в комплекте нет. Управление геймпадом: крестовина, A открывает, B назад, LB и RB переключают вкладки.
+Reproductor IPTV: los canales abiertos con la señal oficial de las emisoras (TV Brasil, TV Cultura, TV Câmara y otras), sin cuenta, y tu lista IPTV (Xtream), si tienes una. No trae lista ni canales de pago. Funciona con el mando: cruceta, A abre, B vuelve, LB y RB cambian de pestaña.
+
+O YouTube Music numa janela leve, com o controle: direcional anda, A toca, Triângulo pausa, LB e RB trocam de música, Quadrado busca com teclado na tela. Mini player sempre por cima: fechando a janela (ou Ctrl+M) a música segue só nele; e, jogando, a música nova num cartão discreto no canto. App não oficial (YouTube Music é marca do Google); você entra na sua própria conta. Não pula propaganda nem baixa música.
+YouTube Music in a light window, with the controller: d-pad moves, A plays, Triangle pauses, LB and RB change songs, Square searches with an on-screen keyboard. Mini player always on top: closing the window (or Ctrl+M) leaves the music playing only there; and, while gaming, the new song shows in a discreet card in the corner. Unofficial app (YouTube Music is a Google trademark); you sign in to your own account. It doesn't skip ads or download music.
+YouTube Music в лёгком окне с управлением геймпадом: крестовина — перемещение, A — играть, Треугольник — пауза, LB и RB — смена трека, Квадрат — поиск с экранной клавиатурой. Мини-плеер всегда поверх окон: если закрыть окно (или Ctrl+M), музыка продолжит играть только в нём; а во время игры новый трек показывается в неприметной карточке в углу. Неофициальное приложение (YouTube Music — торговая марка Google); вы входите в свой аккаунт. Не пропускает рекламу и не скачивает музыку.
+YouTube Music en una ventana ligera, con el mando: la cruceta se mueve, A reproduce, Triángulo pausa, LB y RB cambian de canción, Cuadrado busca con teclado en pantalla. Minirreproductor siempre encima: al cerrar la ventana (o Ctrl+M) la música sigue solo en él; y, jugando, la canción nueva aparece en una tarjeta discreta en la esquina. App no oficial (YouTube Music es marca de Google); entras en tu propia cuenta. No salta anuncios ni descarga música.
+
+Para ouvir o Spotify numa janela leve, com o controle: direcional anda, A toca, Triângulo pausa, LB e RB trocam de música, Quadrado busca com teclado na tela. Mini player: fechando a janela (ou Ctrl+M) a música segue só nele; e, jogando, a música nova num cartão discreto no canto. App não oficial (Spotify é marca da Spotify AB); você entra na sua própria conta. Não pula propaganda nem baixa música.
+To listen to Spotify in a light window, with the controller: d-pad moves, A plays, Triangle pauses, LB and RB change songs, Square searches with an on-screen keyboard. Mini player: closing the window (or Ctrl+M) leaves the music playing only there; and, while gaming, the new song shows in a discreet card in the corner. Unofficial app (Spotify is a trademark of Spotify AB); you sign in to your own account. It doesn't skip ads or download music.
+Spotify в лёгком окне с управлением геймпадом: крестовина — перемещение, A — играть, Треугольник — пауза, LB и RB — смена трека, Квадрат — поиск с экранной клавиатурой. Мини-плеер: если закрыть окно (или Ctrl+M), музыка продолжит играть только в нём; а во время игры новый трек показывается в неприметной карточке в углу. Неофициальное приложение (Spotify — торговая марка Spotify AB); вы входите в свой аккаунт. Не пропускает рекламу и не скачивает музыку.
+Para escuchar Spotify en una ventana ligera, con el mando: la cruceta se mueve, A reproduce, Triángulo pausa, LB y RB cambian de canción, Cuadrado busca con teclado en pantalla. Minirreproductor: al cerrar la ventana (o Ctrl+M) la música sigue solo en él; y, jugando, la canción nueva aparece en una tarjeta discreta en la esquina. App no oficial (Spotify es marca de Spotify AB); entras en tu propia cuenta. No salta anuncios ni descarga música.
