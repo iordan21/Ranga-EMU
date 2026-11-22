@@ -985,11 +985,37 @@ struct Client {
         });
     }
 
+    // engines.ini read once and kept, not from disk every frame: the top bar (Novidades), the home (the version) and
+    // a console's page (every game's favorite) asked it many times a frame, which with a big library was hundreds of
+    // file reads a second for a still screen. Read again only when the file changed (its date, looked at once a frame
+    // by RefreshIniCache); a write here shows from the next frame on.
+    mutable std::map<std::wstring, std::wstring> iniCache;
+    FILETIME iniStamp{};
+
+    void RefreshIniCache() {
+        WIN32_FILE_ATTRIBUTE_DATA data;
+        if (!GetFileAttributesExW((library.Root() + L"\\engines.ini").c_str(), GetFileExInfoStandard, &data)) return;
+        if (CompareFileTime(&data.ftLastWriteTime, &iniStamp) == 0) return;
+        iniStamp = data.ftLastWriteTime;
+        iniCache.clear();
+    }
+
+    std::wstring CachedIni(const wchar_t* section, const wchar_t* key, const wchar_t* fallback) const {
+        const std::wstring id = std::wstring(section) + L"\n" + key;
+        auto found = iniCache.find(id);
+        if (found == iniCache.end()) {
+            // The fallback is kept apart: one key read with two fallbacks must not mix them.
+            const std::wstring value = ReadIni(library.Root() + L"\\engines.ini", section, key, L"\x1");
+            found = iniCache.emplace(id, value).first;
+        }
+        return found->second == L"\x1" ? std::wstring(fallback) : found->second;
+    }
+
     // How many versions came since the board was last opened. The first time ever only the newest counts.
     int UnseenNews() {
         std::lock_guard guard(newsLock);
         if (news.empty()) return 0;
-        const std::string seen = Utf8(ReadIni(library.Root() + L"\\engines.ini", L"Ranga", L"novidades_vistas", L""));
+        const std::string seen = Utf8(CachedIni(L"Ranga", L"novidades_vistas", L""));
         if (seen.empty()) return 1;
         int count = 0;
         for (const auto& item : news) count += item.version > seen ? 1 : 0;
@@ -1049,8 +1075,8 @@ struct Client {
             std::lock_guard guard(newsLock);
             items = news;
         }
-        const std::string seen = Utf8(ReadIni(library.Root() + L"\\engines.ini", L"Ranga", L"novidades_vistas", L""));
-        const std::string installed = InstalledUpdate(library.Root());
+        const std::string seen = Utf8(CachedIni(L"Ranga", L"novidades_vistas", L""));
+        const std::string installed = Utf8(CachedIni(L"Ranga", L"versao_atualizacao", L""));
         ImGui::SetCursorPos(ImVec2(left, 108 * scale));
         ImGui::BeginChild("##news", ImVec2(ImGui::GetContentRegionAvail().x - left, 0), ImGuiChildFlags_None);
         if (items.empty()) ImGui::TextDisabled(newsBusy ? "Buscando as novidades..." : "Ainda não deu para buscar as novidades (sem internet?).");
@@ -3016,8 +3042,8 @@ struct Client {
         ImGui::PopFont();
         // Which Ranga this is: the update it runs ("2026.11.21-0025", the same name as in Novidades and on GitHub).
         // The number (1.0.0); a version from before the numbers shows its date.
-        if (const std::string version = InstalledUpdate(library.Root()); !version.empty()) {
-            const std::string number = InstalledVersionName(library.Root());
+        if (const std::string version = Utf8(CachedIni(L"Ranga", L"versao_atualizacao", L"")); !version.empty()) {
+            const std::string number = Utf8(CachedIni(L"Ranga", L"versao_nome", L""));
             ImGui::SameLine(0, 10 * scale);
             ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 7 * scale);
             ImGui::TextDisabled("versão %s", number.empty() ? version.c_str() : number.c_str());
@@ -3223,7 +3249,7 @@ struct Client {
     }
 
     // Favorites: engines.ini [Favoritos] <titleId>=1. They come first on their console's page, with a star.
-    bool IsFavorite(const Game& game) const { return ReadIni(library.Root() + L"\\engines.ini", L"Favoritos", game.titleId.c_str(), L"") == L"1"; }
+    bool IsFavorite(const Game& game) const { return CachedIni(L"Favoritos", game.titleId.c_str(), L"") == L"1"; }
     void SetFavorite(const Game& game, bool on) {
         const std::wstring ini = library.Root() + L"\\engines.ini";
         EnsureUnicodeIni(ini);
@@ -9221,6 +9247,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
         // The Win32 backend sees only XInput pads and takes this flag away without one; Ranga feeds every SDL gamepad
         // to ImGui itself (Frame), so a DualSense moves the focus too.
         ImGui::GetIO().BackendFlags |= ImGuiBackendFlags_HasGamepad;
+        client.RefreshIniCache();
         ImGui::NewFrame();
         // The TV mode is everything a third bigger, for a TV seen from the couch.
         const float shownScale = scale * (client.tvMode ? 1.35f : 1.0f);
