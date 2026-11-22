@@ -928,7 +928,7 @@ struct Client {
         if (githubThread.joinable()) githubThread.join();
         if (newsThread.joinable()) newsThread.join();
         if (storeThread.joinable()) storeThread.join();
-        if (appProcess != nullptr) CloseHandle(appProcess);
+        for (const auto& running : appProcesses) CloseHandle(running.second);
         StopProfileThreads();
     }
 
@@ -1149,20 +1149,47 @@ struct Client {
     std::wstring storeNote;   // under storeLock: how the last action went
     bool storeFetched = false, storeOpen = false, storeReadInstalled = false;
     int storeFocus = 0, storeButton = 0;
-    HANDLE appProcess = nullptr;
+    // The apps opened from here that are still running (an app may stay on in the background: the music one with
+    // only its mini player).
+    std::vector<std::pair<std::string, HANDLE>> appProcesses;
 
-    bool StoreAppRunning() {
-        if (appProcess == nullptr) return false;
-        if (WaitForSingleObject(appProcess, 0) == WAIT_TIMEOUT) return true;
-        CloseHandle(appProcess);
-        appProcess = nullptr;
-        // Back from the app: the Ranga in front again.
-        SetForegroundWindow(window);
+    // Forgets the apps that closed; when one closed, Ranga comes back to the front.
+    void ReapStoreApps() {
+        bool closed = false;
+        for (size_t i = 0; i < appProcesses.size();) {
+            if (WaitForSingleObject(appProcesses[i].second, 0) == WAIT_TIMEOUT) {
+                ++i;
+                continue;
+            }
+            CloseHandle(appProcesses[i].second);
+            appProcesses.erase(appProcesses.begin() + static_cast<std::ptrdiff_t>(i));
+            closed = true;
+        }
+        if (closed && !StoreAppInFront()) SetForegroundWindow(window);
+    }
+
+    bool StoreAppRunning(const std::string& id) {
+        ReapStoreApps();
+        for (const auto& running : appProcesses)
+            if (running.first == id) return true;
+        return false;
+    }
+
+    // One of those apps is the window in front: the controller is its (Ranga lets go of it). An app that went to the
+    // background (only a mini player) gives it back.
+    bool StoreAppInFront() {
+        if (appProcesses.empty()) return false;
+        DWORD front = 0;
+        GetWindowThreadProcessId(GetForegroundWindow(), &front);
+        for (const auto& running : appProcesses)
+            if (GetProcessId(running.second) == front) return true;
         return false;
     }
 
     void OpenStoreApp(const StoreApp& app) {
-        if (StoreAppRunning()) return;
+        // Already on (say, only its mini player): opening it again brings its window back (the app, single, hands
+        // over to the one running and closes).
+        const bool again = StoreAppRunning(app.id);
         if (runner.Busy()) {
             AddToast(app.name, "Feche o jogo antes de abrir o app.", "");
             return;
@@ -1192,7 +1219,8 @@ struct Client {
             return;
         }
         CloseHandle(process.hThread);
-        appProcess = process.hProcess;
+        if (again) CloseHandle(process.hProcess);
+        else appProcesses.emplace_back(app.id, process.hProcess);
     }
 
     // install: downloads and installs (or updates) that app, then fetches the list again; else only the list.
@@ -1260,7 +1288,7 @@ struct Client {
         ImGui::PopFont();
         ImGui::SetCursorPos(ImVec2(left, 76 * scale));
         ImGui::TextDisabled("Programas do Ranga para o PC. Ative o que quiser: ele baixa assinado, é conferido e abre por aqui, com o controle.");
-        const bool running = StoreAppRunning();
+        ReapStoreApps();
         const int job = storeJob;
         std::lock_guard guard(storeLock);
         // Before the first answer: what is installed shows at once (read once, not every frame).
@@ -1283,6 +1311,7 @@ struct Client {
             const StoreApp& app = apps[i];
             const bool focused = static_cast<int>(i) == storeFocus;
             const bool busyHere = job == 2 && storeJobApp == app.id;
+            const bool running = StoreAppRunning(app.id);
             const ImVec2 top = ImGui::GetCursorScreenPos();
             const float width = std::min(ImGui::GetContentRegionAvail().x, 900 * scale), pad = 18 * scale;
             ImGui::PushID(static_cast<int>(i));
@@ -1316,10 +1345,12 @@ struct Client {
                 if (app.installed && app.newer) actions.push_back(2);
                 if (app.installed) actions.push_back(3);
                 if (focused) storeButton = std::min(storeButton, std::max(0, static_cast<int>(actions.size()) - 1));
-                ImGui::BeginDisabled(job != 0 || running);
                 for (size_t b = 0; b < actions.size(); ++b) {
                     if (b > 0) ImGui::SameLine(0, 10 * scale);
                     const int action = actions[b];
+                    // Open works with the app on too (it comes back); updating and removing wait for it to close.
+                    const bool off = job != 0 || (running && action != 0);
+                    ImGui::BeginDisabled(off);
                     const bool primary = b == 0 && action != 3;
                     std::string label = action == 0 ? "Abrir" : action == 1 ? "Ativar e baixar (" + megabytes + ")" : action == 2 ? "Atualizar (" + megabytes + ")" : "Remover";
                     label += "##" + std::to_string(action);
@@ -1329,8 +1360,9 @@ struct Client {
                         ImGui::PushStyleColor(ImGuiCol_Text, Color(0xffffff));
                     }
                     const bool pressed = ImGui::Button(label.c_str(), ImVec2(0, 40 * scale)) ||
-                                         (focused && storeButton == static_cast<int>(b) && nav.accept && job == 0 && !running);
+                                         (focused && storeButton == static_cast<int>(b) && nav.accept && !off);
                     if (primary) ImGui::PopStyleColor(3);
+                    ImGui::EndDisabled();
                     FocusLast(focused && storeButton == static_cast<int>(b), scale);
                     if (!pressed) continue;
                     if (action == 0) {
@@ -1343,7 +1375,6 @@ struct Client {
                         pending = [this] { StartStoreJob(nullptr); };
                     }
                 }
-                ImGui::EndDisabled();
             }
             ImGui::EndGroup();
             const ImVec2 bottom(top.x + width, ImGui::GetItemRectMax().y + pad);
@@ -8881,7 +8912,8 @@ struct Client {
             for (const auto& game : library.Games()) if (game.titleId == titleId) ForgetArt(game);
         }
         // The controllers belong to the game while it runs, and to an app (Apps) while it is open.
-        if (runner.Busy() || StoreAppRunning()) gamepads.Stop();
+        ReapStoreApps();
+        if (runner.Busy() || StoreAppInFront()) gamepads.Stop();
         else gamepads.Start();
         Nav nav = ReadNav();
         // Big Picture: Start / Options or F11 turn the TV mode on and off; Select / View opens the friends' panel,
