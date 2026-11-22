@@ -651,6 +651,20 @@ public:
         }
     }
 
+    // Any button or stick of any controller down now, read straight from SDL without a frame (the main loop asks it
+    // 60 times a second while a controller is there, and draws a frame only when this says yes).
+    bool AnyDown() const {
+        if (!started || pads.empty()) return false;
+        SDL_GameControllerUpdate();
+        for (auto* pad : pads) {
+            for (int b = 0; b < SDL_CONTROLLER_BUTTON_MAX; ++b)
+                if (b != SDL_CONTROLLER_BUTTON_GUIDE && SDL_GameControllerGetButton(pad, static_cast<SDL_GameControllerButton>(b))) return true;
+            const int x = SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_LEFTX), y = SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_LEFTY);
+            if (x < -20000 || x > 20000 || y < -20000 || y > 20000) return true;
+        }
+        return false;
+    }
+
     bool Pressed(Button button) const { return pressed[button]; }
     bool Held(Button button) const { return held[button] != 0; }
 
@@ -8755,11 +8769,27 @@ struct Client {
     // How long the window may sleep before the next frame: 16 ms while something moves, 40 ms while only an animated
     // photo or cover plays (their frames last 100 ms), 250 ms when nothing changes on its own.
     DWORD FrameWait() const {
-        if ((gamepads.Connected() && GetForegroundWindow() == window) || std::fabs(homeTarget - homeScroll) > 0.0f || !toasts.empty() || movedLastFrame ||
-            ImGui::GetTime() - pageChangedAt < 0.4) {
-            return 16;
-        }
+        if (Moving() || PadInFront()) return 16;
         return animatedLastFrame ? 40 : 250;
+    }
+
+    // Something on screen is moving by itself (a slide, a notice, a page coming in): frames at 60 a second.
+    bool Moving() const {
+        return std::fabs(homeTarget - homeScroll) > 0.0f || !toasts.empty() || movedLastFrame || ImGui::GetTime() - pageChangedAt < 0.4;
+    }
+
+    bool PadInFront() const { return gamepads.Connected() && (GetForegroundWindow() == window || _wgetenv(L"RANGA_CLIENT_FRENTE") != nullptr); }
+
+    // With a controller, the loop wakes 60 times a second to read it; a frame is drawn only when a button is down,
+    // something moves, or the usual idle frame is due (4 a second; 25 with an animated photo). Before, every one of the
+    // 60 was a whole frame: a DualSense left on, with Ranga in front, kept CPU and GPU busy for a still menu.
+    ULONGLONG lastFrameAt = 0;
+    bool SkipFrame() const {
+        // RANGA_CLIENT_TODO_QUADRO=1 (medição): o jeito antigo, um quadro a cada leitura do controle.
+        static const bool everyFrame = _wgetenv(L"RANGA_CLIENT_TODO_QUADRO") != nullptr;
+        if (everyFrame || !PadInFront() || Moving()) return false;
+        if (gamepads.AnyDown()) return false;
+        return GetTickCount64() - lastFrameAt < (animatedLastFrame ? 40u : 250u);
     }
 
     // The client gets out of the way while a game runs and comes back when it ends.
@@ -9220,12 +9250,17 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
         // Idle frames wait for input, so the client costs nothing while a game runs; a busy runner keeps it ticking for status.
         // A controller is read, not told by a message, and the console row slides: those need frames meanwhile.
         if (!client.runner.Busy()) MsgWaitForMultipleObjects(0, nullptr, FALSE, client.FrameWait(), QS_ALLINPUT);
+        bool gotMessage = false;
         while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+            gotMessage = true;
             TranslateMessage(&message);
             DispatchMessageW(&message);
             if (message.message == WM_QUIT) done = true;
         }
         if (done) break;
+        // Woke only to look at the controller, and nothing is down: no frame (see SkipFrame).
+        if (!gotMessage && !client.runner.Busy() && client.SkipFrame()) continue;
+        client.lastFrameAt = GetTickCount64();
         static const wchar_t* shotPath = _wgetenv(L"RANGA_CLIENT_SHOT");
         if (IsIconic(hwnd) || (shotPath == nullptr && g_occluded && g_swapChain->Present(0, DXGI_PRESENT_TEST) == DXGI_STATUS_OCCLUDED)) {
             Sleep(50);
