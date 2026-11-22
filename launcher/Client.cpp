@@ -916,6 +916,8 @@ struct Client {
         if (const wchar_t* start = _wgetenv(L"RANGA_CLIENT_PAGE"); start != nullptr && std::wstring(start).rfind(L"jogo:", 0) == 0) startGame = std::wstring(start).substr(5);
         // RANGA_CLIENT_PAGE=chat (tests): opens on the profile's Chat tab.
         if (const wchar_t* start = _wgetenv(L"RANGA_CLIENT_PAGE"); start != nullptr && std::wstring(start) == L"chat") startChat = true;
+        // RANGA_CLIENT_PAGE=apps (tests): opens on the Apps store (what is installed; the list is not fetched).
+        if (const wchar_t* start = _wgetenv(L"RANGA_CLIENT_PAGE"); start != nullptr && std::wstring(start) == L"apps") storeOpen = true;
     }
     ~Client() {
         if (updateThread.joinable()) updateThread.join();
@@ -1297,10 +1299,11 @@ struct Client {
             else if (app.installed) status = "Instalado  ·  versão " + app.installedVersion + (running ? "  ·  aberto agora" : "");
             else status = "Versão " + app.version + "  ·  " + megabytes;
             ImGui::TextDisabled("%s", status.c_str());
-            ImGui::PushTextWrapPos(top.x + width - pad);
+            // PushTextWrapPos takes the window's own x (not the screen's): the card's inner right edge.
+            ImGui::PushTextWrapPos(top.x + width - pad - ImGui::GetWindowPos().x + ImGui::GetScrollX());
             if (!app.description.empty()) ImGui::TextWrapped("%s", app.description.c_str());
             ImGui::PopTextWrapPos();
-            ImGui::Dummy(ImVec2(0, 6 * scale));
+            ImGui::Dummy(ImVec2(0, 2 * scale));
             if (busyHere) {
                 const uint64_t total = std::max<uint64_t>(storeTotal, 1);
                 ImGui::Text("Baixando... %.0f de %.0f MB", static_cast<double>(storeDone) / 1048576.0, static_cast<double>(total) / 1048576.0);
