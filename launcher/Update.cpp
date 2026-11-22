@@ -603,9 +603,9 @@ std::wstring MakeFriendPackage(const std::wstring& root, const std::wstring& fol
 std::wstring PublishToGitHub(const std::wstring& root, std::string& version) {
     const std::wstring published = Published(root);
     const std::string manifest = ReadBytes(published + L"\\manifest.txt");
-    std::string notes;
+    std::string notes, number;
     std::vector<UpdateFile> files;
-    ReadManifest(manifest, version, notes, files);
+    ReadManifest(manifest, version, notes, files, &number);
     if (version.empty() || files.empty()) return L"Nenhuma versão publicada para mandar.";
     wchar_t found[MAX_PATH] = {};
     std::wstring gh = SearchPathW(nullptr, L"gh.exe", nullptr, MAX_PATH, found, nullptr) != 0 ? found : L"C:\\Program Files\\GitHub CLI\\gh.exe";
@@ -633,9 +633,12 @@ std::wstring PublishToGitHub(const std::wstring& root, std::string& version) {
         std::fwrite(text.data(), 1, text.size(), note);
         std::fclose(note);
     }
+    // The tag stays the date (it sorts, and the three newest are kept by it); the title is the number people know
+    // ("Ranga 1.5.1"), the date only when the version had no number.
     const std::wstring tag = L"v" + Wide(version);
     std::string said;
-    const int code = RunCaptured(L"\"" + gh + L"\" release create " + tag + L" --repo " + kGithubRepo + L" --title \"Ranga " + Wide(version) +
+    const int code = RunCaptured(L"\"" + gh + L"\" release create " + tag + L" --repo " + kGithubRepo + L" --title \"Ranga " +
+                                     Wide(number.empty() ? version : number) +
                                      L"\" --notes-file notas.txt --latest manifest.txt manifest.sig" + (history ? L" novidades.txt" : L"") + assets,
                                  staging, said);
     RemoveTree(staging);
