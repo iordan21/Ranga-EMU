@@ -16,6 +16,7 @@
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
 #include "stb_image_resize2.h"
 
+#include <cstring>
 #include <mfapi.h>
 #include <mfidl.h>
 #include <mfreadwrite.h>
@@ -260,6 +261,28 @@ bool DecodeMedia(const std::string& bytes, Media& out) {
         stbi_image_free(pixels);
     }
     return !out.frames.empty();
+}
+
+std::string Deflate(const std::string& bytes) {
+    if (bytes.size() > 0x7fffffff) return "";
+    int size = 0;
+    unsigned char* packed = stbi_zlib_compress(reinterpret_cast<unsigned char*>(const_cast<char*>(bytes.data())), static_cast<int>(bytes.size()), &size, 8);
+    if (packed == nullptr) return "";
+    std::string out(reinterpret_cast<const char*>(packed), static_cast<size_t>(size));
+    STBIW_FREE(packed);
+    return out;
+}
+
+bool Inflate(const std::string& packed, size_t size, std::string& out) {
+    if (size > 0x7fffffff || packed.size() > 0x7fffffff) return false;
+    out.assign(size, '\0');
+    if (size == 0) return true; // an empty file (stb reads its packed form as an error)
+    // One byte more than expected: a file that unpacks to more than it should is not the one asked for.
+    std::string room(size + 1, '\0');
+    const int got = stbi_zlib_decode_buffer(room.data(), static_cast<int>(room.size()), packed.data(), static_cast<int>(packed.size()));
+    if (got < 0 || static_cast<size_t>(got) != size) return false;
+    std::memcpy(out.data(), room.data(), size);
+    return true;
 }
 
 }

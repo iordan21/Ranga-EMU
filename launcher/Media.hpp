@@ -32,6 +32,10 @@ bool ImportPicture(const std::wstring& path, int maxSide, Media& out, std::strin
 std::string EncodeMedia(const Media& media, size_t maxBytes = 900 * 1024);
 bool DecodeMedia(const std::string& bytes, Media& out);
 
+// zlib (stb's), for the saves in the cloud: Deflate packs; Inflate unpacks to exactly size bytes or fails.
+std::string Deflate(const std::string& bytes);
+bool Inflate(const std::string& packed, size_t size, std::string& out);
+
 }
 
 #endif

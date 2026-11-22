@@ -443,14 +443,37 @@ void SaveCapture() {
     BITMAPINFO info{};
     info.bmiHeader = {sizeof(BITMAPINFOHEADER), width, -height, 1, 32, BI_RGB};
     const bool read = printed && GetDIBits(memory, bitmap, 0, static_cast<UINT>(height), pixels.data(), &info, DIB_RGB_COLORS) == height;
+    // The Switch's, PS3's and Xbox 360's cores draw in a window of their own with Vulkan, which PrintWindow often
+    // gives back black: then the game's rectangle as the monitor shows it now (the game is in front: F12 was pressed
+    // on it), and only that rectangle.
+    const auto black = [&] {
+        for (int k = 0; k < 64; ++k) {
+            const size_t x = static_cast<size_t>(width) * (k % 8 * 2 + 1) / 16, y = static_cast<size_t>(height) * (k / 8 * 2 + 1) / 16;
+            const unsigned char* p = &pixels[(y * width + x) * 4];
+            if (p[0] > 10 || p[1] > 10 || p[2] > 10) return false;
+        }
+        return true;
+    };
+    bool fromScreen = false;
+    if ((!read || black()) && IsWindowVisible(g_window) && !IsIconic(g_window)) {
+        POINT origin{0, 0};
+        ClientToScreen(g_window, &origin);
+        HDC desktop = GetDC(nullptr);
+        if (BitBlt(memory, 0, 0, width, height, desktop, origin.x, origin.y, SRCCOPY | CAPTUREBLT) &&
+            GetDIBits(memory, bitmap, 0, static_cast<UINT>(height), pixels.data(), &info, DIB_RGB_COLORS) == height) {
+            fromScreen = true;
+        }
+        ReleaseDC(nullptr, desktop);
+    }
     SelectObject(memory, old);
     DeleteObject(bitmap);
     DeleteDC(memory);
     ReleaseDC(g_window, screen);
-    if (!read) {
+    if (!read && !fromScreen) {
         ShowMessage(L"Não deu para tirar a captura", 120);
         return;
     }
+    if (fromScreen) Log("[retro] captura pela tela (a janela do core não se deixou copiar)\n");
     for (size_t i = 0; i < pixels.size(); i += 4) {
         std::swap(pixels[i], pixels[i + 2]);
         pixels[i + 3] = 255;

@@ -107,3 +107,59 @@ CREATE TABLE IF NOT EXISTS imagens (
   dados TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS imagens_quando ON imagens (quando);
+
+-- Os grupos de conversa (até 16 pessoas): quem criou manda no nome e em quem sai.
+CREATE TABLE IF NOT EXISTS grupos (
+  id TEXT PRIMARY KEY,
+  nome TEXT NOT NULL,
+  dono TEXT NOT NULL,
+  criado INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS grupo_membros (
+  grupo TEXT NOT NULL,
+  conta TEXT NOT NULL,
+  entrou INTEGER NOT NULL,
+  PRIMARY KEY (grupo, conta)
+);
+CREATE INDEX IF NOT EXISTS grupo_membros_conta ON grupo_membros (conta);
+CREATE TABLE IF NOT EXISTS grupo_mensagens (
+  numero INTEGER PRIMARY KEY AUTOINCREMENT,
+  grupo TEXT NOT NULL,
+  de TEXT NOT NULL,
+  quando INTEGER NOT NULL,
+  texto TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS grupo_mensagens_grupo ON grupo_mensagens (grupo, numero);
+
+-- As denúncias: quem denunciou, contra quem, o motivo e as últimas mensagens entre os dois, para o dono ver.
+CREATE TABLE IF NOT EXISTS denuncias (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  de TEXT NOT NULL,
+  contra TEXT NOT NULL,
+  quando INTEGER NOT NULL,
+  motivo TEXT NOT NULL,
+  trecho TEXT NOT NULL,
+  resolvida INTEGER NOT NULL DEFAULT 0
+);
+
+-- O save na nuvem: cada arquivo de save de uma conta (o caminho relativo à pasta do Ranga), a versão (hash) e de que
+-- PC veio, e os pedaços dele (comprimido, em base64). Um arquivo novo só vale quando todos os pedaços chegaram.
+CREATE TABLE IF NOT EXISTS nuvem_arquivos (
+  conta TEXT NOT NULL,
+  caminho TEXT NOT NULL,
+  hash TEXT NOT NULL,
+  tamanho INTEGER NOT NULL,
+  bruto INTEGER NOT NULL,
+  partes INTEGER NOT NULL,
+  quando INTEGER NOT NULL,
+  pc TEXT NOT NULL,
+  PRIMARY KEY (conta, caminho)
+);
+CREATE TABLE IF NOT EXISTS nuvem_partes (
+  conta TEXT NOT NULL,
+  hash TEXT NOT NULL,
+  indice INTEGER NOT NULL,
+  dados TEXT NOT NULL,
+  quando INTEGER NOT NULL,
+  PRIMARY KEY (conta, hash, indice)
+);

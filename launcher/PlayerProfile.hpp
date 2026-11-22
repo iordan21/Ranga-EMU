@@ -62,6 +62,8 @@ struct PlayerCard {
     std::string playing, playingSystem;
     // Playing online: the invite to the same game and room ("[[convite|...]]", Client.cpp), for "Entrar no jogo".
     std::string invite;
+    // The Ranga version it runs ("1.4.0"); empty: 1.3.0 or older, from before cards said it.
+    std::string version;
     bool closed = false; // its Ranga said it was closing
     std::string account;  // Nome#1234, as the central names the account
     std::vector<PlayedGame> recent;

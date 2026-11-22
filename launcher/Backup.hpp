@@ -7,6 +7,8 @@
 // state folder of the cores (bios\) and the emulators (emuladores\). Never games, BIOS, firmware or keys.
 
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace Ranga {
 
@@ -20,6 +22,11 @@ long long LastBackup(const std::wstring& root);
 // Makes a copy now; skipped (with made empty) when nothing changed since the last one, unless force. Error text, or
 // empty; made gets the folder of the copy. Reads and writes files: off the window's thread.
 std::wstring BackupNow(const std::wstring& root, bool force, std::wstring& made, int& files);
+
+// What the save in the cloud takes (Cloud.cpp): only real saves, as (the file, its path from root). The saves
+// folders of each game (without saved states), and the save, memory card and save data folders of the cores and
+// emulators (without saved states and the Switch's system saves). Never perfil\ (the session key is there).
+std::vector<std::pair<std::wstring, std::wstring>> CloudSaveFiles(const std::wstring& root);
 
 }
 

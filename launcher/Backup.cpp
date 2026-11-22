@@ -45,9 +45,12 @@ void Collect(const std::wstring& folder, const std::wstring& base, const std::ve
     FindClose(search);
 }
 
-// The save folders inside the cores' and emulators' folders: any folder named like one, down to depth levels.
-void SaveFolders(const std::wstring& folder, const std::wstring& base, int depth, std::vector<Item>& items) {
-    static const std::vector<std::wstring> kNames = {L"save", L"saves", L"memcards", L"sstates", L"states", L"gamesaves", L"savedata"};
+// The save folders inside the cores' and emulators' folders: any folder named like one, down to depth levels (the
+// saved states' folders too, unless savesOnly).
+void SaveFolders(const std::wstring& folder, const std::wstring& base, int depth, std::vector<Item>& items, bool savesOnly = false) {
+    static const std::vector<std::wstring> kAll = {L"save", L"saves", L"memcards", L"sstates", L"states", L"gamesaves", L"savedata"};
+    static const std::vector<std::wstring> kSaves = {L"save", L"saves", L"memcards", L"gamesaves", L"savedata"};
+    const std::vector<std::wstring>& kNames = savesOnly ? kSaves : kAll;
     // Firmware, keys, shaders and other big things that are never saves.
     static const std::vector<std::wstring> kNever = {L"contents", L"shader", L"shadercache", L"cache", L"keys", L"registered", L"assets",
                                                      L"database", L"cores", L"_downloads", L"dev_flash"};
@@ -61,8 +64,9 @@ void SaveFolders(const std::wstring& folder, const std::wstring& base, int depth
             (found.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0)
             continue;
         const std::wstring full = folder + L"\\" + name, rel = base + L"\\" + name;
-        if (std::find(kNames.begin(), kNames.end(), lower) != kNames.end()) Collect(full, rel, {}, items);
-        else if (std::find(kNever.begin(), kNever.end(), lower) == kNever.end()) SaveFolders(full, rel, depth - 1, items);
+        if (std::find(kNames.begin(), kNames.end(), lower) != kNames.end()) Collect(full, rel, savesOnly ? std::vector<std::wstring>{L"sstates", L"states"} : std::vector<std::wstring>{}, items);
+        else if (std::find(kNever.begin(), kNever.end(), lower) == kNever.end() && (!savesOnly || (lower != L"sstates" && lower != L"states")))
+            SaveFolders(full, rel, depth - 1, items, savesOnly);
     } while (FindNextFileW(search, &found));
     FindClose(search);
 }
@@ -99,6 +103,39 @@ void RemoveTree(const std::wstring& folder) {
     RemoveDirectoryW(folder.c_str());
 }
 
+}
+
+std::vector<std::pair<std::wstring, std::wstring>> CloudSaveFiles(const std::wstring& root) {
+    std::vector<Item> items;
+    // saves\<console>\<game>\saves: the cores' save files (.srm and the like), not the options or logs beside them.
+    WIN32_FIND_DATAW console;
+    HANDLE consoles = FindFirstFileW((root + L"\\saves\\*").c_str(), &console);
+    if (consoles != INVALID_HANDLE_VALUE) {
+        do {
+            const std::wstring c = console.cFileName;
+            if (c == L"." || c == L".." || (console.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0) continue;
+            WIN32_FIND_DATAW game;
+            HANDLE games = FindFirstFileW((root + L"\\saves\\" + c + L"\\*").c_str(), &game);
+            if (games == INVALID_HANDLE_VALUE) continue;
+            do {
+                const std::wstring g = game.cFileName;
+                if (g == L"." || g == L".." || (game.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0) continue;
+                Collect(root + L"\\saves\\" + c + L"\\" + g + L"\\saves", L"saves\\" + c + L"\\" + g + L"\\saves", {}, items);
+            } while (FindNextFileW(games, &game));
+            FindClose(games);
+        } while (FindNextFileW(consoles, &console));
+        FindClose(consoles);
+    }
+    SaveFolders(root + L"\\bios", L"bios", 6, items, true);
+    SaveFolders(root + L"\\emuladores", L"emuladores", 7, items, true);
+    std::vector<std::pair<std::wstring, std::wstring>> out;
+    for (const Item& item : items) {
+        const std::wstring lower = Lower(item.to);
+        // Saved states (F5 in Ranga Retro) stay on the PC; so do the Switch's system saves, which belong to the console.
+        if (lower.find(L".state") != std::wstring::npos || lower.find(L"\\nand\\system\\") != std::wstring::npos) continue;
+        out.emplace_back(item.from, item.to);
+    }
+    return out;
 }
 
 std::wstring BackupFolder(const std::wstring& root) { return ReadIni(Ini(root), L"Ranga", L"backup", L""); }

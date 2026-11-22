@@ -537,6 +537,7 @@ std::string WriteCard(const PlayerCard& card) {
     if (card.closed) put("fechou\t1");
     if (!card.playing.empty()) put("jogando\t" + Clean(card.playing) + "\t" + Clean(card.playingSystem, 20));
     if (!card.invite.empty()) put("sala\t" + Clean(card.invite, 400));
+    if (!card.version.empty()) put("versao\t" + Clean(card.version, 20));
     for (const auto& game : card.recent) {
         put("recente\t" + Clean(Utf8(game.system), 20) + "\t" + std::to_string(game.seconds) + "\t" + std::to_string(game.last) + "\t" + Clean(Utf8(game.title)));
     }
@@ -577,6 +578,7 @@ std::vector<PlayerCard> ReadCards(const std::string& text) {
         else if (key == "conta") card->account = at(1);
         else if (key == "jogando") card->playing = at(1), card->playingSystem = at(2);
         else if (key == "sala") card->invite = at(1);
+        else if (key == "versao") card->version = at(1);
         else if (key == "recente" && parts.size() >= 5) {
             PlayedGame game;
             game.system = Wide(parts[1]);

@@ -29,11 +29,34 @@
 //   GET  /midia?conta=X&tipo=foto                         a foto ou a capa de um amigo (ou a própria)
 //   POST /bloquear         conta                          (desfaz a amizade; o bloqueado não pede nem fala mais)
 //   POST /desbloquear      conta
+//   POST /denunciar        conta, motivo                  (vai para o dono com as últimas mensagens entre os dois)
+//
+// Grupos (até 16 pessoas; só se põe amigo seu). As mensagens deles vêm em GET /mensagens?desde=N&desdeg=M, como
+// "g<TAB>numero<TAB>quando<TAB>grupo<TAB>de<TAB>texto" (um Ranga antigo ignora essas linhas):
+//   GET  /grupos                                          "grupo<TAB>id<TAB>nome<TAB>dono" e "membro<TAB>grupo<TAB>conta<TAB>Nome#1234"
+//   POST /grupo/criar      nome, membros (contas, separadas por vírgula) -> id
+//   POST /grupo/adicionar  grupo, conta                   (qualquer membro põe um amigo seu)
+//   POST /grupo/remover    grupo, conta                   (só quem criou)
+//   POST /grupo/renomear   grupo, nome                    (só quem criou)
+//   POST /grupo/sair       grupo                          (o grupo vazio some)
+//   POST /grupo/mensagem   grupo, texto
+//   POST /imagem           grupo, dados                   (a imagem vai para o grupo)
+//
+// Save na nuvem (no máximo NUVEM_MAX bytes comprimidos por conta):
+//   GET  /nuvem                                           "a<TAB>caminho<TAB>hash<TAB>tamanho<TAB>bruto<TAB>partes<TAB>quando<TAB>pc"
+//                                                         e "cota<TAB>usado<TAB>máximo"
+//   POST /nuvem/parte      hash, indice, dados (base64, até NUVEM_PARTE)
+//   POST /nuvem/fechar     caminho, hash, tamanho, bruto, partes, antes (o hash que o PC acha que a nuvem tem), pc
+//                                                         -> 409 "conflito" se outro PC mandou outra versão antes
+//   GET  /nuvem/parte?hash=X&indice=N                     um pedaço
+//   POST /nuvem/limpar                                    apaga tudo desta conta na nuvem
 //
 // O dono do Ranga (cabeçalho X-Ranga-Dono com o segredo DONO_CHAVE):
 //   GET  /dono/contas?busca=texto                         as contas (as mais novas primeiro)
 //   POST /dono/banir       conta, motivo                  (fecha as sessões, desfaz as amizades, o PC dela não cria outra)
 //   POST /dono/desbanir    conta
+//   GET  /dono/denuncias                                  as denúncias abertas
+//   POST /dono/denuncia    id                             (arquiva)
 
 const PBKDF2_ITERATIONS = 20000;
 const MAX_ACCOUNTS = 5000;
@@ -50,6 +73,16 @@ const MAX_TEXT = 500;
 // Uma imagem do chat: o Ranga manda no máximo ~350 KB, em base64.
 const MAX_IMAGE = 500 * 1024;
 const IMAGE_DAYS = 30;
+// Imagens por conta: 30 por hora, 100 por dia, e no máximo 40 MB guardados (os 30 dias) — o plano grátis tem cota.
+const IMAGES_PER_DAY = 100;
+const IMAGE_BYTES = 40 * 1024 * 1024;
+const GROUP_MAX = 16;
+const GROUPS_PER_ACCOUNT = 20;
+// O save na nuvem: 64 MB comprimidos por conta (um cartão de memória vazio do PS2 vira quase nada), pedaços de até
+// 700 KB em base64 (a D1 guarda até 2 MB por linha), um arquivo de até 24 MB comprimido.
+const NUVEM_MAX = 64 * 1024 * 1024;
+const NUVEM_PARTE = 700 * 1024;
+const NUVEM_ARQUIVO = 24 * 1024 * 1024;
 const SESSION_DAYS = 365;
 const hex32 = /^[0-9a-f]{32}$/;
 
@@ -465,11 +498,18 @@ async function send(env, me, fields) {
   return answer(200, { ok: 1 });
 }
 
-async function messages(env, me, after) {
+async function messages(env, me, after, afterGroups) {
   const { results } = await env.DB.prepare(
     "SELECT numero, de, para, quando, texto FROM mensagens WHERE (para = ?1 OR de = ?1) AND numero > ?2 ORDER BY numero LIMIT 300"
   ).bind(me.id, after).all();
   let out = results.map((m) => `m\t${m.numero}\t${m.quando}\t${m.de}\t${m.para}\t${m.texto}\n`).join("");
+  // As dos grupos desta conta (só um Ranga que pede desdeg as recebe).
+  if (afterGroups !== null) {
+    const { results: inGroups } = await env.DB.prepare(
+      "SELECT numero, grupo, de, quando, texto FROM grupo_mensagens WHERE grupo IN (SELECT grupo FROM grupo_membros WHERE conta = ?1) AND numero > ?2 ORDER BY numero LIMIT 300"
+    ).bind(me.id, afterGroups).all();
+    out += inGroups.map((m) => `g\t${m.numero}\t${m.quando}\t${m.grupo}\t${m.de}\t${m.texto}\n`).join("");
+  }
   // Quem está digitando para mim e até onde leu o que eu mandei (um Ranga antigo ignora essas linhas).
   const { results: states } = await env.DB.prepare("SELECT conta, digitando, lido FROM conversas WHERE com = ?").bind(me.id).all();
   for (const row of states) {
@@ -499,24 +539,246 @@ async function read(env, me, fields) {
 }
 
 async function storeImage(env, me, fields) {
-  const other = fields.para || "";
+  // Para um amigo (para) ou para um grupo de que esta conta é membro (grupo).
+  const group = fields.grupo || "";
+  const other = group || fields.para || "";
   const data = (fields.dados || "").trim();
   if (!hex32.test(other) || data === "") return answer(400, { erro: "Imagem vazia." });
   if (data.length > MAX_IMAGE || !/^[A-Za-z0-9+/=]+$/.test(data)) return answer(400, { erro: "Imagem grande demais ou inválida." });
-  const known = await friendship(env, me.id, other);
-  if (!known || !known.aceita) return answer(403, { erro: "Só dá para mandar para amigos." });
+  if (group) {
+    if (!(await member(env, group, me.id))) return answer(403, { erro: "Você não está nesse grupo." });
+  } else {
+    const known = await friendship(env, me.id, other);
+    if (!known || !known.aceita) return answer(403, { erro: "Só dá para mandar para amigos." });
+  }
   if (!(await allowed(env, "imagem:" + me.id, 30, 3600))) return answer(429, { erro: "Muitas imagens nesta hora. Espere um pouco." });
+  if (!(await allowed(env, "imagemdia:" + me.id, IMAGES_PER_DAY, 86400))) return answer(429, { erro: `Limite de ${IMAGES_PER_DAY} imagens por dia. Amanhã libera.` });
+  const used = await env.DB.prepare("SELECT COALESCE(SUM(LENGTH(dados)), 0) AS n FROM imagens WHERE de = ?").bind(me.id).first();
+  if (used.n + data.length > IMAGE_BYTES) return answer(429, { erro: "Suas imagens dos últimos 30 dias encheram o espaço. As mais velhas saem sozinhas com o tempo." });
   const id = randomHex(16);
   await env.DB.prepare("INSERT INTO imagens (id, de, para, quando, dados) VALUES (?, ?, ?, ?, ?)").bind(id, me.id, other, now(), data).run();
-  await env.DB.prepare("INSERT INTO mensagens (de, para, quando, texto) VALUES (?, ?, ?, ?)").bind(me.id, other, now(), `[[imagem|${id}]]`).run();
+  if (group) await env.DB.prepare("INSERT INTO grupo_mensagens (grupo, de, quando, texto) VALUES (?, ?, ?, ?)").bind(group, me.id, now(), `[[imagem|${id}]]`).run();
+  else await env.DB.prepare("INSERT INTO mensagens (de, para, quando, texto) VALUES (?, ?, ?, ?)").bind(me.id, other, now(), `[[imagem|${id}]]`).run();
   return answer(200, { id });
 }
 
 async function readImage(env, me, id) {
   if (!hex32.test(id || "")) return answer(400);
   const row = await env.DB.prepare("SELECT de, para, dados FROM imagens WHERE id = ?").bind(id).first();
-  if (!row || (row.de !== me.id && row.para !== me.id)) return answer(404);
+  if (!row) return answer(404);
+  if (row.de !== me.id && row.para !== me.id && !(await member(env, row.para, me.id))) return answer(404);
   return new Response(row.dados, { status: 200, headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" } });
+}
+
+// ---- Grupos ----
+
+async function member(env, group, account) {
+  return !!(await env.DB.prepare("SELECT 1 FROM grupo_membros WHERE grupo = ? AND conta = ?").bind(group, account).first());
+}
+
+async function groupOwner(env, group) {
+  const row = await env.DB.prepare("SELECT dono FROM grupos WHERE id = ?").bind(group).first();
+  return row ? row.dono : null;
+}
+
+async function groups(env, me) {
+  const { results } = await env.DB.prepare(
+    "SELECT g.id AS id, g.nome AS nome, g.dono AS dono FROM grupos g JOIN grupo_membros m ON m.grupo = g.id WHERE m.conta = ? ORDER BY g.criado"
+  ).bind(me.id).all();
+  let out = "";
+  for (const row of results) out += `grupo\t${row.id}\t${row.nome}\t${row.dono}\n`;
+  const { results: members } = await env.DB.prepare(
+    "SELECT m.grupo AS grupo, c.id AS id, c.nome AS nome, c.tag AS tag FROM grupo_membros m JOIN contas c ON c.id = m.conta " +
+      "WHERE m.grupo IN (SELECT grupo FROM grupo_membros WHERE conta = ?) ORDER BY m.entrou"
+  ).bind(me.id).all();
+  for (const row of members) out += `membro\t${row.grupo}\t${row.id}\t${row.nome}#${row.tag}\n`;
+  return answer(200, null, out);
+}
+
+function groupName(text) {
+  const name = clean(text || "", 60).trim();
+  return name.length >= 1 ? name : null;
+}
+
+async function createGroup(env, me, fields) {
+  const name = groupName(fields.nome);
+  if (!name) return answer(400, { erro: "Dê um nome ao grupo." });
+  if (!(await allowed(env, "grupo:" + me.id, 10, 3600))) return answer(429, { erro: "Muitos grupos criados. Tente mais tarde." });
+  const mine = await env.DB.prepare("SELECT COUNT(*) AS n FROM grupo_membros WHERE conta = ?").bind(me.id).first();
+  if (mine.n >= GROUPS_PER_ACCOUNT) return answer(400, { erro: `Você já está em ${GROUPS_PER_ACCOUNT} grupos, o máximo.` });
+  const wanted = [...new Set((fields.membros || "").split(",").map((s) => s.trim()).filter((s) => hex32.test(s) && s !== me.id))].slice(0, GROUP_MAX - 1);
+  const ok = [];
+  for (const other of wanted) {
+    const known = await friendship(env, me.id, other);
+    if (known && known.aceita) ok.push(other);
+  }
+  const id = randomHex(16), t = now();
+  const steps = [env.DB.prepare("INSERT INTO grupos (id, nome, dono, criado) VALUES (?, ?, ?, ?)").bind(id, name, me.id, t),
+                 env.DB.prepare("INSERT INTO grupo_membros (grupo, conta, entrou) VALUES (?, ?, ?)").bind(id, me.id, t)];
+  ok.forEach((other, i) => steps.push(env.DB.prepare("INSERT INTO grupo_membros (grupo, conta, entrou) VALUES (?, ?, ?)").bind(id, other, t + i + 1)));
+  await env.DB.batch(steps);
+  return answer(200, { id });
+}
+
+async function addToGroup(env, me, fields) {
+  const group = fields.grupo || "", other = fields.conta || "";
+  if (!hex32.test(group) || !hex32.test(other)) return answer(400, { erro: "Grupo ou conta inválidos." });
+  if (!(await member(env, group, me.id))) return answer(403, { erro: "Você não está nesse grupo." });
+  const known = await friendship(env, me.id, other);
+  if (!known || !known.aceita) return answer(403, { erro: "Só dá para pôr um amigo seu no grupo." });
+  const count = await env.DB.prepare("SELECT COUNT(*) AS n FROM grupo_membros WHERE grupo = ?").bind(group).first();
+  if (count.n >= GROUP_MAX) return answer(400, { erro: `O grupo já tem ${GROUP_MAX} pessoas, o máximo.` });
+  const theirs = await env.DB.prepare("SELECT COUNT(*) AS n FROM grupo_membros WHERE conta = ?").bind(other).first();
+  if (theirs.n >= GROUPS_PER_ACCOUNT) return answer(400, { erro: "Esse amigo já está em grupos demais." });
+  await env.DB.prepare("INSERT OR IGNORE INTO grupo_membros (grupo, conta, entrou) VALUES (?, ?, ?)").bind(group, other, now()).run();
+  return answer(200, { ok: 1 });
+}
+
+// Sai do grupo (quem criou passa o grupo para o membro mais antigo); o grupo vazio some com as mensagens.
+async function leaveGroup(env, group, account) {
+  await env.DB.prepare("DELETE FROM grupo_membros WHERE grupo = ? AND conta = ?").bind(group, account).run();
+  const next = await env.DB.prepare("SELECT conta FROM grupo_membros WHERE grupo = ? ORDER BY entrou LIMIT 1").bind(group).first();
+  if (!next) {
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM grupos WHERE id = ?").bind(group),
+      env.DB.prepare("DELETE FROM grupo_mensagens WHERE grupo = ?").bind(group),
+      env.DB.prepare("DELETE FROM imagens WHERE para = ?").bind(group),
+    ]);
+  } else if ((await groupOwner(env, group)) === account) {
+    await env.DB.prepare("UPDATE grupos SET dono = ? WHERE id = ?").bind(next.conta, group).run();
+  }
+}
+
+async function removeFromGroup(env, me, fields) {
+  const group = fields.grupo || "", other = fields.conta || "";
+  if (!hex32.test(group) || !hex32.test(other)) return answer(400, { erro: "Grupo ou conta inválidos." });
+  if ((await groupOwner(env, group)) !== me.id) return answer(403, { erro: "Só quem criou o grupo tira gente dele." });
+  if (other === me.id) return answer(400, { erro: "Para sair, use Sair do grupo." });
+  await leaveGroup(env, group, other);
+  return answer(200, { ok: 1 });
+}
+
+async function renameGroup(env, me, fields) {
+  const group = fields.grupo || "", name = groupName(fields.nome);
+  if (!hex32.test(group) || !name) return answer(400, { erro: "Nome inválido." });
+  if ((await groupOwner(env, group)) !== me.id) return answer(403, { erro: "Só quem criou o grupo muda o nome." });
+  await env.DB.prepare("UPDATE grupos SET nome = ? WHERE id = ?").bind(name, group).run();
+  return answer(200, { ok: 1 });
+}
+
+async function sendToGroup(env, me, fields) {
+  const group = fields.grupo || "";
+  const text = clean(fields.texto || "", MAX_TEXT);
+  if (!hex32.test(group) || text.trim() === "") return answer(400, { erro: "Mensagem vazia." });
+  if (!(await member(env, group, me.id))) return answer(403, { erro: "Você não está nesse grupo." });
+  if (!(await allowed(env, "msg:" + me.id, 1, 1))) return answer(429, { erro: "Calma: uma mensagem por segundo." });
+  await env.DB.prepare("INSERT INTO grupo_mensagens (grupo, de, quando, texto) VALUES (?, ?, ?, ?)").bind(group, me.id, now(), text).run();
+  return answer(200, { ok: 1 });
+}
+
+// ---- Denúncias ----
+
+async function report(env, me, fields) {
+  const other = fields.conta || "";
+  if (!hex32.test(other) || other === me.id) return answer(400, { erro: "Conta inválida." });
+  if (!(await allowed(env, "denuncia:" + me.id, 10, 86400))) return answer(429, { erro: "Muitas denúncias hoje. Tente amanhã." });
+  const reason = clean(fields.motivo || "", 300).trim();
+  if (reason === "") return answer(400, { erro: "Diga o motivo da denúncia." });
+  // As últimas 30 mensagens entre os dois vão junto, para o dono ver o que aconteceu.
+  const { results } = await env.DB.prepare(
+    "SELECT de, quando, texto FROM mensagens WHERE (de = ?1 AND para = ?2) OR (de = ?2 AND para = ?1) ORDER BY numero DESC LIMIT 30"
+  ).bind(me.id, other).all();
+  const excerpt = results.reverse().map((m) => `${m.quando} ${m.de === me.id ? "denunciante" : "denunciado"}: ${clean(m.texto, 500)}`).join("\n");
+  await env.DB.prepare("INSERT INTO denuncias (de, contra, quando, motivo, trecho) VALUES (?, ?, ?, ?, ?)").bind(me.id, other, now(), reason, excerpt).run();
+  return answer(200, { ok: 1 });
+}
+
+async function ownerReports(env) {
+  const { results } = await env.DB.prepare(
+    "SELECT d.id AS id, d.quando AS quando, d.motivo AS motivo, d.trecho AS trecho, d.contra AS contra, a.nome || '#' || a.tag AS quem, b.nome || '#' || b.tag AS alvo " +
+      "FROM denuncias d LEFT JOIN contas a ON a.id = d.de LEFT JOIN contas b ON b.id = d.contra WHERE d.resolvida = 0 ORDER BY d.id DESC LIMIT 100"
+  ).all();
+  // O trecho vai numa linha só: as quebras viram " ¶ ".
+  return answer(200, null, results.map((r) => `d\t${r.id}\t${r.quando}\t${r.quem || "?"}\t${r.contra}\t${r.alvo || "?"}\t${clean(r.motivo, 300)}\t${clean(r.trecho.replace(/\n/g, " ¶ "), 20000)}\n`).join(""));
+}
+
+// ---- Save na nuvem ----
+
+const cloudPath = (text) => {
+  const path = String(text || "");
+  if (path.length < 3 || path.length > 400 || /[\t\r\n]/.test(path) || path.split(/[\\/]/).some((p) => p === ".." || p === "")) return null;
+  if (!/^(saves|bios|emuladores)\\/i.test(path)) return null;
+  return path;
+};
+const hex16 = /^[0-9a-f]{16}$/;
+
+async function cloudList(env, me) {
+  const { results } = await env.DB.prepare("SELECT caminho, hash, tamanho, bruto, partes, quando, pc FROM nuvem_arquivos WHERE conta = ?").bind(me.id).all();
+  let used = 0, out = "";
+  for (const r of results) {
+    used += r.tamanho;
+    out += `a\t${r.caminho}\t${r.hash}\t${r.tamanho}\t${r.bruto}\t${r.partes}\t${r.quando}\t${r.pc}\n`;
+  }
+  return answer(200, null, out + `cota\t${used}\t${NUVEM_MAX}\n`);
+}
+
+async function cloudPart(env, me, fields) {
+  const hash = fields.hash || "", index = Number(fields.indice), data = (fields.dados || "").trim();
+  if (!hex16.test(hash) || !Number.isInteger(index) || index < 0 || index > 64 || data === "") return answer(400, { erro: "Pedaço inválido." });
+  if (data.length > NUVEM_PARTE || !/^[A-Za-z0-9+/=]+$/.test(data)) return answer(400, { erro: "Pedaço grande demais ou inválido." });
+  if (!(await allowed(env, "nuvem:" + me.id, 2000, 3600))) return answer(429, { erro: "Envio demais para a nuvem nesta hora. Espere um pouco." });
+  await env.DB.prepare("INSERT INTO nuvem_partes (conta, hash, indice, dados, quando) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(conta, hash, indice) DO UPDATE SET dados = ?4, quando = ?5")
+    .bind(me.id, hash, index, data, now()).run();
+  return answer(200, { ok: 1 });
+}
+
+async function cloudClose(env, me, fields) {
+  const path = cloudPath(fields.caminho), hash = fields.hash || "", before = fields.antes || "";
+  const size = Number(fields.tamanho), raw = Number(fields.bruto), parts = Number(fields.partes);
+  if (!path || !hex16.test(hash) || !Number.isInteger(size) || !Number.isInteger(raw) || !Number.isInteger(parts) || parts < 1 || parts > 64 || size < 0 || raw < 0)
+    return answer(400, { erro: "Arquivo inválido." });
+  if (size > NUVEM_ARQUIVO) return answer(400, { erro: "Esse save é grande demais para a nuvem." });
+  const current = await env.DB.prepare("SELECT hash, tamanho FROM nuvem_arquivos WHERE conta = ? AND caminho = ?").bind(me.id, path).first();
+  // Outro PC mandou outra versão depois da última que este PC viu: nada se perde sem o jogador escolher.
+  if (current && current.hash !== hash && current.hash !== before) return answer(409, { erro: "conflito", hash: current.hash });
+  const got = await env.DB.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(LENGTH(dados)), 0) AS b FROM nuvem_partes WHERE conta = ? AND hash = ? AND indice < ?").bind(me.id, hash, parts).first();
+  if (got.n !== parts) return answer(400, { erro: "Faltam pedaços desse save." });
+  const used = await env.DB.prepare("SELECT COALESCE(SUM(tamanho), 0) AS n FROM nuvem_arquivos WHERE conta = ? AND caminho != ?").bind(me.id, path).first();
+  if (used.n + size > NUVEM_MAX) return answer(507, { erro: `A nuvem desta conta encheu (${Math.round(NUVEM_MAX / 1048576)} MB).` });
+  const steps = [
+    env.DB.prepare("INSERT INTO nuvem_arquivos (conta, caminho, hash, tamanho, bruto, partes, quando, pc) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) " +
+      "ON CONFLICT(conta, caminho) DO UPDATE SET hash = ?3, tamanho = ?4, bruto = ?5, partes = ?6, quando = ?7, pc = ?8")
+      .bind(me.id, path, hash, size, raw, parts, now(), clean(fields.pc || "", 40)),
+  ];
+  // Os pedaços da versão de antes saem, se nenhum outro arquivo usa o mesmo conteúdo.
+  if (current && current.hash !== hash) {
+    steps.push(env.DB.prepare("DELETE FROM nuvem_partes WHERE conta = ?1 AND hash = ?2 AND NOT EXISTS (SELECT 1 FROM nuvem_arquivos WHERE conta = ?1 AND hash = ?2 AND caminho != ?3)")
+      .bind(me.id, current.hash, path));
+  }
+  await env.DB.batch(steps);
+  return answer(200, { ok: 1 });
+}
+
+async function cloudRead(env, me, hash, index) {
+  if (!hex16.test(hash || "") || !Number.isInteger(index)) return answer(400);
+  const row = await env.DB.prepare("SELECT dados FROM nuvem_partes WHERE conta = ? AND hash = ? AND indice = ?").bind(me.id, hash, index).first();
+  if (!row) return answer(404);
+  return new Response(row.dados, { status: 200, headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" } });
+}
+
+async function cloudClear(env, me) {
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM nuvem_arquivos WHERE conta = ?").bind(me.id),
+    env.DB.prepare("DELETE FROM nuvem_partes WHERE conta = ?").bind(me.id),
+  ]);
+  return answer(200, { ok: 1 });
+}
+
+// Pedaços de envios que nunca fecharam (o PC caiu no meio), depois de um dia.
+async function cleanCloud(env) {
+  await env.DB.prepare(
+    "DELETE FROM nuvem_partes WHERE quando < ? AND NOT EXISTS (SELECT 1 FROM nuvem_arquivos a WHERE a.conta = nuvem_partes.conta AND a.hash = nuvem_partes.hash)"
+  ).bind(now() - 86400).run();
 }
 
 async function cleanImages(env) {
@@ -532,9 +794,10 @@ export default {
     const ip = request.headers.get("CF-Connecting-IP") || "?";
     if (Math.random() < 0.01) ctx.waitUntil(cleanLimits(env).catch(() => {}));
     if (Math.random() < 0.002) ctx.waitUntil(cleanImages(env).catch(() => {}));
+    if (Math.random() < 0.002) ctx.waitUntil(cleanCloud(env).catch(() => {}));
     let fields = {}, body = "";
     if (request.method === "POST") {
-      const limit = path === "/midia" ? MAX_MEDIA + 1024 : path === "/imagem" ? MAX_IMAGE + 1024 : MAX_BODY;
+      const limit = path === "/midia" ? MAX_MEDIA + 1024 : path === "/imagem" ? MAX_IMAGE + 1024 : path === "/nuvem/parte" ? NUVEM_PARTE + 1024 : MAX_BODY;
       if (Number(request.headers.get("Content-Length") || "0") > limit) return answer(400, { erro: "Pedido grande demais." });
       body = await request.text();
       if (body.length > limit) return answer(400, { erro: "Pedido grande demais." });
@@ -555,6 +818,11 @@ export default {
       if (request.method === "GET" && path === "/dono/contas") return ownerAccounts(env, url.searchParams.get("busca"));
       if (request.method === "POST" && path === "/dono/banir") return ban(env, fields, true);
       if (request.method === "POST" && path === "/dono/desbanir") return ban(env, fields, false);
+      if (request.method === "GET" && path === "/dono/denuncias") return ownerReports(env);
+      if (request.method === "POST" && path === "/dono/denuncia") {
+        await env.DB.prepare("UPDATE denuncias SET resolvida = 1 WHERE id = ?").bind(Number(fields.id) || 0).run();
+        return answer(200, { ok: 1 });
+      }
       return answer(404);
     }
     if (request.method === "POST" && path === "/conta/entrar") return login(env, ip, fields);
@@ -578,11 +846,31 @@ export default {
       if (path === "/imagem") return storeImage(env, me, fields);
       if (path === "/bloquear") return block(env, me, fields, true);
       if (path === "/desbloquear") return block(env, me, fields, false);
+      if (path === "/denunciar") return report(env, me, fields);
+      if (path === "/grupo/criar") return createGroup(env, me, fields);
+      if (path === "/grupo/adicionar") return addToGroup(env, me, fields);
+      if (path === "/grupo/remover") return removeFromGroup(env, me, fields);
+      if (path === "/grupo/renomear") return renameGroup(env, me, fields);
+      if (path === "/grupo/mensagem") return sendToGroup(env, me, fields);
+      if (path === "/grupo/sair") {
+        if (!hex32.test(fields.grupo || "") || !(await member(env, fields.grupo, me.id))) return answer(404, { erro: "Você não está nesse grupo." });
+        await leaveGroup(env, fields.grupo, me.id);
+        return answer(200, { ok: 1 });
+      }
+      if (path === "/nuvem/parte") return cloudPart(env, me, fields);
+      if (path === "/nuvem/fechar") return cloudClose(env, me, fields);
+      if (path === "/nuvem/limpar") return cloudClear(env, me);
     } else {
       if (path === "/amigos") return friends(env, me);
       if (path === "/midia") return readMedia(env, me, url.searchParams.get("conta"), url.searchParams.get("tipo"));
       if (path === "/imagem") return readImage(env, me, url.searchParams.get("id"));
-      if (path === "/mensagens") return messages(env, me, Math.max(0, Number(url.searchParams.get("desde") || "0") || 0));
+      if (path === "/mensagens") {
+        const groupsAfter = url.searchParams.get("desdeg");
+        return messages(env, me, Math.max(0, Number(url.searchParams.get("desde") || "0") || 0), groupsAfter === null ? null : Math.max(0, Number(groupsAfter) || 0));
+      }
+      if (path === "/grupos") return groups(env, me);
+      if (path === "/nuvem") return cloudList(env, me);
+      if (path === "/nuvem/parte") return cloudRead(env, me, url.searchParams.get("hash"), Number(url.searchParams.get("indice")));
     }
     return answer(404);
   },
