@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# Partes que se conferem sem o toolchain do Windows: o servidor dos amigos e as traducoes.
+# O RangaEmu.exe nao e compilado aqui.
+jobs:
+  conferir:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Servidor dos amigos (sintaxe)
+        run: |
+          cp launcher/net/cloudflare/src/index.js /tmp/worker.mjs
+          node --check /tmp/worker.mjs
+      - name: Banco do servidor (schema.sql)
+        run: python3 -c "import sqlite3; sqlite3.connect(':memory:').executescript(open('launcher/net/cloudflare/schema.sql', encoding='utf8').read())"
+      - name: Traducoes (quatro linhas por texto)
+        run: python3 tools/conferir_idiomas.py
