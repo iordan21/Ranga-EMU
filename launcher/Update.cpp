@@ -3,6 +3,7 @@
 #include "Enderecos.hpp"
 
 #include <windows.h>
+#include <shlobj.h>
 #include <bcrypt.h>
 #include <winhttp.h>
 
@@ -733,6 +734,8 @@ std::wstring ApplyUpdate(const std::wstring& root, const UpdateInfo& info) {
         if (!Exists(ready)) return L"Falta o arquivo baixado " + file.path + L".";
         if (Exists(target) && !MoveFileExW(target.c_str(), (target + L".old").c_str(), MOVEFILE_REPLACE_EXISTING))
             return L"O arquivo " + file.path + L" está em uso: feche o jogo e tente de novo.";
+        // A Ranga installed from the exe alone has no cores folder yet.
+        if (const size_t slash = target.find_last_of(L'\\'); slash != std::wstring::npos) SHCreateDirectoryExW(nullptr, target.substr(0, slash).c_str(), nullptr);
         if (!MoveFileExW(ready.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED)) {
             MoveFileExW((target + L".old").c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING);
             return L"Não deu para trocar " + file.path + L".";

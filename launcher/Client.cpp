@@ -10,6 +10,7 @@
 #include "Rooms.hpp"
 #include "ConsoleGraphics.hpp"
 #include "Update.hpp"
+#include "Install.hpp"
 #include "Store.hpp"
 #include "Http.hpp"
 #include "PlayerProfile.hpp"
@@ -1409,6 +1410,7 @@ struct Client {
     std::wstring updateError;
     bool updateHidden = false;
     const bool autoUpdate = _wgetenv(L"RANGA_CLIENT_AUTO_UPDATE") != nullptr;
+    const bool firstInstall = FirstInstall(library.Root());
     std::array<char, 256> publishNotes{};
     std::wstring publishResult;
     // After publishing here, the same version goes up to GitHub (PublishToGitHub) in the background.
@@ -1831,8 +1833,10 @@ struct Client {
 
     void UpdateBar(float scale) {
         const UpdateState state = updateState;
-        if (autoUpdate && !pending && state == UpdateState::Available) pending = [this] { StartUpdateDownload(); };
-        if (autoUpdate && !pending && state == UpdateState::Ready) pending = [this] { FinishUpdate(); };
+        // A Ranga just installed from the exe alone (no ranga_retro.exe yet) gets the rest without asking.
+        const bool automatic = autoUpdate || firstInstall;
+        if (automatic && !pending && state == UpdateState::Available) pending = [this] { StartUpdateDownload(); };
+        if (automatic && !pending && state == UpdateState::Ready) pending = [this] { FinishUpdate(); };
         if (state == UpdateState::Idle || state == UpdateState::Checking || updateHidden) return;
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
         const float width = std::min(620 * scale, viewport->WorkSize.x - 32 * scale);
@@ -1860,7 +1864,8 @@ struct Client {
             if (busy) ImGui::TextDisabled("Feche o jogo para atualizar.");
         } else if (state == UpdateState::Downloading) {
             const uint64_t total = std::max<uint64_t>(updateTotal, 1);
-            ImGui::Text("Baixando a atualização %s...", updateInfo.version.c_str());
+            if (firstInstall) ImGui::Text("Primeira vez: baixando os arquivos do Ranga (%.0f MB)...", static_cast<double>(total) / (1024.0 * 1024.0));
+            else ImGui::Text("Baixando a atualização %s...", updateInfo.version.c_str());
             ImGui::ProgressBar(static_cast<float>(static_cast<double>(updateDone) / static_cast<double>(total)), ImVec2(-1, 0));
         } else if (state == UpdateState::Ready) {
             ImGui::Text("Atualização %s baixada e conferida.", updateInfo.version.c_str());
@@ -9139,6 +9144,16 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
         folder.resize(folder.find_last_of(L"\\/"));
         StartRoomsOn(folder);
         return 0;
+    }
+    // A RangaEmu.exe that came alone (downloaded by itself) offers to install itself first; the copy it opens is the
+    // Ranga, so this one closes before taking the single-instance lock.
+    if (commandLine == nullptr || wcsstr(commandLine, L"--") == nullptr) {
+        wchar_t self[MAX_PATH * 2] = {};
+        GetModuleFileNameW(nullptr, self, MAX_PATH * 2);
+        std::wstring folder = self;
+        folder.resize(folder.find_last_of(L"\\/"));
+        CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+        if (OfferInstall(folder)) return 0;
     }
     // One Ranga at a time; the interface tests (RANGA_CLIENT_TEST_INPUT) run their copy beside the user's.
     HANDLE single = CreateMutexW(nullptr, TRUE, kMutex);

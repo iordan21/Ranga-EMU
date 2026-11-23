@@ -5825,3 +5825,83 @@ Para ouvir o Spotify numa janela leve, com o controle: direcional anda, A toca, 
 To listen to Spotify in a light window, with the controller: d-pad moves, A plays, Triangle pauses, LB and RB change songs, Square searches with an on-screen keyboard. Mini player: closing the window (or Ctrl+M) leaves the music playing only there; and, while gaming, the new song shows in a discreet card in the corner. Unofficial app (Spotify is a trademark of Spotify AB); you sign in to your own account. It doesn't skip ads or download music.
 Spotify в лёгком окне с управлением геймпадом: крестовина — перемещение, A — играть, Треугольник — пауза, LB и RB — смена трека, Квадрат — поиск с экранной клавиатурой. Мини-плеер: если закрыть окно (или Ctrl+M), музыка продолжит играть только в нём; а во время игры новый трек показывается в неприметной карточке в углу. Неофициальное приложение (Spotify — торговая марка Spotify AB); вы входите в свой аккаунт. Не пропускает рекламу и не скачивает музыку.
 Para escuchar Spotify en una ventana ligera, con el mando: la cruceta se mueve, A reproduce, Triángulo pausa, LB y RB cambian de canción, Cuadrado busca con teclado en pantalla. Minirreproductor: al cerrar la ventana (o Ctrl+M) la música sigue solo en él; y, jugando, la canción nueva aparece en una tarjeta discreta en la esquina. App no oficial (Spotify es marca de Spotify AB); entras en tu propia cuenta. No salta anuncios ni descarga música.
+
+Onde instalar o Ranga
+Where to install Ranga
+Куда установить Ranga
+Dónde instalar Ranga
+
+Não deu para criar a pasta
+Could not create the folder
+Не удалось создать папку
+No se pudo crear la carpeta
+
+Não deu para copiar o Ranga para
+Could not copy Ranga to
+Не удалось скопировать Ranga в
+No se pudo copiar Ranga a
+
+O Ranga foi instalado, mas não abriu sozinho. Abra pelo atalho Ranga Emu na Área de Trabalho.
+Ranga was installed but did not open by itself. Open it from the Ranga Emu shortcut on the Desktop.
+Ranga установлен, но не открылся сам. Откройте его через ярлык Ranga Emu на рабочем столе.
+Ranga se instaló, pero no se abrió solo. Ábrelo desde el acceso directo Ranga Emu del Escritorio.
+
+Abrir o Ranga já instalado
+Open the Ranga already installed
+Открыть уже установленный Ranga
+Abrir el Ranga ya instalado
+
+Instalar em
+Install in
+Установить в
+Instalar en
+
+Recomendado: cria a pasta e os atalhos
+Recommended: creates the folder and the shortcuts
+Рекомендуется: создаёт папку и ярлыки
+Recomendado: crea la carpeta y los accesos directos
+
+Instalar em outra pasta...
+Install in another folder...
+Установить в другую папку...
+Instalar en otra carpeta...
+
+Usar esta pasta mesmo
+Use this folder
+Использовать эту папку
+Usar esta carpeta
+
+Instalar o Ranga Emu
+Install Ranga Emu
+Установка Ranga Emu
+Instalar Ranga Emu
+
+O Ranga já está instalado neste PC.
+Ranga is already installed on this PC.
+Ranga уже установлен на этом ПК.
+Ranga ya está instalado en este PC.
+
+Onde o Ranga vai ficar?
+Where will Ranga live?
+Где будет Ranga?
+¿Dónde va a quedar Ranga?
+
+O Ranga precisa de uma pasta só dele. Na primeira vez que abrir, ele baixa sozinho o resto dos arquivos (uns 450 MB).
+Ranga needs a folder of its own. The first time it opens, it downloads the rest of its files by itself (about 450 MB).
+Ranga нужна своя папка. При первом запуске он сам скачает остальные файлы (около 450 МБ).
+Ranga necesita una carpeta solo para él. La primera vez que se abra, descarga solo el resto de los archivos (unos 450 MB).
+
+Esta pasta não serve (Área de Trabalho, Downloads, OneDrive, dentro de um zip ou com acento no caminho): os emuladores dão erro nela.
+This folder will not do (Desktop, Downloads, OneDrive, inside a zip or with accents in the path): the emulators fail there.
+Эта папка не подходит (рабочий стол, «Загрузки», OneDrive, внутри zip или не латинские буквы в пути): эмуляторы в ней дают ошибки.
+Esta carpeta no sirve (Escritorio, Descargas, OneDrive, dentro de un zip o con tildes en la ruta): los emuladores fallan en ella.
+
+Essa pasta não serve (Área de Trabalho, Downloads, OneDrive, dentro de um zip ou com acento no caminho). Escolha outra, como C:\\Jogos.
+That folder will not do (Desktop, Downloads, OneDrive, inside a zip or with accents in the path). Pick another, such as C:\\Jogos.
+Эта папка не подходит (рабочий стол, «Загрузки», OneDrive, внутри zip или не латинские буквы в пути). Выберите другую, например C:\\Jogos.
+Esa carpeta no sirve (Escritorio, Descargas, OneDrive, dentro de un zip o con tildes en la ruta). Elige otra, como C:\\Jogos.
+
+Primeira vez: baixando os arquivos do Ranga (%.0f MB)...
+First time: downloading Ranga's files (%.0f MB)...
+Первый запуск: скачиваются файлы Ranga (%.0f МБ)...
+Primera vez: descargando los archivos de Ranga (%.0f MB)...
