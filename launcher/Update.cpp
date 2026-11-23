@@ -630,7 +630,7 @@ std::wstring PublishToGitHub(const std::wstring& root, std::string& version) {
     CopyFileW((published + L"\\manifest.sig").c_str(), (staging + L"\\manifest.sig").c_str(), FALSE);
     const bool history = CopyFileW((root + L"\\salas\\novidades.txt").c_str(), (staging + L"\\novidades.txt").c_str(), FALSE) != 0;
     if (FILE* note = _wfopen((staging + L"\\notas.txt").c_str(), L"wb")) {
-        const std::string text = notes + "\n\nVersão assinada do Ranga Emu. O Ranga baixa e confere sozinho; não precisa baixar nada daqui.\n";
+        const std::string text = notes + "\n\nVersão assinada do Ranga Emu. Primeira vez: baixe só o RangaEmu.exe, abra e escolha a pasta; ele baixa o resto. Quem já tem o Ranga não precisa baixar nada daqui: ele se atualiza sozinho.\n";
         std::fwrite(text.data(), 1, text.size(), note);
         std::fclose(note);
     }
