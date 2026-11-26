@@ -11,6 +11,7 @@
 #include <ctime>
 #include <cwchar>
 #include <map>
+#include <vector>
 
 namespace Ranga {
 
@@ -80,11 +81,41 @@ std::wstring CloudName(const std::wstring& rel) {
     return rel.substr(0, start) + L"@usuario" + rel.substr(end);
 }
 
+// Only what the upload sends (Backup.cpp CloudSaveFiles) comes back: saves\<console>\<game>\saves\..., or a file
+// under a folder named like a save folder in bios or emuladores. Never a program or anything Windows would run: a
+// stolen session could otherwise put one in an emulator's folder, on every PC of the account.
+bool CloudFileAllowed(const std::wstring& lower) {
+    static const wchar_t* const kRunnable[] = {L".exe", L".dll", L".bat", L".cmd", L".com", L".ps1", L".psm1", L".vbs", L".vbe", L".js", L".jse",
+                                               L".wsf", L".wsh", L".msi", L".msp", L".scr", L".pif", L".cpl", L".hta", L".lnk", L".url", L".reg",
+                                               L".sys", L".ocx", L".jar", L".py", L".pyw", L".asi", L".addon64", L".addon32", L".ini"};
+    for (const wchar_t* end : kRunnable) {
+        const size_t n = wcslen(end);
+        if (lower.size() >= n && lower.compare(lower.size() - n, n, end) == 0) return false;
+    }
+    std::vector<std::wstring> parts;
+    for (size_t from = 0;;) {
+        const size_t at = lower.find(L'\\', from);
+        parts.push_back(lower.substr(from, at == std::wstring::npos ? std::wstring::npos : at - from));
+        if (at == std::wstring::npos) break;
+        from = at + 1;
+    }
+    if (parts.size() < 3 || std::any_of(parts.begin(), parts.end(), [](const std::wstring& p) { return p.empty(); })) return false;
+    if (parts[0] == L"saves") return parts.size() >= 5 && parts[3] == L"saves";
+    if (parts[0] != L"bios" && parts[0] != L"emuladores") return false;
+    static const wchar_t* const kSaveFolders[] = {L"save", L"saves", L"memcards", L"gamesaves", L"savedata"};
+    for (size_t i = 1; i + 1 < parts.size(); ++i) {
+        for (const wchar_t* folder : kSaveFolders)
+            if (parts[i] == folder) return true;
+    }
+    return false;
+}
+
 // The path here of a cloud name; empty when it cannot be (no Eden user here yet, or a name that leaves the folder).
 std::wstring LocalName(const std::wstring& root, const std::wstring& name) {
     if (name.empty() || name.find(L"..") != std::wstring::npos || name.find(L'/') != std::wstring::npos || name.find(L':') != std::wstring::npos) return L"";
     const std::wstring lower = Lower(name);
     if (lower.rfind(L"saves\\", 0) != 0 && lower.rfind(L"bios\\", 0) != 0 && lower.rfind(L"emuladores\\", 0) != 0) return L"";
+    if (!CloudFileAllowed(lower)) return L"";
     const std::wstring marker = std::wstring(kEdenSaves) + L"@usuario\\";
     if (lower.rfind(Lower(marker), 0) != 0) return name;
     std::vector<std::wstring> users;
@@ -161,6 +192,8 @@ struct Local {
 std::map<std::string, Local> Scan(const std::wstring& root, bool keepBytes) {
     std::map<std::string, Local> out;
     for (const auto& [full, rel] : CloudSaveFiles(root)) {
+        // What would not come back down (CloudFileAllowed) does not go up either.
+        if (!CloudFileAllowed(Lower(rel))) continue;
         std::string bytes = ReadBytes(full);
         if (bytes.size() > kBiggest) continue;
         Local local{full, LocalHash(bytes), {}};

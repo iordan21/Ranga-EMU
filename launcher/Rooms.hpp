@@ -67,12 +67,17 @@ enum class RoomKind { Switch, N3ds, Classics, Xbox, Ps3 };
 struct RoomServers {
     std::string host;
     std::string reserve[5]; // by RoomKind, "host:port"; empty when there is none
+    // The group's code (engines.ini [Ranga] grupo): comes to every account with the addresses, so a friend's Ranga
+    // can bring it to the tables (net/RangaNet.hpp kDenied). Letters, digits, - and _, 8 to 64 of them.
+    std::string group;
 };
 RoomServers LoadRoomServers(const std::wstring& root);
 void SaveRoomServers(const std::wstring& root, const RoomServers& servers);
 // "campo<TAB>valor" lines (servidor, switch, 3ds, classicos, xbox, ps3), as the central keeps them. An address that is
 // not a plain host or host:port is dropped (it ends up in a command line).
 RoomServers ReadRoomServers(const std::string& text);
+// A group's code as it may travel: letters, digits, - and _, 8 to 64 of them.
+bool GroupCode(const std::string& text);
 std::string WriteRoomServers(const RoomServers& servers);
 // "host:port" of the group's server for that kind of room; empty without one.
 std::string RoomServerAddress(const RoomServers& servers, RoomKind kind);

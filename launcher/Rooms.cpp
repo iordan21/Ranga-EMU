@@ -351,14 +351,21 @@ RoomServers ReadRoomServers(const std::string& text) {
         if (tab == std::string::npos) continue;
         const std::string key = line.substr(0, tab), value = line.substr(tab + 1);
         if (key == "servidor") servers.host = PlainAddress(value, false);
+        if (key == "grupo" && GroupCode(value)) servers.group = value;
         for (int i = 0; i < 5; ++i) if (key == kKinds[i].key) servers.reserve[i] = PlainAddress(value, true);
     }
     return servers;
 }
 
+bool GroupCode(const std::string& text) {
+    return text.size() >= 8 && text.size() <= 64 &&
+           std::all_of(text.begin(), text.end(), [](char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '-' || c == '_'; });
+}
+
 std::string WriteRoomServers(const RoomServers& servers) {
     std::string text = "servidor\t" + servers.host + "\n";
     for (int i = 0; i < 5; ++i) if (!servers.reserve[i].empty()) text += std::string(kKinds[i].key) + "\t" + servers.reserve[i] + "\n";
+    if (!servers.group.empty()) text += "grupo\t" + servers.group + "\n";
     return text;
 }
 
@@ -366,6 +373,7 @@ RoomServers LoadRoomServers(const std::wstring& root) {
     const std::wstring ini = root + L"\\engines.ini";
     std::string text = "servidor\t" + Utf8(ReadIni(ini, L"Salas", L"servidor", L"")) + "\n";
     for (const KindInfo& kind : kKinds) text += std::string(kind.key) + "\t" + Utf8(ReadIni(ini, L"Salas", Wide(kind.key).c_str(), L"")) + "\n";
+    text += "grupo\t" + Utf8(ReadIni(ini, L"Ranga", L"grupo", L"")) + "\n";
     return ReadRoomServers(text);
 }
 
@@ -379,6 +387,8 @@ void SaveRoomServers(const std::wstring& root, const RoomServers& servers) {
     };
     put(L"servidor", servers.host);
     for (int i = 0; i < 5; ++i) put(Wide(kKinds[i].key).c_str(), servers.reserve[i]);
+    // The code only arrives, never leaves: a central list without one keeps the code this PC has.
+    if (!servers.group.empty()) WritePrivateProfileStringW(L"Ranga", L"grupo", Wide(servers.group).c_str(), ini.c_str());
 }
 
 std::string RoomServerAddress(const RoomServers& servers, RoomKind kind) {

@@ -599,6 +599,11 @@ void Runner::RunExternal(const std::wstring& root, const Game& game, const Optio
     // Emulators keep their settings, BIOS and saves beside themselves when portable, so they start from their own folder.
     // Ranga Retro tells the console by it, for RetroAchievements (retro/Achievements.hpp).
     SetEnvironmentVariableW(L"RANGA_SISTEMA", game.system.c_str());
+    // And the group's code, which its online play brings to the tables (net/RangaNet.hpp kDenied).
+    {
+        const std::string group = LoadRoomServers(root).group;
+        SetEnvironmentVariableW(L"RANGA_GRUPO", group.empty() ? nullptr : Wide(group).c_str());
+    }
     // A core or DLL Windows cannot load fails with a code (told in plain words, Diagnosis.hpp) instead of stopping at
     // Windows' own error box. The program started gets this process's error mode.
     SetErrorMode(GetErrorMode() | SEM_FAILCRITICALERRORS);

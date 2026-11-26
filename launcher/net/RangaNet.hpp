@@ -13,6 +13,11 @@
 //   server -> player  kJoin     u8 slot, str name
 //   server -> player  kLeave    u8 slot
 //   server -> player  kFull     (the table has four players already)
+//   server -> player  kDenied   (the server has a group code and the player's Hello did not bring it)
+//
+// Since 1.8.2 the Hello carries two more strings after the name: the game's title and the group's code (the hosting
+// PC's engines.ini [Ranga] grupo). A server started with --grupo seats only who brings it, so a stranger who knows the
+// address cannot sit first at a table and hand the friends a game state of their own.
 //
 // Types from kRelay up are the players' own: the server sends each to the other players of the table as it came, with
 // the sender's slot put in after the type.
@@ -31,7 +36,9 @@ constexpr int kMaxPlayers = 4;
 // More than this in one message is a broken stream, not a game's state.
 constexpr uint32_t kMaxMessage = 128u << 20;
 
-enum Type : uint8_t { kHello = 1, kWelcome, kJoin, kLeave, kFull, kRelay = 16 };
+enum Type : uint8_t { kHello = 1, kWelcome, kJoin, kLeave, kFull, kDenied, kRelay = 16 };
+// What a connection may send before it sits at a table (its Hello): a stranger cannot make the server hold more.
+constexpr size_t kMaxBeforeSeat = 64u * 1024;
 
 class Writer {
 public:

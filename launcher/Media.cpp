@@ -241,6 +241,11 @@ bool DecodeMedia(const std::string& bytes, Media& out) {
     if (version != 1 || width == 0 || height == 0 || width > 2048 || height > 2048) return false;
     out.width = width;
     out.height = height;
+    // A friend's picture is at most 5 s of frames (Encode makes up to 50); a file asking for more, or for frames that
+    // unpack to more than 256 MB in all, is not one Ranga made and would only eat the memory of whoever opens it.
+    constexpr uint16_t kMostFrames = 64;
+    constexpr size_t kMostPixelBytes = 256u << 20;
+    if (count == 0 || count > kMostFrames || static_cast<size_t>(width) * height * 4 * count > kMostPixelBytes) return false;
     size_t at = 12;
     for (uint16_t i = 0; i < count; ++i) {
         if (at + 6 > bytes.size()) return false;

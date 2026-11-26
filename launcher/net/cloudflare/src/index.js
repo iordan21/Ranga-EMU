@@ -294,7 +294,10 @@ async function login(env, ip, fields) {
   const account = await findByTag(env, fields.nome || "");
   const generic = { erro: "Nome#tag ou senha errados." };
   if (!account) return answer(403, generic);
-  if (!(await allowed(env, "entrar:" + account.id, 10, 900))) return answer(429, { erro: "Muitas tentativas nesta conta. Espere 15 minutos." });
+  // Por conta e IP (10 em 15 min), e por conta no todo (100): quem erra a senha de um amigo de propósito não o deixa
+  // de fora, a não ser com muitos IPs; e quem tenta adivinhar a senha de alguém continua devagar.
+  if (!(await allowed(env, "entrar:" + account.id + ":" + ip, 10, 900)) || !(await allowed(env, "entrar:" + account.id, 100, 900)))
+    return answer(429, { erro: "Muitas tentativas nesta conta. Espere 15 minutos." });
   const row = await env.DB.prepare("SELECT senha FROM contas WHERE id = ?").bind(account.id).first();
   if (!(await checkPassword(fields.senha || "", row.senha))) return answer(403, generic);
   if (account.banida) return answer(403, { erro: "Esta conta foi banida do Ranga." });
@@ -334,6 +337,12 @@ async function changePassword(env, me, fields) {
 
 // ---- Amigos ----
 
+// Um cartão guardado antes da regra de storeCard sai também sem as linhas que o fechariam antes da hora.
+function safeCard(card) {
+  return card.replace(/\r/g, "").split("\n").filter((line, i) => line !== "fim_cartao" && !line.startsWith("midia\t") && !line.startsWith("visto\t") &&
+    (i === 0 || line !== "ranga-perfil 1")).join("\n");
+}
+
 async function friends(env, me) {
   const { results } = await env.DB.prepare(
     "SELECT c.id AS id, c.nome AS nome, c.tag AS tag, c.cartao AS cartao, c.visto AS visto, f.aceita AS aceita, f.de AS de " +
@@ -352,7 +361,7 @@ async function friends(env, me) {
     out += `amigo\t${who}\t${row.visto}\n`;
     {
       // Um amigo que ainda não mandou o cartão ganha um mínimo, para a foto e a capa irem junto.
-      let card = row.cartao || `ranga-perfil 1\nid\t${row.id}\nnome\t${row.nome}\nconta\t${row.nome}#${row.tag}\n`;
+      let card = row.cartao ? safeCard(row.cartao) : `ranga-perfil 1\nid\t${row.id}\nnome\t${row.nome}\nconta\t${row.nome}#${row.tag}\n`;
       if (!card.endsWith("\n")) card += "\n";
       for (const media of mediaRows.filter((m) => m.conta === row.id)) card += `midia\t${media.tipo}\t${media.versao}\n`;
       out += card + `visto\t${row.visto}\nfim_cartao\n`;
@@ -481,8 +490,12 @@ async function ban(env, fields, on) {
 
 async function storeCard(env, me, body) {
   if (!body.startsWith("ranga-perfil 1\n")) return answer(400, { erro: "Cartão inválido." });
-  // O cartão fala pela conta: id e nome vêm dela, não do que o Ranga mandou.
-  const lines = body.split("\n").filter((line) => !line.startsWith("id\t") && !line.startsWith("nome\t") && !line.startsWith("conta\t"));
+  // O cartão fala pela conta: id e nome vêm dela, não do que o Ranga mandou. E fica dentro de si: na lista de
+  // amigos ele vai entre "ranga-perfil 1" e "fim_cartao", seguido de "midia" e "visto" que o servidor põe; um
+  // cartão com essas linhas fecharia antes e falaria pelo servidor (outro nome para um amigo, um pedido falso).
+  const lines = body.replace(/\r/g, "").split("\n").filter((line, i) =>
+    !line.startsWith("id\t") && !line.startsWith("nome\t") && !line.startsWith("conta\t") && !line.startsWith("midia\t") &&
+    !line.startsWith("visto\t") && line !== "fim_cartao" && (i === 0 || line !== "ranga-perfil 1"));
   lines.splice(1, 0, `id\t${me.id}`, `nome\t${me.name}`, `conta\t${me.name}#${me.tag}`);
   await env.DB.prepare("UPDATE contas SET cartao = ?, visto = ? WHERE id = ?").bind(lines.join("\n"), now(), me.id).run();
   return answer(200, { ok: 1 });
@@ -523,6 +536,9 @@ async function messages(env, me, after, afterGroups) {
 async function typing(env, me, fields) {
   const other = fields.para || "";
   if (!hex32.test(other)) return answer(400);
+  // Só para um amigo: um estranho que saiba o id de alguém não faz aparecer "digitando" na tela dele.
+  const known = await friendship(env, me.id, other);
+  if (!known || !known.aceita) return answer(403);
   await env.DB.prepare("INSERT INTO conversas (conta, com, digitando) VALUES (?1, ?2, ?3) ON CONFLICT(conta, com) DO UPDATE SET digitando = ?3")
     .bind(me.id, other, now() + 6).run();
   return answer(200, { ok: 1 });
@@ -532,6 +548,8 @@ async function read(env, me, fields) {
   const other = fields.de || "";
   const number = Math.floor(Number(fields.numero || "0"));
   if (!hex32.test(other) || !Number.isFinite(number) || number <= 0) return answer(400);
+  const known = await friendship(env, me.id, other);
+  if (!known || !known.aceita) return answer(403);
   // Ler também encerra o "digitando" de quem leu e não respondeu.
   await env.DB.prepare(
     "INSERT INTO conversas (conta, com, lido) VALUES (?1, ?2, ?3) ON CONFLICT(conta, com) DO UPDATE SET lido = MAX(lido, ?3)"
@@ -829,6 +847,8 @@ export default {
         const host = /^[A-Za-z0-9][A-Za-z0-9.-]{0,119}$/, way = /^[A-Za-z0-9][A-Za-z0-9.-]{0,110}:[0-9]{1,5}$/;
         let text = `servidor\t${host.test(fields.servidor || "") ? fields.servidor : ""}\n`;
         for (const key of ["switch", "3ds", "classicos", "xbox", "ps3"]) if (way.test(fields[key] || "")) text += `${key}\t${fields[key]}\n`;
+        // O código do grupo vai junto, só para quem tem conta (GET /salas): o Ranga dos amigos o leva às mesas.
+        if (/^[A-Za-z0-9_-]{8,64}$/.test(fields.grupo || "")) text += `grupo\t${fields.grupo}\n`;
         await env.DB.prepare("INSERT INTO ajustes (chave, valor) VALUES ('salas', ?) ON CONFLICT (chave) DO UPDATE SET valor = excluded.valor").bind(text).run();
         return answer(200, { ok: 1 });
       }

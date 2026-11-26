@@ -5,10 +5,12 @@
 #include <windows.h>
 #include <shlobj.h>
 #include <bcrypt.h>
+#include <wincred.h>
 #include <winhttp.h>
 
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <ctime>
 
 namespace Ranga {
@@ -28,6 +30,9 @@ constexpr const wchar_t* kGithubSource = L"https://github.com/iordan21/Ranga-EMU
 std::wstring Ini(const std::wstring& root) { return root + L"\\engines.ini"; }
 std::wstring Published(const std::wstring& root, bool beta = false) { return root + (beta ? L"\\salas\\atualizacao-beta" : L"\\salas\\atualizacao"); }
 std::wstring PrivateKey(const std::wstring& root) { return root + L"\\salas\\chave-atualizacao.bin"; }
+// The same key kept encrypted with a password only the owner knows (SealKey): a program that copies the file gets
+// nothing it can sign with.
+std::wstring SealedKey(const std::wstring& root) { return root + L"\\salas\\chave-atualizacao.cifrada"; }
 std::wstring Staging(const std::wstring& root) { return root + L"\\atualizacao-baixada"; }
 std::wstring PreviousFolder(const std::wstring& root) { return root + L"\\versao-anterior"; }
 
@@ -85,6 +90,77 @@ bool HashBytes(const std::string& bytes, unsigned char digest[32]) {
     }, digest);
 }
 
+// ---- The key at rest: "RKEY1", salt (16), nonce (12), tag (16), then the key blob encrypted with AES-256-GCM under
+// PBKDF2-HMAC-SHA256(password, salt, kSealRounds). The rounds make each guess of the password cost a few tenths of
+// a second.
+constexpr ULONGLONG kSealRounds = 600000;
+constexpr size_t kSaltBytes = 16, kNonceBytes = 12, kTagBytes = 16;
+
+bool Stretch(const std::wstring& password, const unsigned char* salt, unsigned char out[32]) {
+    const std::string bytes = Utf8(password);
+    BCRYPT_ALG_HANDLE hmac = nullptr;
+    if (BCryptOpenAlgorithmProvider(&hmac, BCRYPT_SHA256_ALGORITHM, nullptr, BCRYPT_ALG_HANDLE_HMAC_FLAG) != 0) return false;
+    const bool ok = BCryptDeriveKeyPBKDF2(hmac, reinterpret_cast<PUCHAR>(const_cast<char*>(bytes.data())), static_cast<ULONG>(bytes.size()),
+                                          const_cast<PUCHAR>(salt), kSaltBytes, kSealRounds, out, 32, 0) == 0;
+    BCryptCloseAlgorithmProvider(hmac, 0);
+    return ok;
+}
+
+// AES-256-GCM one way or the other; false when the tag does not match (wrong password, or the file was changed).
+bool Gcm(bool encrypt, const unsigned char key[32], const unsigned char* nonce, unsigned char* tag, const std::string& in, std::string& out) {
+    BCRYPT_ALG_HANDLE aes = nullptr;
+    BCRYPT_KEY_HANDLE handle = nullptr;
+    bool ok = BCryptOpenAlgorithmProvider(&aes, BCRYPT_AES_ALGORITHM, nullptr, 0) == 0 &&
+              BCryptSetProperty(aes, BCRYPT_CHAINING_MODE, reinterpret_cast<PUCHAR>(const_cast<wchar_t*>(BCRYPT_CHAIN_MODE_GCM)),
+                                sizeof(BCRYPT_CHAIN_MODE_GCM), 0) == 0 &&
+              BCryptGenerateSymmetricKey(aes, &handle, nullptr, 0, const_cast<PUCHAR>(key), 32, 0) == 0;
+    if (ok) {
+        BCRYPT_AUTHENTICATED_CIPHER_MODE_INFO info;
+        BCRYPT_INIT_AUTH_MODE_INFO(info);
+        info.pbNonce = const_cast<PUCHAR>(nonce);
+        info.cbNonce = kNonceBytes;
+        info.pbTag = tag;
+        info.cbTag = kTagBytes;
+        out.assign(in.size(), '\0');
+        ULONG done = 0;
+        const auto data = reinterpret_cast<PUCHAR>(const_cast<char*>(in.data()));
+        const auto into = reinterpret_cast<PUCHAR>(out.data());
+        ok = (encrypt ? BCryptEncrypt(handle, data, static_cast<ULONG>(in.size()), &info, nullptr, 0, into, static_cast<ULONG>(out.size()), &done, 0)
+                      : BCryptDecrypt(handle, data, static_cast<ULONG>(in.size()), &info, nullptr, 0, into, static_cast<ULONG>(out.size()), &done, 0)) == 0;
+    }
+    if (handle != nullptr) BCryptDestroyKey(handle);
+    if (aes != nullptr) BCryptCloseAlgorithmProvider(aes, 0);
+    if (!ok) out.clear();
+    return ok;
+}
+
+std::string Seal(const std::string& keyBlob, const std::wstring& password) {
+    std::string out = "RKEY1";
+    unsigned char salt[kSaltBytes], nonce[kNonceBytes], tag[kTagBytes] = {}, key[32];
+    if (BCryptGenRandom(nullptr, salt, sizeof(salt), BCRYPT_USE_SYSTEM_PREFERRED_RNG) != 0 ||
+        BCryptGenRandom(nullptr, nonce, sizeof(nonce), BCRYPT_USE_SYSTEM_PREFERRED_RNG) != 0 || !Stretch(password, salt, key))
+        return "";
+    std::string sealed;
+    const bool ok = Gcm(true, key, nonce, tag, keyBlob, sealed);
+    SecureZeroMemory(key, sizeof(key));
+    if (!ok) return "";
+    out.append(reinterpret_cast<char*>(salt), kSaltBytes).append(reinterpret_cast<char*>(nonce), kNonceBytes).append(reinterpret_cast<char*>(tag), kTagBytes);
+    return out + sealed;
+}
+
+std::string Unseal(const std::string& file, const std::wstring& password) {
+    const size_t head = 5 + kSaltBytes + kNonceBytes + kTagBytes;
+    if (file.size() <= head || file.compare(0, 5, "RKEY1") != 0) return "";
+    const auto bytes = reinterpret_cast<const unsigned char*>(file.data());
+    unsigned char key[32], tag[kTagBytes];
+    std::memcpy(tag, bytes + 5 + kSaltBytes + kNonceBytes, kTagBytes);
+    if (!Stretch(password, bytes + 5, key)) return "";
+    std::string blob;
+    Gcm(false, key, bytes + 5 + kSaltBytes, tag, file.substr(head), blob);
+    SecureZeroMemory(key, sizeof(key));
+    return blob;
+}
+
 BCRYPT_KEY_HANDLE ImportKey(BCRYPT_ALG_HANDLE algorithm, const std::string& blob, bool isPrivate) {
     BCRYPT_KEY_HANDLE key = nullptr;
     if (BCryptImportKeyPair(algorithm, nullptr, isPrivate ? BCRYPT_ECCPRIVATE_BLOB : BCRYPT_ECCPUBLIC_BLOB, &key,
@@ -122,6 +198,42 @@ bool Verify(const std::string& message, const std::string& signature) {
     }
     BCryptCloseAlgorithmProvider(algorithm, 0);
     return ok;
+}
+
+// The owner's password, asked in Windows' own box (nothing is kept). Empty: cancelled.
+std::wstring AskPassword(const std::wstring& message) {
+    CREDUI_INFOW info{sizeof(info), nullptr, message.c_str(), L"Ranga Emu: chave de atualização", nullptr};
+    wchar_t user[CREDUI_MAX_USERNAME_LENGTH + 1] = L"Ranga";
+    wchar_t password[CREDUI_MAX_PASSWORD_LENGTH + 1] = {};
+    BOOL save = FALSE;
+    const DWORD answer = CredUIPromptForCredentialsW(&info, L"RangaEmu-chave", nullptr, 0, user, CREDUI_MAX_USERNAME_LENGTH + 1, password,
+                                                     CREDUI_MAX_PASSWORD_LENGTH + 1, &save,
+                                                     CREDUI_FLAGS_GENERIC_CREDENTIALS | CREDUI_FLAGS_DO_NOT_PERSIST | CREDUI_FLAGS_ALWAYS_SHOW_UI |
+                                                         CREDUI_FLAGS_KEEP_USERNAME | CREDUI_FLAGS_PASSWORD_ONLY_OK);
+    std::wstring out = answer == NO_ERROR ? password : L"";
+    SecureZeroMemory(password, sizeof(password));
+    return out;
+}
+
+// The private key to sign with: the plain file while it is there, else the sealed one with the owner's password
+// (three tries). Empty: why not, in error.
+std::string LoadSigningKey(const std::wstring& root, std::wstring& error) {
+    if (std::string plain = ReadBytes(PrivateKey(root)); !plain.empty()) return plain;
+    const std::string sealed = ReadBytes(SealedKey(root));
+    if (sealed.empty()) {
+        error = L"Falta a chave de assinatura (salas\\chave-atualizacao.cifrada): só o PC que publica assina.";
+        return "";
+    }
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        const std::wstring password = AskPassword(attempt == 0 ? L"A senha da chave que assina as atualizações do Ranga." : L"Senha errada. Tente de novo.");
+        if (password.empty()) {
+            error = L"Publicação cancelada: a senha da chave não foi digitada.";
+            return "";
+        }
+        if (std::string blob = Unseal(sealed, password); !blob.empty()) return blob;
+    }
+    error = L"Senha da chave errada três vezes: nada foi publicado.";
+    return "";
 }
 
 // What goes in an update: the programs and every core. Nothing from bios, saves, jogos or the rest.
@@ -389,8 +501,9 @@ std::wstring PublishUpdate(const std::wstring& root, const std::string& notes, s
 #ifdef RANGA_ALPHA
     return L"O Ranga Alpha não publica.";
 #endif
-    const std::string key = ReadBytes(PrivateKey(root));
-    if (key.empty()) return L"Falta a chave de assinatura (salas\\chave-atualizacao.bin).";
+    std::wstring keyError;
+    const std::string key = LoadSigningKey(root, keyError);
+    if (key.empty()) return keyError;
     // The files are copied first, so a build made later does not change what friends are downloading.
     const std::wstring folder = Published(root, beta), next = folder + L".nova";
     RemoveTree(next);
@@ -923,9 +1036,30 @@ int DownloadUrl(const std::wstring& url, std::string* body, const std::wstring& 
 bool SignedByRanga(const std::string& message, const std::string& signature) { return Verify(message, signature); }
 
 std::wstring SignWithRangaKey(const std::wstring& root, const std::string& message, std::string& signature) {
-    const std::string key = ReadBytes(PrivateKey(root));
-    if (key.empty()) return L"Falta a chave de assinatura (salas\\chave-atualizacao.bin): só o PC que publica assina.";
+    std::wstring keyError;
+    const std::string key = LoadSigningKey(root, keyError);
+    if (key.empty()) return keyError;
     if (!Sign(key, message, signature)) return L"A assinatura falhou (a chave está estragada?).";
+    return L"";
+}
+
+std::wstring SealSigningKey(const std::wstring& root) {
+    const std::string plain = ReadBytes(PrivateKey(root));
+    if (plain.empty()) return L"Não há salas\\chave-atualizacao.bin para cifrar.";
+    // A key that does not sign what the public half checks is not Ranga's: nothing is sealed.
+    std::string probe;
+    if (!Sign(plain, "ranga-teste-da-chave", probe) || !Verify("ranga-teste-da-chave", probe)) return L"Essa chave não é a do Ranga: nada foi cifrado.";
+    const std::wstring first = AskPassword(L"Escolha a senha da chave (12 ou mais caracteres). Guarde no 1Password: sem ela não dá para publicar.");
+    if (first.empty()) return L"Cancelado.";
+    if (first.size() < 12) return L"Senha curta demais: use 12 ou mais caracteres. Nada foi cifrado.";
+    if (AskPassword(L"Digite a mesma senha de novo.") != first) return L"As duas senhas não batem. Nada foi cifrado.";
+    const std::string sealed = Seal(plain, first);
+    // Read back and checked before it counts: the sealed file opens with the password and signs as the key does.
+    std::string again, signature;
+    if (sealed.empty() || (again = Unseal(sealed, first)) != plain || !Sign(again, "ranga-teste-da-chave", signature) ||
+        !Verify("ranga-teste-da-chave", signature))
+        return L"A chave cifrada não conferiu. Nada foi gravado.";
+    if (!WriteBytes(SealedKey(root), sealed) || ReadBytes(SealedKey(root)) != sealed) return L"Não deu para gravar salas\\chave-atualizacao.cifrada.";
     return L"";
 }
 

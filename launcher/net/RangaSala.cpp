@@ -139,6 +139,8 @@ struct Player {
 std::string g_updates;
 // The group's code (--grupo); empty: profiles and chat are open, as on the hosting PC behind playit.
 std::string g_group;
+// --mesas-com-codigo: the tables too ask for the group's code (RangaNet.hpp kDenied).
+bool g_tablesNeedGroup = false;
 
 void Answer(Player& player, int code, const std::string& body) {
     const char* reason = code == 200 ? " OK" : code == 404 ? " Not Found" : code == 401 ? " Unauthorized" : code == 429 ? " Too Many Requests" : " Error";
@@ -532,6 +534,15 @@ void Handle(Player& player, uint8_t type, const uint8_t* body, size_t size) {
         if (!read.Ok() || game.empty()) { player.closing = true; return; }
         // A Ranga since 1.0.1 sends the game's name too, for /ranga/mesas; one from before ends here.
         const std::string title = read.Left() > 0 ? read.Str() : std::string();
+        // The group's code (RangaNet.hpp): with --mesas-com-codigo, only who brings it sits down. Off until every
+        // friend runs a Ranga that has the code (it comes from the central with the rooms' addresses, since 1.8.2).
+        const std::string group = read.Left() > 0 ? read.Str() : std::string();
+        if (g_tablesNeedGroup && !g_group.empty() && (group.size() != g_group.size() || !std::equal(group.begin(), group.end(), g_group.begin()))) {
+            Send(player, RangaNet::Writer(RangaNet::kDenied).Done());
+            player.closeWhenSent = true;
+            Log("%s recusado na mesa: sem o código do grupo", player.address.c_str());
+            return;
+        }
         player.title = title.size() > 120 ? title.substr(0, 120) : title;
         Seat(player, version, game, name);
         return;
@@ -568,6 +579,7 @@ int main(int argc, char** argv) {
     }
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--lan") == 0) lan = true;
+        if (std::strcmp(argv[i], "--mesas-com-codigo") == 0) g_tablesNeedGroup = true;
     }
     if (!g_dataFolder.empty()) {
         MakeFolder(g_dataFolder);
@@ -709,6 +721,12 @@ int main(int argc, char** argv) {
                     if (player->slot < 0 && (player->http || StartsHttp(player->in))) {
                         player->http = true;
                         ServeHttp(*player);
+                        continue;
+                    }
+                    // Before sitting down, only a Hello's worth: whoever knows the address cannot fill this PC's memory.
+                    if (player->slot < 0 && player->in.size() > RangaNet::kMaxBeforeSeat) {
+                        Log("%s mandou demais antes de sentar", player->address.c_str());
+                        player->closing = true;
                         continue;
                     }
                     if (!RangaNet::TakeMessages(player->in, [&](uint8_t type, const uint8_t* body, size_t size) { Handle(*player, type, body, size); })) {

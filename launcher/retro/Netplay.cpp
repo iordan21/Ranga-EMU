@@ -323,6 +323,10 @@ void Handle(uint8_t type, const uint8_t* body, size_t size) {
         Say(L"Online: a mesa deste jogo já tem 4 jogadores");
         return;
     }
+    if (type == RangaNet::kDenied) {
+        Say(L"Online: a sala pediu o código do grupo e este Ranga não tem o mesmo (Amigos > Grupo)");
+        return;
+    }
     if (type < RangaNet::kRelay) return;
     const int from = r.U8();
     if (from >= kPlayers) return;
@@ -499,7 +503,9 @@ bool Start(const std::string& address, const std::string& game, const std::strin
     BOOL noDelay = TRUE;
     setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&noDelay), sizeof(noDelay));
     s->socket = sock;
-    Queue(RangaNet::Writer(RangaNet::kHello).U8(RangaNet::kVersion).Str(game).Str(s->name).Str(title).Done());
+    // The group's code, from the Ranga that started this game (Runner.cpp RANGA_GRUPO): the room seats only friends.
+    const char* group = std::getenv("RANGA_GRUPO");
+    Queue(RangaNet::Writer(RangaNet::kHello).U8(RangaNet::kVersion).Str(game).Str(s->name).Str(title).Str(group != nullptr ? group : "").Done());
     s->hooks.log("[online] conectado a %s, jogo %s, atraso de %d quadros%s\n", address.c_str(), game.c_str(), s->delay, s->autoDelay ? " (automático)" : "");
     return true;
 }

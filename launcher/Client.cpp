@@ -9458,7 +9458,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     // Publishing opens no window, so it runs beside an open Ranga instead of only bringing that one to the front (it
     // used to end there, saying nothing, and nothing was published). It reads the installed files, which an open
     // Ranga does not lock.
-    const bool publishing = commandLine != nullptr && (wcsstr(commandLine, L"--publicar") != nullptr || wcsstr(commandLine, L"--assinar-catalogo") != nullptr);
+    const bool publishing = commandLine != nullptr && (wcsstr(commandLine, L"--publicar") != nullptr || wcsstr(commandLine, L"--assinar-catalogo") != nullptr ||
+                                                       wcsstr(commandLine, L"--cifrar-chave") != nullptr);
     if (single != nullptr && GetLastError() == ERROR_ALREADY_EXISTS && _wgetenv(L"RANGA_CLIENT_TEST_INPUT") == nullptr && !publishing) {
         if (HWND existing = FindWindowW(kWindowClass, nullptr)) {
             ShowWindow(existing, SW_RESTORE);
@@ -9519,6 +9520,16 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
         }
         WriteTextLine(root + L"\\salas\\publicar.log", result);
         return result.find(L"NÃO") != std::wstring::npos || result.find(L"não vale") != std::wstring::npos ? 1 : 0;
+    }
+    // RangaEmu.exe --cifrar-chave: the signing key kept encrypted with a password (Update.hpp SealSigningKey).
+    if (commandLine != nullptr && wcsstr(commandLine, L"--cifrar-chave") != nullptr) {
+        const std::wstring error = SealSigningKey(root);
+        WriteTextLine(root + L"\\salas\\publicar.log", error.empty() ? L"chave cifrada: salas\\chave-atualizacao.cifrada" : L"chave NÃO cifrada: " + error);
+        MessageBoxW(nullptr, error.empty() ? L"Chave cifrada em salas\\chave-atualizacao.cifrada.\n\nA chave sem senha (chave-atualizacao.bin) continua lá: "
+                                             L"apague depois de publicar uma vez com a senha."
+                                           : error.c_str(),
+                    kAppName, MB_OK | (error.empty() ? MB_ICONINFORMATION : MB_ICONWARNING));
+        return error.empty() ? 0 : 1;
     }
     // RangaEmu.exe --publicar "o que mudou": publishes this PC's Ranga for the friends without opening the window;
     // the result goes to salas\publicar.log.

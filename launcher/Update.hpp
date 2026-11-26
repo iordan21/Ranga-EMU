@@ -119,6 +119,10 @@ int DownloadUrl(const std::wstring& url, std::string* body, const std::wstring& 
 bool SignedByRanga(const std::string& message, const std::string& signature);
 // The hosting PC: signs with salas\chave-atualizacao.bin. Empty: done; else why not.
 std::wstring SignWithRangaKey(const std::wstring& root, const std::string& message, std::string& signature);
+// RangaEmu.exe --cifrar-chave: writes salas\chave-atualizacao.cifrada from the plain key, with a password the owner
+// types twice, and checks it opens and signs. The plain file stays: the owner deletes it after a publish with the
+// password has worked. Empty: done; else why not.
+std::wstring SealSigningKey(const std::wstring& root);
 std::string Sha256OfFile(const std::wstring& path);
 // Runs a command hidden and waits; out gets what it printed. The exit code, -1 when it did not start.
 int RunHiddenCommand(const std::wstring& command, const std::wstring& folder, std::string& out);

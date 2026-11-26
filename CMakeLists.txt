@@ -77,7 +77,7 @@ if(WIN32)
     # IMGUI_ENABLE_FREETYPE: the fonts drawn by FreeType (3rdparty/freetype), which draws the emoji in their colors.
     target_compile_definitions(RangaEmu PRIVATE UNICODE _UNICODE IMGUI_USE_WCHAR32 IMGUI_ENABLE_FREETYPE)
     target_link_options(RangaEmu PRIVATE -municode -static)
-    target_link_libraries(RangaEmu PRIVATE SDL2-static freetype d3d11 d3dcompiler dxgi dwmapi ole32 shell32 shlwapi uuid gdi32 comctl32 winhttp bcrypt ws2_32 iphlpapi mfplat mfreadwrite mfuuid)
+    target_link_libraries(RangaEmu PRIVATE SDL2-static freetype d3d11 d3dcompiler dxgi dwmapi ole32 shell32 shlwapi uuid gdi32 comctl32 winhttp bcrypt credui ws2_32 iphlpapi mfplat mfreadwrite mfuuid)
     # Ranga Alpha: Ranga with the consoles still being worked on and nothing else, for this PC only. Built by name
     # (--target RangaAlpha), never part of a normal build, and it has no network, updates or publishing.
     get_target_property(RANGA_SOURCES RangaEmu SOURCES)
