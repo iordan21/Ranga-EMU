@@ -6,7 +6,7 @@
 
 ## O que ele faz
 
-- **Biblioteca de 26 consoles.** NES, SNES, Mega Drive, PS1, N64, Saturn, Dreamcast, PS2, GameCube, Wii, Xbox, PSP, DS, 3DS, Wii U, PS3, Xbox 360, Switch e outros, cada um com capa, configurações e controles por jogo.
+- **Biblioteca de 25 consoles.** NES, SNES, Mega Drive, PS1, N64, Saturn, Dreamcast, PS2, GameCube, Wii, Xbox, PSP, DS, 3DS, Wii U, PS3, Xbox 360, Switch e outros, cada um com capa, configurações e controles por jogo.
 - **Roda dentro do próprio Ranga.** O Ranga Retro abre os núcleos (libretro) numa janela só, com menu próprio, filtros, escala, FSR e estados salvos. Para quem preferir, cada console também aceita um emulador externo.
 - **Perfil estilo Steam.** Nível e XP, horas jogadas, vitrine de conquistas, jogos recentes, foto e capa animadas (GIF ou vídeo curto).
 - **Conquistas.** Conquistas do próprio Ranga e do [RetroAchievements](https://retroachievements.org), inclusive em jogos `.chd`.
@@ -41,17 +41,18 @@ cmake --build build --target RangaEmu RangaRetro RangaSala
 | `launcher/` | O Ranga Emu (ImGui + Direct3D 11): biblioteca, perfil, amigos, salas, atualização |
 | `launcher/retro/` | O Ranga Retro: roda os núcleos libretro, conquistas, netplay |
 | `launcher/net/` | Servidor das salas (`ranga-sala`) e o servidor dos amigos na Cloudflare |
-| `core/` | O runtime de PS5 herdado do [AnyPS5](https://github.com/boykopovar/AnyPS5) (escondido no Ranga por enquanto) |
+| `core/` | O runtime de PS5 herdado do [AnyPS5](https://github.com/boykopovar/AnyPS5) (fora do Ranga normal; só o Ranga Alpha usa) |
 
 ## Privacidade: relatório de erro
 
 Quando um jogo fecha com erro, o Ranga pergunta se você quer **Enviar ao Ranga**. Só vai se você apertar o botão; nada é enviado sozinho.
 
-- **O que vai:** a versão do Ranga, o console, o emulador, o nome e o serial do jogo, o código do erro, quantos segundos o jogo rodou e o final dos logs daquela vez.
+- **O que vai:** a versão do Ranga, o console, o emulador, o nome e o serial do jogo, o código do erro, em qual arquivo do programa ele caiu (só o nome do arquivo, como `pcsx2_libretro.dll`, sem pasta), quantos segundos o jogo rodou e o final dos logs daquela vez.
 - **O que é tirado dos logs antes:** seu nome de usuário do Windows, a pasta do seu usuário, o nome do PC, e-mails, endereços IP e linhas com senha ou token.
 - **O que não vai:** saves, jogos, BIOS, chaves dos consoles, sua conta e seu IP (o relatório pede para não guardá-lo).
 - **Para onde:** para o projeto do Ranga no [Sentry](https://sentry.io), um serviço de relatórios de erro, onde só o dono do Ranga vê. Serve só para achar e consertar o que quebra.
 - O **Gerar .zip** continua fazendo o arquivo no seu PC, sem enviar nada.
+- Quando o jogo cai, o Ranga também grava um `queda.dmp` na pasta de logs do jogo. Ele **fica só no seu PC** e nunca é enviado, porque pode ter qualquer coisa que estava na memória.
 
 ## Créditos
 

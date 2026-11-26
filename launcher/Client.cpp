@@ -5258,7 +5258,10 @@ struct Client {
         report.serial = Utf8(game.serial);
         report.code = code;
         report.seconds = seconds;
-        const auto add = [&](const std::wstring& path, const char* as) {
+        for (const wchar_t* log : {L"game.log.last-error", L"game.log"}) {
+            if (report.where = CrashReport::CrashPlace(ReadTail(logs + log, 64 * 1024)); !report.where.empty()) break;
+        }
+        const auto add =[&](const std::wstring& path, const char* as) {
             if (std::string text = ReadTail(path, 256 * 1024); !text.empty()) report.logs.emplace_back(as, std::move(text));
         };
         for (const char* log : {"game.log", "game.log.last-error", "game.err", "launcher.log", "prepare.log", "dlss5.log"}) add(logs + Wide(log), log);

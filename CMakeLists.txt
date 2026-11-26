@@ -103,7 +103,7 @@ if(WIN32)
     # libchdr (3rdparty/libchdr, BSD): .chd discs for the RetroAchievements hash (launcher/retro/ChdReader.cpp).
     set(CHDR_WANT_TESTS OFF CACHE BOOL "" FORCE)
     add_subdirectory(${CMAKE_SOURCE_DIR}/3rdparty/libchdr ${CMAKE_BINARY_DIR}/libchdr EXCLUDE_FROM_ALL)
-    add_executable(RangaRetro WIN32 launcher/retro/RetroMain.cpp launcher/retro/VulkanVideo.cpp launcher/retro/Netplay.cpp launcher/retro/Achievements.cpp launcher/retro/ChdReader.cpp launcher/retro/Social.cpp launcher/Http.cpp launcher/retro/retro.rc)
+    add_executable(RangaRetro WIN32 launcher/retro/RetroMain.cpp launcher/retro/VulkanVideo.cpp launcher/retro/Netplay.cpp launcher/retro/Achievements.cpp launcher/retro/ChdReader.cpp launcher/retro/Social.cpp launcher/retro/Queda.cpp launcher/Http.cpp launcher/retro/retro.rc)
     set_target_properties(RangaRetro PROPERTIES OUTPUT_NAME ranga_retro)
     target_include_directories(RangaRetro PRIVATE ${CMAKE_SOURCE_DIR}/3rdparty/libretro ${CMAKE_SOURCE_DIR}/3rdparty/Vulkan-Headers/include ${CMAKE_SOURCE_DIR}/3rdparty/stb)
     target_compile_definitions(RangaRetro PRIVATE UNICODE _UNICODE)

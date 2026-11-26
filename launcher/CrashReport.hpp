@@ -24,6 +24,7 @@ struct Report {
     std::string serial;
     unsigned long code = 0; // NTSTATUS, 0xC0000005 and the like
     unsigned long seconds = 0;
+    std::string where;    // "pcsx2_libretro.dll+0x1A2B3C": where Ranga Retro saw it crash (retro/Queda.hpp), if it did
     std::vector<std::pair<std::string, std::string>> logs; // file name, text (cleaned before it goes)
 };
 
@@ -33,6 +34,8 @@ bool Enabled();
 // The text with the user's name, the PC's name, the user folder, e-mails, IPv4 addresses and "token=..."-like secrets
 // replaced by <usuario>, <pc>, <email>, <ip> and <segredo>.
 std::string Clean(const std::string& text);
+// From a game's log, the place of the last "[queda] codigo=0x... em <place>" line Ranga Retro wrote; empty if none.
+std::string CrashPlace(const std::string& log);
 // The whole envelope, as it goes (public for the tests).
 std::string Envelope(const Report& report, const std::string& dsn, const std::string& eventId);
 // Sends it; blocks (run it off the drawing thread). Empty: sent; otherwise what went wrong, in Portuguese.

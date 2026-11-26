@@ -15,6 +15,7 @@
 #include "Netplay.hpp"
 #include "Achievements.hpp"
 #include "Social.hpp"
+#include "Queda.hpp"
 // The captures' PNG (F12), kept to this file.
 #define STB_IMAGE_WRITE_STATIC
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -2493,6 +2494,12 @@ int RetroMain(int argc, wchar_t** argv) {
     if (saveDir.empty()) saveDir = noGame ? L"." : romPath.substr(0, romPath.find_last_of(L"\\/"));
     if (systemDir.empty()) systemDir = saveDir;
     CreateDirectoryW(saveDir.c_str(), nullptr);
+    {
+        // Where a crash is written down (Queda.hpp): the game's logs folder beside its saves, as Ranga lays them out.
+        std::wstring logs = saveDir.substr(0, saveDir.find_last_of(L"\\/")) + L"\\logs";
+        if (GetFileAttributesW(logs.c_str()) == INVALID_FILE_ATTRIBUTES) logs = saveDir;
+        Ranga::Retro::InstallCrashCapture(logs);
+    }
     // The game runs ahead of whatever else is open (browser, chat, updaters): above normal, not high, which would get
     // in the way of the sound and input drivers. Windows 11 also slows down and coarsens the timer of a program it
     // judges to be in the background; a game is told apart from that here, so a covered or unfocused window keeps pace.
@@ -2624,6 +2631,8 @@ int RetroMain(int argc, wchar_t** argv) {
         Log("[retro] o core recusou o jogo %s\n", romUtf8.c_str());
         endNow();
     }
+    // The core may have put its own last-chance handler in place of Ranga's while loading.
+    Ranga::Retro::ReinstallCrashCapture();
     g.core.setControllerPort(0, RETRO_DEVICE_JOYPAD);
     g.core.setControllerPort(1, RETRO_DEVICE_JOYPAD);
     g.core.getAvInfo(&g.av);

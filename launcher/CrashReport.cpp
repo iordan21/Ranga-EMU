@@ -238,22 +238,43 @@ std::string Clean(const std::string& text) {
     return out;
 }
 
+std::string CrashPlace(const std::string& log) {
+    const size_t line = log.rfind("[queda] codigo=");
+    if (line == std::string::npos) return "";
+    const size_t at = log.find(" em ", line);
+    const size_t lineEnd = log.find_first_of("\r\n", line);
+    if (at == std::string::npos || (lineEnd != std::string::npos && at > lineEnd)) return "";
+    const size_t start = at + 4;
+    size_t end = log.find_first_of(" \r\n", start);
+    if (end == std::string::npos) end = log.size();
+    std::string place = log.substr(start, end - start);
+    // A file name and an offset, nothing else (a path would carry the user's folder).
+    if (place.size() > 160 || place.find_first_of("\\/:") != std::string::npos) return "";
+    return place;
+}
+
 std::string Envelope(const Report& report, const std::string& dsn, const std::string& eventId) {
     const std::string code = Hex(report.code);
-    const std::string title = report.emulator + " fechou com erro " + code;
+    // "pcsx2_libretro.dll" from "pcsx2_libretro.dll+0x1A2B3C"; "codigo-gerado" for code a core made while running.
+    std::string module = report.where.substr(0, report.where.find_first_of("+@"));
+    const std::string title = report.emulator + " fechou com erro " + code + (module.empty() ? "" : " em " + module);
     std::string event = "{\"event_id\":" + Json(eventId) + ",\"timestamp\":" + std::to_string(static_cast<long long>(std::time(nullptr))) +
                         ",\"platform\":\"native\",\"level\":\"fatal\",\"logger\":\"ranga\",\"environment\":\"producao\"";
     if (!report.version.empty()) event += ",\"release\":" + Json("ranga-emu@" + report.version);
     if (!report.update.empty()) event += ",\"dist\":" + Json(report.update);
     event += ",\"message\":{\"formatted\":" + Json(title + " (" + report.console + ")") + "}";
     event += ",\"exception\":{\"values\":[{\"type\":" + Json(code) + ",\"value\":" +
-             Json(title + " depois de " + std::to_string(report.seconds) + " s") + ",\"mechanism\":{\"type\":\"exit_code\",\"handled\":false}}]}";
+             Json(title + " depois de " + std::to_string(report.seconds) + " s" + (report.where.empty() ? "" : " (" + report.where + ")")) + ",\"mechanism\":{\"type\":\"exit_code\",\"handled\":false}}]}";
     event += ",\"tags\":{\"console\":" + Json(report.console) + ",\"emulador\":" + Json(report.emulator) + ",\"codigo\":" + Json(code);
     if (!report.game.empty()) event += ",\"jogo\":" + Json(report.game);
     if (!report.serial.empty()) event += ",\"serial\":" + Json(report.serial);
-    event += "},\"extra\":{\"segundos\":" + std::to_string(report.seconds) + "}";
-    // Grouped by emulator and code: "Eden 0xC0000005" is one problem, whatever the game.
-    event += ",\"fingerprint\":[" + Json(report.emulator) + "," + Json(code) + "]";
+    if (!module.empty()) event += ",\"modulo\":" + Json(module);
+    event += "},\"extra\":{\"segundos\":" + std::to_string(report.seconds);
+    if (!report.where.empty()) event += ",\"onde\":" + Json(report.where);
+    event += "}";
+    // Grouped by emulator, code and the file it crashed in: "Eden 0xC0000005 em eden_libretro.dll" is one problem,
+    // whatever the game.
+    event += ",\"fingerprint\":[" + Json(report.emulator) + "," + Json(code) + "," + Json(module.empty() ? "?" : module) + "]";
     // Nobody's address: Sentry would otherwise keep the sender's IP.
     event += ",\"user\":{\"ip_address\":null}}";
 
