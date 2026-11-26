@@ -1,4 +1,5 @@
 #include "Runner.hpp"
+#include "AlphaExtra.hpp"
 #include "Dlss5.hpp"
 #include "Embed.hpp"
 #include "Rooms.hpp"
@@ -31,10 +32,16 @@ std::wstring Runner::TitleId() const {
     return titleId;
 }
 
-void Runner::Report(State next, const std::wstring& text) {
+Diagnosis Runner::Why() const {
+    std::lock_guard guard(lock);
+    return diagnosis;
+}
+
+void Runner::Report(State next, const std::wstring& text, const Diagnosis& why) {
     {
         std::lock_guard guard(lock);
         message = text;
+        diagnosis = why;
     }
     state = next;
 }
@@ -62,11 +69,11 @@ void Runner::StartSystem(const std::wstring& root, const std::wstring& system) {
 
 void Runner::Run(std::wstring root, Game game, Options options) {
     const Profile profile = ProfileFor(game.titleId);
-    if (profile.bloodborne) {
+    if (kRangaAlpha && profile.bloodborne) {
         RunBloodborne(root, game, options);
         return;
     }
-    if (game.system != L"PS5") {
+    if (!kRangaAlpha || game.system != L"PS5") {
         RunExternal(root, game, options);
         return;
     }
@@ -217,7 +224,8 @@ void Runner::Run(std::wstring root, Game game, Options options) {
     SetFileAttributesW(pipelineCache.c_str(), FILE_ATTRIBUTE_HIDDEN);
 }
 
-void Runner::Await(PROCESS_INFORMATION& process, const std::wstring& logs, const Game& game, const wchar_t* errorLog) {
+void Runner::Await(PROCESS_INFORMATION& process, const std::wstring& logs, const Game& game, const wchar_t* errorLog,
+                   const std::function<Diagnosis(unsigned long, unsigned long)>& why) {
     const DWORD begun = GetTickCount();
     WaitForSingleObject(process.hProcess, INFINITE);
     DWORD code = 0;
@@ -232,12 +240,20 @@ void Runner::Await(PROCESS_INFORMATION& process, const std::wstring& logs, const
         if (journal != INVALID_HANDLE_VALUE) { DWORD put = 0; WriteFile(journal, line, static_cast<DWORD>(length), &put, nullptr); CloseHandle(journal); }
         if (code != 0) CopyFileW((logs + L"\\" + errorLog).c_str(), (logs + L"\\" + errorLog + L".last-error").c_str(), FALSE);
     }
+    Diagnosis found;
+    if (why) found = why(code, seconds);
     if (ended) ended(game, static_cast<long long>(std::time(nullptr)) - seconds, seconds, code);
     const bool crashed = (code & 0xf0000000u) == 0xc0000000u && code != 0xcfffffffu;
     wchar_t hex[16];
     std::swprintf(hex, 16, L"0x%lx", code);
-    if (crashed) Report(State::Failed, L"O jogo parou de repente (código " + std::wstring(hex) + L") depois de " + std::to_wstring(seconds) + L" s. Veja " + errorLog + L" na aba Log.");
-    else if (code != 0 && seconds < 90 && ProfileFor(game.titleId).bloodborne) Report(State::Failed, L"O port do Bloodborne parou ao preparar o jogo (código " + std::to_wstring(code) + L"). Veja game.log na aba Log.");
+    if (!found.reason.empty()) {
+        // The reason stays in the log too, so the error report has it.
+        const std::string line = "por que: " + found.reason + (found.detail.empty() ? "" : " [" + Utf8(found.detail) + "]") + "\r\n";
+        HANDLE journal = CreateFileW((logs + L"\\launcher.log").c_str(), FILE_APPEND_DATA, FILE_SHARE_READ, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (journal != INVALID_HANDLE_VALUE) { DWORD put = 0; WriteFile(journal, line.data(), static_cast<DWORD>(line.size()), &put, nullptr); CloseHandle(journal); }
+        Report(State::Failed, L"O jogo fechou depois de " + std::to_wstring(seconds) + L" s (código " + std::wstring(hex) + L").", found);
+    } else if (crashed) Report(State::Failed, L"O jogo parou de repente (código " + std::wstring(hex) + L") depois de " + std::to_wstring(seconds) + L" s. Veja " + errorLog + L" na aba Log.");
+    else if (code != 0 && seconds < 90 && kRangaAlpha && ProfileFor(game.titleId).bloodborne) Report(State::Failed, L"O port do Bloodborne parou ao preparar o jogo (código " + std::to_wstring(code) + L"). Veja game.log na aba Log.");
     else Report(State::Finished, L"Jogo fechado depois de " + std::to_wstring(seconds / 60) + L" min " + std::to_wstring(seconds % 60) + L" s.");
 }
 
@@ -374,6 +390,7 @@ std::wstring FindPython(const std::wstring& logs) {
 }
 
 void Runner::RunBloodborne(const std::wstring& root, const Game& game, const Options& options) {
+    if (!kRangaAlpha) return;
     const std::wstring engine = BloodborneEngine(root);
     const std::wstring workspace = game.workspace;
     const std::wstring logs = workspace + L"\\logs";
@@ -462,9 +479,29 @@ void Runner::RunExternal(const std::wstring& root, const Game& game, const Optio
         Report(State::Failed, L"O jogo não está mais em " + game.folder + L". Use \"Trocar\" nas opções.");
         return;
     }
+    // A file that cannot be a game is told before the emulator opens and refuses it.
+    if (const Diagnosis file = CheckGameFile(rom, true); !file.reason.empty()) {
+        Report(State::Failed, L"", file);
+        return;
+    }
     // Named here instead of the emulator opening to an error or a black screen.
     if (const std::wstring missing = MissingFiles(root, game.system, engine, rom); !missing.empty()) {
-        Report(State::Failed, missing);
+        // The folder named in it, for a button that opens it.
+        Diagnosis why;
+        why.sure = true;
+        why.reason = Utf8(missing);
+        if (const size_t at = missing.find(root + L"\\"); at != std::wstring::npos) {
+            std::wstring folder = missing.substr(at);
+            if (const size_t end = folder.find(L". "); end != std::wstring::npos) folder.resize(end);
+            MakeFolders(folder);
+            if (IsDirectory(folder)) {
+                why.fix = Diagnosis::Fix::OpenFolder;
+                why.folder = folder;
+            }
+        } else if (missing.find(L"vc_redist") != std::wstring::npos) {
+            why.fix = Diagnosis::Fix::VcRuntime;
+        }
+        Report(State::Failed, L"", why);
         return;
     }
     MakeFolders(workspace);
@@ -514,7 +551,8 @@ void Runner::RunExternal(const std::wstring& root, const Game& game, const Optio
     // The PC that hosts the Switch room joins it right here, not through the tunnel: through playit its own game's
     // packets went out to playit's server and back, which adds delay and one more thing that can drop (20/11/2026 the
     // tunnel didn't answer in time and Mario Kart lost the friend). Only for this run; the game keeps its address.
-    if (engine.native && game.system == L"SWITCH" && ReadCoreOption(game, "eden_sala") == "entrar") {
+    if (engine.native && !options.room.empty()) command += L" --option \"" + Wide(options.room) + L"\"";
+    else if (engine.native && game.system == L"SWITCH" && ReadCoreOption(game, "eden_sala") == "entrar") {
         std::string address = ReadCoreOption(game, "eden_sala_endereco");
         // The Porta field holds the room's own port (24872); the one in a tunnel address is playit's, which no room has.
         const int port = std::atoi(ReadCoreOption(game, "eden_sala_porta").c_str());
@@ -534,7 +572,7 @@ void Runner::RunExternal(const std::wstring& root, const Game& game, const Optio
         }
     }
     // The PC that runs the Xbox hub reaches it here too, not through its own tunnel.
-    if (engine.native && game.system == L"XBOX" && ReadCoreOption(game, "xemu_network_backend") == "udp") {
+    if (options.room.empty() && engine.native && game.system == L"XBOX" && ReadCoreOption(game, "xemu_network_backend") == "udp") {
         const std::string hub = ReadCoreOption(game, "xemu_network_udp_remote");
         if (!hub.empty() && hub.rfind("127.0.0.1", 0) != 0 && RoomServerEnabled(root) && ExtraRunning(root, Extra::Classics))
             command += L" --option \"xemu_network_udp_remote=127.0.0.1:" + std::to_wstring(XboxHubPort(root)) + L"\"";
@@ -545,6 +583,9 @@ void Runner::RunExternal(const std::wstring& root, const Game& game, const Optio
         HANDLE journal = CreateFileW((logs + L"\\launcher.log").c_str(), FILE_APPEND_DATA, FILE_SHARE_READ, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
         if (journal != INVALID_HANDLE_VALUE) { DWORD put = 0; WriteFile(journal, line.data(), static_cast<DWORD>(line.size()), &put, nullptr); CloseHandle(journal); }
     }
+#ifdef RANGA_ALPHA_EXTRA
+    AlphaExtra::Prepare(root, game, options, engine, rom, logs, skip, skippable, [this](const std::wstring& text) { Report(State::Preparing, text); });
+#endif
     SECURITY_ATTRIBUTES inherit{sizeof(inherit), nullptr, TRUE};
     HANDLE out = CreateFileW((logs + L"\\game.log").c_str(), GENERIC_WRITE, FILE_SHARE_READ, &inherit, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     DeleteFileW((logs + L"\\game.err").c_str());
@@ -558,7 +599,16 @@ void Runner::RunExternal(const std::wstring& root, const Game& game, const Optio
     // Emulators keep their settings, BIOS and saves beside themselves when portable, so they start from their own folder.
     // Ranga Retro tells the console by it, for RetroAchievements (retro/Achievements.hpp).
     SetEnvironmentVariableW(L"RANGA_SISTEMA", game.system.c_str());
+    // A core or DLL Windows cannot load fails with a code (told in plain words, Diagnosis.hpp) instead of stopping at
+    // Windows' own error box. The program started gets this process's error mode.
+    SetErrorMode(GetErrorMode() | SEM_FAILCRITICALERRORS);
+#ifdef RANGA_ALPHA_EXTRA
+    AlphaExtra::Environment(root, game, options, true);
+#endif
     const BOOL started = CreateProcessW(nullptr, command.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, exeFolder.c_str(), &startup, &process);
+#ifdef RANGA_ALPHA_EXTRA
+    AlphaExtra::Environment(root, game, options, false);
+#endif
     if (out != INVALID_HANDLE_VALUE) CloseHandle(out);
     if (!started) {
         Report(State::Failed, L"O emulador não pôde ser iniciado (" + engine.exe + L").");
@@ -568,7 +618,8 @@ void Runner::RunExternal(const std::wstring& root, const Game& game, const Optio
     const std::wstring emulator = engine.presetName.empty() ? FileName(engine.exe) : engine.presetName;
     Report(State::Running, L"Rodando " + game.title + L" no " + emulator + L"...");
     if (engine.embed) EmbedUntilExit(process, game.title, options.borderless);
-    Await(process, logs, game, L"game.log");
+    Await(process, logs, game, L"game.log",
+          [&](unsigned long code, unsigned long seconds) { return Diagnose(root, game, engine, rom, options, code, seconds); });
 }
 
 }

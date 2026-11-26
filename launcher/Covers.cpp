@@ -72,6 +72,9 @@ std::wstring Unescape(const std::string& href) {
 // GET https://<host><path>; the HTTP status, or 0 when the server could not be reached.
 int Get(const wchar_t* host, const std::wstring& path, std::string& body, bool secure = true) {
     body.clear();
+#ifdef RANGA_ALPHA
+    return 0;
+#endif
     HINTERNET session = WinHttpOpen(L"RangaEmu", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (session == nullptr) session = WinHttpOpen(L"RangaEmu", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (session == nullptr) return 0;

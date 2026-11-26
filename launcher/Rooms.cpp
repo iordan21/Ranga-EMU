@@ -180,6 +180,7 @@ void StopRoomServer(const std::wstring& root, const Room& room) {
 }
 
 void StartRoomsOn(const std::wstring& root) {
+    if (kRangaAlpha) return;
     if (!RoomServerEnabled(root)) return;
     for (const Room& room : LoadRooms(root)) {
         if (room.on) StartRoomServer(root, room);
@@ -259,6 +260,9 @@ int ProbeRoom(const std::string& address, int defaultPort, bool tcp) {
     while (!host.empty() && host.front() == ' ') host.erase(0, 1);
     while (!host.empty() && host.back() == ' ') host.pop_back();
     if (host.empty() || port <= 0 || port > 65535) return -1;
+#ifdef RANGA_ALPHA
+    return -1;
+#endif
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return -1;
     addrinfo hints{};
@@ -306,6 +310,90 @@ int ProbeRoom(const std::string& address, int defaultPort, bool tcp) {
     }
     WSACleanup();
     return result;
+}
+
+namespace {
+
+struct KindInfo {
+    const char* key;
+    int port;
+};
+constexpr KindInfo kKinds[] = {{"switch", 24872}, {"3ds", 24874}, {"classicos", 24873}, {"xbox", 24875}, {"ps3", 31313}};
+
+// A plain host name or IPv4, with ":port" when port is asked for; empty when it is anything else.
+std::string PlainAddress(std::string text, bool port) {
+    while (!text.empty() && (text.back() == ' ' || text.back() == '\r' || text.back() == '\n')) text.pop_back();
+    while (!text.empty() && text.front() == ' ') text.erase(0, 1);
+    if (text.size() > 120) return "";
+    const size_t colon = text.find(':');
+    if (port != (colon != std::string::npos)) return "";
+    const std::string host = text.substr(0, colon);
+    if (host.empty() || host.front() == '-' || host.front() == '.') return "";
+    for (const char c : host) if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '.' || c == '-')) return "";
+    if (port) {
+        const std::string number = text.substr(colon + 1);
+        if (number.empty() || number.size() > 5 || number.find_first_not_of("0123456789") != std::string::npos) return "";
+        if (const int value = std::atoi(number.c_str()); value < 1 || value > 65535) return "";
+    }
+    return text;
+}
+
+}
+
+RoomServers ReadRoomServers(const std::string& text) {
+    RoomServers servers;
+    for (size_t start = 0; start < text.size();) {
+        size_t end = text.find('\n', start);
+        if (end == std::string::npos) end = text.size();
+        const std::string line = text.substr(start, end - start);
+        start = end + 1;
+        const size_t tab = line.find('\t');
+        if (tab == std::string::npos) continue;
+        const std::string key = line.substr(0, tab), value = line.substr(tab + 1);
+        if (key == "servidor") servers.host = PlainAddress(value, false);
+        for (int i = 0; i < 5; ++i) if (key == kKinds[i].key) servers.reserve[i] = PlainAddress(value, true);
+    }
+    return servers;
+}
+
+std::string WriteRoomServers(const RoomServers& servers) {
+    std::string text = "servidor\t" + servers.host + "\n";
+    for (int i = 0; i < 5; ++i) if (!servers.reserve[i].empty()) text += std::string(kKinds[i].key) + "\t" + servers.reserve[i] + "\n";
+    return text;
+}
+
+RoomServers LoadRoomServers(const std::wstring& root) {
+    const std::wstring ini = root + L"\\engines.ini";
+    std::string text = "servidor\t" + Utf8(ReadIni(ini, L"Salas", L"servidor", L"")) + "\n";
+    for (const KindInfo& kind : kKinds) text += std::string(kind.key) + "\t" + Utf8(ReadIni(ini, L"Salas", Wide(kind.key).c_str(), L"")) + "\n";
+    return ReadRoomServers(text);
+}
+
+void SaveRoomServers(const std::wstring& root, const RoomServers& servers) {
+    const RoomServers now = LoadRoomServers(root);
+    if (WriteRoomServers(now) == WriteRoomServers(servers)) return;
+    const std::wstring ini = root + L"\\engines.ini";
+    EnsureUnicodeIni(ini);
+    const auto put = [&](const wchar_t* key, const std::string& value) {
+        WritePrivateProfileStringW(L"Salas", key, value.empty() ? nullptr : Wide(value).c_str(), ini.c_str());
+    };
+    put(L"servidor", servers.host);
+    for (int i = 0; i < 5; ++i) put(Wide(kKinds[i].key).c_str(), servers.reserve[i]);
+}
+
+std::string RoomServerAddress(const RoomServers& servers, RoomKind kind) {
+    return servers.host.empty() ? "" : servers.host + ":" + std::to_string(kKinds[static_cast<int>(kind)].port);
+}
+
+std::vector<std::string> RoomWays(const RoomServers& servers, RoomKind kind, const std::string& address) {
+    const std::string own = RoomServerAddress(servers, kind), &reserve = servers.reserve[static_cast<int>(kind)];
+    const auto full = [&](const std::string& text) {
+        return Lower(Wide(text.find(':') == std::string::npos ? text + ":" + std::to_string(kKinds[static_cast<int>(kind)].port) : text));
+    };
+    if (own.empty() || address.empty() || (full(address) != full(own) && (reserve.empty() || full(address) != full(reserve)))) return {address};
+    std::vector<std::string> ways{own};
+    if (!reserve.empty()) ways.push_back(reserve);
+    return ways;
 }
 
 std::vector<std::wstring> LanAddresses() {

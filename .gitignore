@@ -112,3 +112,6 @@ cookies.txt
 
 # Endereços do PC que hospeda (ver launcher/Enderecos.hpp)
 launcher/Enderecos.local.hpp
+
+# Ranga Alpha: consoles privados, nunca publicados
+launcher/alpha/

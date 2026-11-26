@@ -1,6 +1,7 @@
 // Ranga Emu client: a library of games of every console on the left, the chosen game on the right, with Play and its
 // options, cheats and logs, and an Emulators page where each console other than PS5 gets the emulator that runs it.
 #include "Common.hpp"
+#include "AlphaExtra.hpp"
 #include "Enderecos.hpp"
 #include "Covers.hpp"
 #include "Dlss5.hpp"
@@ -18,6 +19,7 @@
 #include "Media.hpp"
 #include "Backup.hpp"
 #include "Cloud.hpp"
+#include "CrashReport.hpp"
 
 #include <d3d11.h>
 #include <shellapi.h>
@@ -62,11 +64,24 @@ namespace {
 
 using namespace Ranga;
 
+// Ranga Alpha (CMakeLists.txt) is a program of its own, which opens beside the normal one.
+#ifdef RANGA_ALPHA
+constexpr const wchar_t* kWindowClass = L"RangaAlphaClient";
+constexpr const wchar_t* kMutex = L"Local\\RangaAlphaLauncher";
+#else
 constexpr const wchar_t* kWindowClass = L"RangaEmuClient";
 constexpr const wchar_t* kMutex = L"Local\\RangaEmuLauncher";
+#endif
 // The oldest Ranga that has everything of the chat this one has (groups, invites, pictures): friends on an older one
 // get a warning in the chat. Also this Ranga's own number when engines.ini has none yet (a copy from the zip).
 constexpr const char* kSocialVersion = "1.4.0";
+
+// "Enviar ao Ranga" (CrashReport.hpp): what goes and what does not, said before anything goes.
+constexpr const char* kCrashSendTip = "Manda ao Ranga a versão, o console, o emulador, o jogo e os logs desta vez, para consertar o erro. "
+                                      "Seu nome de usuário, o nome do PC, e-mails e IPs são tirados dos logs; saves, jogos e conta não vão.";
+constexpr const wchar_t* kCrashAskTail = L" s.\n\nQuer mandar o relatório de erro ao Ranga? Vão a versão, o console, o emulador, o jogo e os logs "
+                                         L"desta vez; seu nome de usuário, o nome do PC, e-mails e IPs são tirados, e saves, jogos e conta não vão.\n\n"
+                                         L"Gerar .zip só faz o arquivo, para você mandar a quem for ajudar.";
 
 // "1.10.2" after "1.9.0": numbers part by part.
 bool OlderVersion(const std::string& a, const std::string& b) {
@@ -322,7 +337,11 @@ struct Look {
 };
 
 constexpr Look kLooks[] = {
+    
+#ifdef RANGA_ALPHA
     {L"PS5", "PS5", 0x3a7bf0, 0x0b1d4a, Glyph::Pad, "Sony", 2020, 0x5b93ff}, {L"PS4", "PS4", 0x2459b8, 0x081633, Glyph::Pad, "Sony", 2013, 0x4f86e8},
+#endif
+   
     {L"PS3", "PS3", 0x4a4e57, 0x0c0d10, Glyph::Arch, "Sony", 2006, 0xc9cdd6}, {L"PS2", "PS2", 0x2b3f8f, 0x070b1f, Glyph::Slab, "Sony", 2000, 0x6e8cff},
     {L"PS1", "PS1", 0x9097a3, 0x2a2c33, Glyph::Disc, "Sony", 1994, 0xc2c7d0}, {L"PSP", "PSP", 0x585c66, 0x111216, Glyph::Wide, "Sony", 2004, 0xb0b5bf},
     {L"SWITCH", "Switch", 0xe4002b, 0x4a0010, Glyph::Hybrid, "Nintendo", 2017, 0xff4560}, {L"WIIU", "Wii U", 0x0aa6d6, 0x00303f, Glyph::Tablet, "Nintendo", 2012, 0x3cc6f2},
@@ -333,7 +352,11 @@ constexpr Look kLooks[] = {
     {L"NES", "NES", 0xd21a38, 0x3b0610, Glyph::Cartridge, "Nintendo", 1983, 0xff5a6a}, {L"MD", "MD", 0x45474d, 0x0a0a0a, Glyph::Cartridge, "Sega", 1988, 0xd6d8de},
     {L"SMS", "SMS", 0xd03434, 0x2d0808, Glyph::Cartridge, "Sega", 1985, 0xff6464}, {L"SEGACD", "Sega CD", 0x3a4aa0, 0x0a0f2b, Glyph::Disc, "Sega", 1991, 0x7d8ef0},
     {L"SATURN", "Saturn", 0x4a4e94, 0x101129, Glyph::Disc, "Sega", 1994, 0x8a8ee6}, {L"DC", "DC", 0xf47a30, 0x4a1a03, Glyph::Disc, "Sega", 1998, 0xffa25c},
-    {L"XBOX", "Xbox", 0x36a336, 0x0a2a0a, Glyph::Chest, "Microsoft", 2001, 0x62d262}, {L"X360", "360", 0x78cc56, 0x1b3a10, Glyph::Pad, "Microsoft", 2005, 0x96e070},
+    {L"XBOX", "Xbox", 0x36a336, 0x0a2a0a, Glyph::Chest, "Microsoft", 2001, 0x62d262}, 
+#ifdef RANGA_ALPHA_EXTRA
+#include "alpha/Consoles.inc"
+#endif
+    {L"X360", "360", 0x78cc56, 0x1b3a10, Glyph::Pad, "Microsoft", 2005, 0x96e070},
     {L"PCE", "PCE", 0xf2962a, 0x46230a, Glyph::Cartridge, "NEC", 1987, 0xffad4d}, {L"A2600", "2600", 0xa8784a, 0x2b1a0c, Glyph::Cartridge, "Atari", 1977, 0xd8a472},
     {L"ARCADE", "Arcade", 0xe0306e, 0x3a0620, Glyph::Arcade, "", 0, 0xff5a96},
 };
@@ -892,7 +915,7 @@ struct Client {
         t = std::clamp(t, 0.0f, 1.0f);
         return 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);
     }
-    std::wstring console = L"PS5";
+    std::wstring console = kRangaAlpha ? L"PS5" : L"PS3";
     int gridFocus = 0;
     bool gridMoved = false;
     float homeScroll = 0, homeTarget = 0;
@@ -922,6 +945,8 @@ struct Client {
         if (const wchar_t* start = _wgetenv(L"RANGA_CLIENT_PAGE"); start != nullptr && std::wstring(start) == L"chat") startChat = true;
         // RANGA_CLIENT_PAGE=apps (tests): opens on the Apps store (what is installed; the list is not fetched).
         if (const wchar_t* start = _wgetenv(L"RANGA_CLIENT_PAGE"); start != nullptr && std::wstring(start) == L"apps") storeOpen = true;
+        // RANGA_CLIENT_PAGE=arquivos (tests): opens on Emuladores > Arquivos do Ranga.
+        if (const wchar_t* start = _wgetenv(L"RANGA_CLIENT_PAGE"); start != nullptr && std::wstring(start) == L"arquivos") enginesPage = openFilesTab = true;
     }
     ~Client() {
         if (updateThread.joinable()) updateThread.join();
@@ -1712,6 +1737,8 @@ struct Client {
 
     void IntegrityTab(float scale) {
         ImGui::Dummy(ImVec2(0, 4 * scale));
+        VersionSection(scale);
+        ImGui::Dummy(ImVec2(0, 4 * scale));
         ImGui::TextDisabled("Confere o RangaEmu.exe, o ranga_retro.exe e os núcleos (cores) com a lista assinada da última versão: o que faltar ou estiver "
                             "diferente (corrompido) pode ser baixado de novo. Emuladores, BIOS, saves e jogos não fazem parte da atualização e não entram aqui.");
         ImGui::Dummy(ImVec2(0, 4 * scale));
@@ -1774,12 +1801,14 @@ struct Client {
     }
 
     void StartUpdateCheck() {
+        if (updateThread.joinable()) updateThread.join();
+        updateHidden = false;
         updateState = UpdateState::Checking;
         updateThread = std::thread([this] {
             UpdateInfo info = CheckUpdate(library.Root());
             std::lock_guard guard(updateLock);
             updateInfo = info;
-            if (!info.error.empty()) {
+            if (!info.error.empty() || info.older || info.declined) {
                 updateState = UpdateState::Idle;
             } else if (info.changed.empty()) {
                 // Already this version's files: only the version is noted.
@@ -1820,6 +1849,10 @@ struct Client {
             updateState = UpdateState::Failed;
             return;
         }
+        Reopen();
+    }
+
+    void Reopen() {
         STARTUPINFOW startup{sizeof(startup)};
         PROCESS_INFORMATION process{};
         std::wstring command = L"\"" + library.Root() + L"\\RangaEmu.exe\" --atualizado";
@@ -1830,6 +1863,60 @@ struct Client {
         }
         PostQuitMessage(0);
     }
+
+    // Emuladores > Arquivos do Ranga, on top: this version, going back to the one before and the betas.
+    void VersionSection(float scale) {
+        const std::wstring& root = library.Root();
+        // The folder is read every 2 s at most.
+        if (previousAt == 0 || GetTickCount64() - previousAt > 2000) {
+            previousAt = GetTickCount64();
+            previousVersion = Previous(root);
+        }
+        const std::string number = InstalledVersionName(root);
+        const std::string shown = number.empty() ? InstalledUpdate(root) : number;
+        if (!shown.empty()) ImGui::Text("Versão instalada: %s", shown.c_str());
+        const UpdateState update = updateState;
+        const bool busy = runner.Busy() || update == UpdateState::Downloading || update == UpdateState::Ready || checkState == CheckState::Checking;
+        if (!previousVersion.version.empty()) {
+            const std::string back = previousVersion.name.empty() ? previousVersion.version : previousVersion.name;
+            ImGui::BeginDisabled(busy);
+            if (ImGui::Button((Idioma::Tr(std::string("Voltar para a versão")) + " " + back + "###voltarVersao").c_str(), ImVec2(0, 38 * scale))) {
+                pending = [this] {
+                    Confirm(L"Voltar para a versão anterior? Jogos e saves ficam como estão. O Ranga fecha e abre de novo.", [this] {
+                        const std::wstring error = RollBack(library.Root());
+                        if (error.empty()) Reopen();
+                        else Notify(error);
+                    });
+                };
+            }
+            ImGui::EndDisabled();
+            ImGui::TextDisabled("Se a atualização deu problema, isto põe de volta os programas de antes dela.");
+        }
+        if (!DeclinedUpdate(root).empty()) {
+            ImGui::TextDisabled("Você voltou de uma atualização: ela não é mais oferecida, só a próxima.");
+            ImGui::BeginDisabled(busy || update == UpdateState::Checking);
+            if (ImGui::Button("Oferecer de novo")) pending = [this] {
+                ForgetDeclined(library.Root());
+                StartUpdateCheck();
+            };
+            ImGui::EndDisabled();
+        }
+        // The hosting PC publishes; it takes no updates, so no betas either.
+        if (!RoomServerEnabled(root)) {
+            bool beta = BetaChannel(root);
+            ImGui::BeginDisabled(busy || update == UpdateState::Checking);
+            if (ImGui::Checkbox("Receber versões beta", &beta)) pending = [this, beta] {
+                SetBetaChannel(library.Root(), beta);
+                StartUpdateCheck();
+            };
+            ImGui::EndDisabled();
+            ImGui::TextDisabled("Chegam antes e podem ter defeito. Ao desligar, o Ranga fica como está até sair uma versão normal mais nova.");
+        }
+        ImGui::Dummy(ImVec2(0, 8 * scale));
+        ImGui::Separator();
+    }
+    PreviousVersion previousVersion;
+    ULONGLONG previousAt = 0;
 
     void UpdateBar(float scale) {
         const UpdateState state = updateState;
@@ -1850,7 +1937,7 @@ struct Client {
         ImGui::PushTextWrapPos(0);
         if (state == UpdateState::Available) {
             const double megabytes = static_cast<double>(updateInfo.download) / (1024.0 * 1024.0);
-            ImGui::Text("Atualização do Ranga disponível (%s), %.0f MB", updateInfo.version.c_str(), megabytes);
+            ImGui::Text("Atualização do Ranga disponível (%s), %.0f MB", (updateInfo.name.empty() ? updateInfo.version : updateInfo.name).c_str(), megabytes);
             if (!updateInfo.notes.empty()) ImGui::TextDisabled("%s", updateInfo.notes.c_str());
             const bool busy = runner.Busy();
             ImGui::BeginDisabled(busy);
@@ -1908,7 +1995,7 @@ struct Client {
         return found != engines.end() ? found->second : none;
     }
 
-    static bool External(const Game& game) { return game.system != L"PS5" && !ProfileFor(game.titleId).bloodborne; }
+    static bool External(const Game& game) { return !kRangaAlpha || (game.system != L"PS5" && !ProfileFor(game.titleId).bloodborne); }
 
     // The BIOS, keys or firmware a console's emulator is missing (MissingFiles) for one game, or for the console's own
     // system when folder is empty. It reads folders, so the answer is kept for 2 s.
@@ -1937,6 +2024,9 @@ struct Client {
         WritePrivateProfileStringW(L"Ranga", key, Wide(value).c_str(), ini.c_str());
     }
 
+    // What was typed, else the group's own server of rooms.
+    std::string OrRoomServer(const std::string& typed, RoomKind kind) const { return typed.empty() ? RoomServerAddress(LoadRoomServers(library.Root()), kind) : typed; }
+
     void LoadOnline(const Game& game) {
         onlineOn = ReadCoreOption(game, "ranga_online") == "ligado";
         const auto fill = [&](std::array<char, 128>& field, const char* key, std::string remembered) {
@@ -1949,7 +2039,7 @@ struct Client {
         // What was last typed for any game; the name falls back to the Switch player's.
         std::string name = Utf8(RememberedOnline(L"online_nome"));
         if (name.empty()) name = Utf8(RememberedSwitch(L"jogador"));
-        fill(onlineAddress, "ranga_online_endereco", Utf8(RememberedOnline(L"online_endereco")));
+        fill(onlineAddress, "ranga_online_endereco", OrRoomServer(Utf8(RememberedOnline(L"online_endereco")), RoomKind::Classics));
         fill(onlineName, "ranga_online_nome", name);
         const std::string delayText = ReadCoreOption(game, "ranga_online_atraso");
         const int delay = std::atoi(delayText.c_str());
@@ -1978,7 +2068,7 @@ struct Client {
         };
         std::string name = Utf8(RememberedOnline(L"online_nome"));
         if (name.empty()) name = Utf8(RememberedSwitch(L"jogador"));
-        fill(room3dsAddress, "citra_sala_endereco", Utf8(RememberedOnline(L"sala3ds_endereco")));
+        fill(room3dsAddress, "citra_sala_endereco", OrRoomServer(Utf8(RememberedOnline(L"sala3ds_endereco")), RoomKind::N3ds));
         fill(room3dsName, "citra_sala_nome", name);
         LoadServerPorts();
     }
@@ -2012,7 +2102,7 @@ struct Client {
                     value.copy(field.data(), field.size() - 1);
                     if (value != own) WriteCoreOption(*game, key, value);
                 };
-                fill(roomAddress, "eden_sala_endereco", L"sala_endereco", roomPublic ? "" : kPrivateSwitchRoom);
+                fill(roomAddress, "eden_sala_endereco", L"sala_endereco", roomPublic ? "" : OrRoomServer(kPrivateSwitchRoom, RoomKind::Switch).c_str());
                 // A public room is only the one picked from the list, never the private one remembered for the others.
                 if (roomPublic && roomAddress.data() == Utf8(RememberedSwitch(L"sala_endereco"))) SetRoomField(*game, roomAddress, "eden_sala_endereco", "");
                 fill(roomPort, "eden_sala_porta", L"sala_porta", "24872");
@@ -2030,13 +2120,13 @@ struct Client {
             }
             if (ClassicOnline(game->system)) LoadOnline(*game);
             if (game->system == L"3DS") Load3dsRoom(*game);
-            if (const auto* list = ConsoleGraphics(game->system); list != nullptr && EngineFor(game->system).native) {
+            if (const auto* list = ConsoleGraphics(game->system); list != nullptr && (EngineFor(game->system).native || IsAlphaSystem(game->system))) {
                 graphics.clear();
                 for (const auto& option : *list) graphics[option.key] = ReadCoreOption(*game, option.key);
             }
             library.Select(game->titleId);
             // The Bloodborne port and the emulators write everything to game.log; PS5 games put their errors in game.err.
-            logFile = game->system != L"PS5" ? 1 : 0;
+            logFile = !kRangaAlpha || game->system != L"PS5" ? 1 : 0;
         }
     }
 
@@ -2099,7 +2189,7 @@ struct Client {
             return;
         }
         std::string address = Utf8(RememberedSwitch(L"sala_endereco")), port = Utf8(RememberedSwitch(L"sala_porta"));
-        SetRoomField(game, roomAddress, "eden_sala_endereco", address.empty() ? kPrivateSwitchRoom : address);
+        SetRoomField(game, roomAddress, "eden_sala_endereco", address.empty() ? OrRoomServer(kPrivateSwitchRoom, RoomKind::Switch) : address);
         SetRoomField(game, roomPort, "eden_sala_porta", port.empty() ? "24872" : port);
         SetRoomField(game, roomPassword, "eden_sala_senha", Utf8(RememberedSwitch(L"sala_senha")));
     }
@@ -2310,7 +2400,7 @@ struct Client {
     static std::wstring ArtFile(const Game& game, bool icon) {
         const std::wstring art = game.workspace + L"\\art";
         std::vector<std::wstring> files = {art + L"\\cover.png"};
-        if (game.system == L"PS5" || game.system == L"PS4") {
+        if (kRangaAlpha && (game.system == L"PS5" || game.system == L"PS4")) {
             // PS4 games have their background in pic1.png.
             if (icon) files.push_back(game.folder + L"\\sce_sys\\icon0.png");
             else files.insert(files.end(), {game.folder + L"\\sce_sys\\pic0.png", game.folder + L"\\sce_sys\\pic1.png"});
@@ -2367,7 +2457,7 @@ struct Client {
     }
 
     void AddGame() {
-        const wchar_t* title = ShowPs4Ps5(library.Root()) ? L"Escolha a pasta do jogo (PS5, Bloodborne, PS3, Xbox 360 ou Wii U)" : L"Escolha a pasta do jogo (PS3, Xbox 360 ou Wii U)";
+        const wchar_t* title = kRangaAlpha ? L"Escolha a pasta do jogo (PS5, Bloodborne" RANGA_ALPHA_EXTRA_LIST ")" : L"Escolha a pasta do jogo (PS3, Xbox 360 ou Wii U)";
         Browse(title, library.Root(), true, {}, [this](const std::wstring& folder) {
             std::wstring error;
             const int index = library.Add(folder, error);
@@ -2454,11 +2544,18 @@ struct Client {
         std::wstring text;
         // Done on Sim; a message has none and shows only OK.
         std::function<void()> yes;
+        // A question with two ways to say yes: the first button's label (instead of Sim), and a second button.
+        std::string yesLabel;
+        std::string otherLabel;
+        std::function<void()> other;
     };
     std::vector<Notice> notices;
 
     void Notify(const std::wstring& text) { notices.push_back({text, nullptr}); }
     void Confirm(const std::wstring& text, std::function<void()> yes) { notices.push_back({text, std::move(yes)}); }
+    void Choose(const std::wstring& text, std::string yesLabel, std::function<void()> yes, std::string otherLabel, std::function<void()> other) {
+        notices.push_back({text, std::move(yes), std::move(yesLabel), std::move(otherLabel), std::move(other)});
+    }
 
     void NoticeWindow(float scale) {
         if (notices.empty()) return;
@@ -2479,9 +2576,13 @@ struct Client {
                 ImGui::PushStyleColor(ImGuiCol_Button, Color(kAccent));
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Color(kAccentHover));
                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, Color(kAccent));
-                if (ImGui::Button("Sim", button)) answer = 1;
+                if (ImGui::Button(notice.yesLabel.empty() ? "Sim" : notice.yesLabel.c_str(), notice.yesLabel.empty() ? button : ImVec2(0, button.y))) answer = 1;
                 ImGui::PopStyleColor(3);
                 ImGui::SameLine(0, 12 * scale);
+                if (notice.other) {
+                    if (ImGui::Button(notice.otherLabel.c_str(), ImVec2(0, button.y))) answer = 2;
+                    ImGui::SameLine(0, 12 * scale);
+                }
             }
             if (ImGui::Button(question ? "Não" : "OK", button)) answer = 0;
             // A question starts on Não, so a stray press undoes nothing.
@@ -2492,6 +2593,7 @@ struct Client {
             if (ImGui::IsKeyPressed(ImGuiKey_Escape, false) || ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false)) answer = 0;
             if (answer >= 0) {
                 if (answer == 1) pending = notice.yes;
+                if (answer == 2) pending = notice.other;
                 notices.erase(notices.begin());
                 ImGui::CloseCurrentPopup();
             }
@@ -2737,13 +2839,15 @@ struct Client {
 
     std::vector<Shelf> Shelves() {
         std::vector<Shelf> shelves;
-        if (ShowPs4Ps5(library.Root())) {
+        if (kRangaAlpha) {
             shelves.push_back({L"PS5"});
             for (const auto& game : library.Games()) {
                 if (game.system == L"PS4") { shelves.push_back({L"PS4"}); break; }
             }
         }
-        for (const auto& system : Systems()) shelves.push_back({system.id});
+        for (const auto& system : Systems()) {
+            if (SystemShown(library.Root(), system.id)) shelves.push_back({system.id});
+        }
         for (auto& shelf : shelves) {
             for (const auto& game : library.Games()) shelf.count += game.system == shelf.id;
         }
@@ -2795,8 +2899,8 @@ struct Client {
 
     // How a console's games run, in a few words for the home screen.
     std::string HowItRuns(const std::wstring& id) {
-        if (id == L"PS5") return "Roda no próprio Ranga";
-        if (id == L"PS4") return "Só o Bloodborne, como experimento";
+        if (kRangaAlpha && id == L"PS5") return "Roda no próprio Ranga";
+        if (kRangaAlpha && id == L"PS4") return "Só o Bloodborne, como experimento";
         const Engine& engine = EngineFor(id);
         if (engine.native) return engine.ready ? "Roda dentro do Ranga" : "Falta: " + Utf8(engine.problem);
         if (engine.ready) return "Pelo " + (engine.presetName.empty() ? Utf8(FileName(engine.exe)) : Utf8(engine.presetName));
@@ -3031,7 +3135,7 @@ struct Client {
             homeRow = homeColumn = homeGamesShown = 0;
         }
         const Engine& engine = EngineFor(console);
-        const std::wstring missing = console == L"PS5" || console == L"PS4" ? L"" : MissingFor(console, L"");
+        const std::wstring missing = kRangaAlpha && (console == L"PS5" || console == L"PS4") ? L"" : MissingFor(console, L"");
         const char* systemLabel = SystemButton(console);
         const bool systemButton = systemLabel != nullptr && engine.native && engine.ready && missing.empty();
         const auto games = ConsoleGames(console);
@@ -3583,7 +3687,7 @@ struct Client {
                 ImGui::SetItemDefaultFocus();
                 ShowRing();
             }
-            ImGui::TextDisabled(ShowPs4Ps5(library.Root()) ? "   PS5, Bloodborne, PS3, Xbox 360, Wii U" : "   PS3, Xbox 360, Wii U");
+            ImGui::TextDisabled(kRangaAlpha ? "   PS5, Bloodborne" RANGA_ALPHA_EXTRA_LIST : "   PS3, Xbox 360, Wii U");
             ImGui::Separator();
             if (ImGui::Selectable("Arquivo do jogo...")) pending = [this] { AddGameFile(); };
             ImGui::TextDisabled("   ISO, CHD, ROM, NSP, WBFS e outros");
@@ -3637,7 +3741,12 @@ struct Client {
                                 "ou botão PS/Guide) > Opções do core mostra todas as opções do console.",
                                 label, labelWidth, scale);
         }
-        if (profile.sonsOfSparta) {
+#ifdef RANGA_ALPHA_EXTRA
+        if (const auto* list = ConsoleGraphics(game.system); list != nullptr && IsAlphaSystem(game.system))
+            GraphicsSection(game, *list, ("Gráficos do " + SystemName(game.system) + " (só este jogo)").c_str(), AlphaExtra::GraphicsNote(game.system),
+                            label, labelWidth, scale);
+#endif
+        if (kRangaAlpha && profile.sonsOfSparta) {
             const char* resolutions[] = {"Manter a do jogo", "3840 x 2160 (4K)", "2560 x 1440", "1920 x 1080"};
             const int indexes[] = {-1, 0, 6, 8};
             int current = 0;
@@ -3653,7 +3762,7 @@ struct Client {
                 ImGui::SameLine();
                 ImGui::TextDisabled("X / A / Enter pula a fala atual");
             }
-        } else if (profile.bloodborne) {
+        } else if (kRangaAlpha && profile.bloodborne) {
             const char* rates[] = {"30 FPS (original)", "60 FPS", "90 FPS", "Sem limite"};
             const wchar_t* rateValues[] = {L"30", L"60", L"90", L"uncap"};
             int rate = 1;
@@ -3789,7 +3898,7 @@ struct Client {
         ImGui::Dummy(ImVec2(0, 6 * scale));
         ImGui::Separator();
         ImGui::Dummy(ImVec2(0, 2 * scale));
-        const bool isFile = !IsDirectory(game.folder) && game.system != L"PS5" && game.system != L"PS4";
+        const bool isFile = !IsDirectory(game.folder) && !(kRangaAlpha && (game.system == L"PS5" || game.system == L"PS4"));
         ImGui::TextDisabled(isFile ? "Arquivo do jogo" : "Pasta do jogo");
         ImGui::TextWrapped("%s", Utf8(game.folder).c_str());
         if (ImGui::Button("Abrir pasta")) {
@@ -3803,7 +3912,7 @@ struct Client {
                    isFile ? GameFileFilters() : std::vector<std::pair<std::wstring, std::wstring>>{},
                    [this, titleId = game.titleId, system = game.system](const std::wstring& path) {
                        // PS5 and PS4 games are found again by their title id; other consoles keep their entry and workspace.
-                       if (system == L"PS5" || system == L"PS4") {
+                       if (kRangaAlpha && (system == L"PS5" || system == L"PS4")) {
                            std::wstring error;
                            const int index = library.Add(path, error);
                            if (index < 0) Notify(error);
@@ -4052,7 +4161,7 @@ struct Client {
         if (ImGui::Checkbox("##xboxOnline", &on)) {
             WriteCoreOption(game, "xemu_network_backend", on ? "udp" : "disabled");
             if (on && ReadCoreOption(game, "xemu_network_udp_remote").empty()) {
-                const std::string remembered = Utf8(RememberedOnline(L"xbox_hub"));
+                const std::string remembered = OrRoomServer(Utf8(RememberedOnline(L"xbox_hub")), RoomKind::Xbox);
                 WriteCoreOption(game, "xemu_network_udp_remote", remembered.empty() ? "127.0.0.1:" + std::to_string(XboxHubPort(library.Root())) : remembered);
             }
             xboxHubAddress.fill(0);
@@ -4218,7 +4327,10 @@ struct Client {
             if (mode == 0) {
                 if (ps3ServerAddress[0] == 0) {
                     std::string current = ReadCoreOption(game, "rpcs3_servidor_endereco");
-                    if (current.empty()) current = Utf8(RememberedOnline(L"ps3_servidor"));
+                    if (current.empty()) {
+                        current = OrRoomServer(Utf8(RememberedOnline(L"ps3_servidor")), RoomKind::Ps3);
+                        if (!current.empty()) WriteCoreOption(game, "rpcs3_servidor_endereco", current);
+                    }
                     current.copy(ps3ServerAddress.data(), ps3ServerAddress.size() - 1);
                 }
                 label("Endereço do servidor");
@@ -5021,6 +5133,51 @@ struct Client {
         }
     }
 
+    // "Por que não abriu?": the reason, what to do and the button that does it, under Jogar.
+    void WhyCard(const Game& game, const Diagnosis& why, float right, float scale) {
+        ImGui::Dummy(ImVec2(0, 4 * scale));
+        ImGui::PushTextWrapPos(right);
+        ImGui::PushStyleColor(ImGuiCol_Text, Color(kRed));
+        ImGui::TextUnformatted(why.sure ? "Por que não abriu?" : "O que pode ter acontecido");
+        ImGui::PopStyleColor();
+        ImGui::TextWrapped("%s", Idioma::Tr(why.reason).c_str());
+        if (!why.detail.empty()) ImGui::TextDisabled("%s", Utf8(why.detail).c_str());
+        if (!why.todo.empty()) ImGui::TextWrapped("%s", Idioma::Tr(why.todo).c_str());
+        if (const std::wstring said = runner.Message(); !said.empty()) ImGui::TextDisabled("%s", Utf8(said).c_str());
+        ImGui::PopTextWrapPos();
+        const ImVec2 size(0, 36 * scale);
+        bool any = true;
+        if (why.fix == Diagnosis::Fix::OpenFolder) {
+            if (ImGui::Button("Abrir a pasta###porqueConserto", size)) ShellExecuteW(window, L"open", why.folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        } else if (why.fix == Diagnosis::Fix::Repair) {
+            if (ImGui::Button("Verificar agora###porqueConserto", size)) pending = [this] {
+                enginesPage = true;
+                openFilesTab = true;
+                StartIntegrityCheck();
+            };
+        } else if (why.fix == Diagnosis::Fix::VcRuntime) {
+            if (ImGui::Button("Baixar da Microsoft###porqueConserto", size))
+                ShellExecuteW(window, L"open", L"https://aka.ms/vs/17/release/vc_redist.x64.exe", nullptr, nullptr, SW_SHOWNORMAL);
+        } else if (why.fix == Diagnosis::Fix::Dlss5Off) {
+            if (ImGui::Button("Desligar o DLSS 5 e tentar de novo###porqueConserto", size)) pending = [this, game] {
+                options.dlss5 = false;
+                SaveOptions(game, options);
+                if (Game* now = Current(); now != nullptr && now->titleId == game.titleId) Play(*now);
+            };
+        } else {
+            any = false;
+        }
+        if (any) ImGui::SameLine();
+        if (ImGui::Button("Relatório de erro###porqueRelatorio", size)) pending = [this, game] { MakeErrorReport(game); };
+        if (CrashReport::Enabled()) {
+            ImGui::SameLine();
+            ImGui::BeginDisabled(crashSending);
+            if (ImGui::Button(crashSending ? "Enviando...###porqueEnviar" : "Enviar ao Ranga###porqueEnviar", size)) pending = [this, game] { SendCrashReport(game); };
+            ImGui::EndDisabled();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%s", kCrashSendTip);
+        }
+    }
+
     // Relatório de erro: the game's own logs, the emulator's log for its console and a short summary (Ranga's version,
     // the game, how its last run ended) in one .zip under relatorios\, which Explorer then shows selected. Nothing
     // personal goes in: no saves, keys, BIOS or games, only text logs.
@@ -5071,6 +5228,58 @@ struct Client {
         }
     }
 
+    // "Enviar ao Ranga" (CrashReport.hpp): the same logs as the Relatório de erro, cleaned and sent to the Ranga's
+    // project in Sentry, only on the player's press. code and seconds: how the run ended; 0 reads them from the
+    // launcher log's last "ended," line.
+    std::atomic<bool> crashSending{false};
+    std::mutex crashLock;
+    std::wstring crashAnswer;
+    bool crashAnswered = false;
+
+    void SendCrashReport(const Game& game, unsigned long code = 0, unsigned long seconds = 0) {
+        if (!CrashReport::Enabled() || crashSending.exchange(true)) return;
+        const std::wstring root = library.Root();
+        const std::wstring logs = game.workspace + L"\\logs\\";
+        if (code == 0) {
+            const std::string launcherLog = ReadTail(logs + L"launcher.log", 64 * 1024);
+            if (const size_t ended = launcherLog.rfind("ended, exit code 0x"); ended != std::string::npos)
+                std::sscanf(launcherLog.c_str() + ended, "ended, exit code 0x%lx after %lu s", &code, &seconds);
+        }
+        CrashReport::Report report;
+        report.version = InstalledVersionName(root);
+        report.update = InstalledUpdate(root);
+        report.console = SystemName(game.system);
+        // The emulator by name ("Ranga (nativo, pcsx2)", "Eden"): Sentry groups the reports by it.
+        {
+            const Engine& engine = EngineFor(game.system);
+            report.emulator = !engine.presetName.empty() ? Utf8(engine.presetName) : !engine.exe.empty() ? Utf8(FileName(engine.exe)) : SystemName(game.system);
+        }
+        report.game = Utf8(game.title);
+        report.serial = Utf8(game.serial);
+        report.code = code;
+        report.seconds = seconds;
+        const auto add = [&](const std::wstring& path, const char* as) {
+            if (std::string text = ReadTail(path, 256 * 1024); !text.empty()) report.logs.emplace_back(as, std::move(text));
+        };
+        for (const char* log : {"game.log", "game.log.last-error", "game.err", "launcher.log", "prepare.log", "dlss5.log"}) add(logs + Wide(log), log);
+        if (game.system == L"PS3") add(root + L"\\bios\\retroarch\\rpcs3\\log\\RPCS3.log", "RPCS3.log");
+        if (game.system == L"SWITCH") add(root + L"\\bios\\retroarch\\eden\\log\\eden_log.txt", "eden_log.txt");
+        std::thread([this, report = std::move(report)] {
+            const std::wstring failed = CrashReport::Send(report);
+            std::lock_guard guard(crashLock);
+            crashAnswer = failed.empty() ? L"Relatório enviado. Obrigado: ele ajuda a consertar o Ranga." : failed;
+            crashAnswered = true;
+            crashSending = false;
+        }).detach();
+    }
+
+    void TakeCrashAnswer() {
+        std::lock_guard guard(crashLock);
+        if (!crashAnswered) return;
+        crashAnswered = false;
+        Notify(crashAnswer);
+    }
+
     void LogTab(const Game& game, float scale) {
         ImGui::Dummy(ImVec2(0, 4 * scale));
         ImGui::SetNextItemWidth(160 * scale);
@@ -5082,6 +5291,13 @@ struct Client {
         ImGui::SameLine();
         if (ImGui::Button("Relatório de erro")) pending = [this, game] { MakeErrorReport(game); };
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Junta num .zip os logs deste jogo e do emulador, para mandar a quem for ajudar.");
+        if (CrashReport::Enabled()) {
+            ImGui::SameLine();
+            ImGui::BeginDisabled(crashSending);
+            if (ImGui::Button(crashSending ? "Enviando...###logEnviar" : "Enviar ao Ranga###logEnviar")) pending = [this, game] { SendCrashReport(game); };
+            ImGui::EndDisabled();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%s", kCrashSendTip);
+        }
         ImGui::SameLine();
         ImGui::Checkbox("Seguir o fim", &logFollow);
         // Re-read every second while this game runs, so the tab follows it live.
@@ -5148,7 +5364,8 @@ struct Client {
         bool filesTab = false, backupTab = false, languageTab = false;
         if (ImGui::BeginTabBar("##enginesTabs")) {
             if (ImGui::BeginTabItem("Emuladores")) ImGui::EndTabItem();
-            if (ImGui::BeginTabItem("Arquivos do Ranga")) {
+            if (ImGui::BeginTabItem("Arquivos do Ranga", nullptr, openFilesTab ? ImGuiTabItemFlags_SetSelected : 0)) {
+                openFilesTab = false;
                 filesTab = true;
                 ImGui::EndTabItem();
             }
@@ -5182,6 +5399,7 @@ struct Client {
             if (Lower(FileName(engine.exe)).rfind(L"retroarch", 0) == 0) retroArch = engine.exe;
         }
         for (const auto& system : Systems()) {
+            if (!SystemShown(library.Root(), system.id)) continue;
             const Engine& engine = EngineFor(system.id);
             ImGui::PushID(Utf8(system.id).c_str());
             ImGui::Separator();
@@ -5307,47 +5525,83 @@ struct Client {
         ImGui::EndChild();
     }
 
-    // The room a game will join when it opens, to test first: its address, the port when the address has none, and
-    // whether it is the classics' server (TCP). False when the game plays offline, or when this PC hosts that room
-    // (the game then joins it here, at 127.0.0.1: Runner).
-    bool RoomToCheck(const Game& game, std::string& address, int& port, bool& tcp) {
-        tcp = false;
+    // The room a game will join when it opens, to test first: the ways there in order (the group's server, then its
+    // reserve; or the game's own address) and the core option a way goes in. False when the game plays offline, or when
+    // this PC hosts that room and there is no other way (the game then joins it here, at 127.0.0.1: Runner).
+    struct RoomPlan {
+        RoomKind kind = RoomKind::Classics;
+        std::vector<std::string> ways;
+        std::string option;
+        int port = 0;
+        bool tcp = false;
+        bool hosted = false; // the reserve is this PC's own room: the game goes to it at 127.0.0.1 (Runner)
+    };
+    bool RoomToCheck(const Game& game, RoomPlan& plan) {
+        std::string address;
+        const std::wstring& root = library.Root();
         if (game.system == L"SWITCH" && ReadCoreOption(game, "eden_sala") == "entrar") {
+            plan.kind = RoomKind::Switch;
+            plan.option = "eden_sala_endereco";
             address = ReadCoreOption(game, "eden_sala_endereco");
-            port = std::atoi(ReadCoreOption(game, "eden_sala_porta").c_str());
-            if (port <= 0) port = 24872;
-            if (RoomServerEnabled(library.Root())) {
-                for (const Room& room : LoadRooms(library.Root())) if (RoomRunning(library.Root(), room)) return false;
+            plan.port = std::atoi(ReadCoreOption(game, "eden_sala_porta").c_str());
+            if (plan.port <= 0) plan.port = 24872;
+            if (!address.empty() && address.find(':') == std::string::npos && plan.port != 24872) address += ":" + std::to_string(plan.port);
+            if (RoomServerEnabled(root)) {
+                for (const Room& room : LoadRooms(root)) plan.hosted = plan.hosted || RoomRunning(root, room);
             }
         } else if (game.system == L"3DS" && ReadCoreOption(game, "citra_sala") == "entrar") {
+            plan.kind = RoomKind::N3ds;
+            plan.option = "citra_sala_endereco";
             address = ReadCoreOption(game, "citra_sala_endereco");
-            port = 24874;
+            plan.port = 24874;
         } else if (ClassicOnline(game.system) && ReadCoreOption(game, "ranga_online") == "ligado") {
+            plan.kind = RoomKind::Classics;
+            plan.option = "ranga_online_endereco";
             address = ReadCoreOption(game, "ranga_online_endereco");
-            port = 24873;
-            tcp = true;
+            plan.port = 24873;
+            plan.tcp = true;
+        } else if (game.system == L"XBOX" && ReadCoreOption(game, "xemu_network_backend") == "udp") {
+            // The hub never answers a stranger: only with a server of its own can it be asked, by the classics' port
+            // beside it.
+            plan.kind = RoomKind::Xbox;
+            plan.option = "xemu_network_udp_remote";
+            address = ReadCoreOption(game, "xemu_network_udp_remote");
+            plan.port = 24875;
+            plan.hosted = RoomServerEnabled(root) && ExtraRunning(root, Extra::Classics);
         } else {
             return false;
         }
+        const RoomServers servers = LoadRoomServers(root);
+        plan.ways = RoomWays(servers, plan.kind, address);
+        const bool own = plan.ways.front() == RoomServerAddress(servers, plan.kind);
+        if (plan.kind == RoomKind::Xbox && !own) return false;
+        if (plan.hosted && !own) return false;
         return !address.empty();
     }
 
     std::atomic<bool> playChecking{false}; // the room is being tested before the game opens
 
     void Play(Game& game) {
-        // With a room to join, it is asked first (3 s at most, in the background): a room that does not answer is said
-        // before the game opens, instead of the game finding out in the middle of a race.
+        // With a room to join, it is asked first (3 s at most for each way, in the background): a room that does not
+        // answer is said before the game opens, instead of the game finding out in the middle of a race.
         // (A press can reach here twice in a frame, from the button and from the pad; the second waits for the test.)
         if (playChecking) return;
-        std::string address;
-        int port = 0;
-        bool tcp = false;
-        if (RoomToCheck(game, address, port, tcp)) {
+        RoomPlan plan;
+        if (RoomToCheck(game, plan)) {
             playChecking = true;
-            std::thread([this, id = game.titleId, address, port, tcp] {
-                const bool answered = ProbeRoom(address, port, tcp) >= 0;
+            std::thread([this, id = game.titleId, plan] {
+                int answered = -1;
+                for (int i = 0; i < static_cast<int>(plan.ways.size()) && answered < 0; ++i) {
+                    const std::string& way = plan.ways[static_cast<size_t>(i)];
+                    bool good = false;
+                    // The reserve in this very PC, or an Xbox hub behind playit: nothing to ask.
+                    if (i > 0 && (plan.hosted || plan.kind == RoomKind::Xbox)) good = true;
+                    else if (plan.kind == RoomKind::Xbox) good = ProbeRoom(way.substr(0, way.find(':')), 24873, true) >= 0;
+                    else good = ProbeRoom(way, plan.port, plan.tcp) >= 0;
+                    if (good) answered = i;
+                }
                 std::lock_guard guard(probeLock);
-                checkedPlay = {id, answered ? 1 : 0, address};
+                checkedPlay = {id, true, answered, plan};
             }).detach();
             return;
         }
@@ -5357,34 +5611,41 @@ struct Client {
     // The answer of the test above, picked up on the drawing thread (TakePlayCheck).
     struct PlayCheck {
         std::wstring titleId;
-        int answered = -1; // -1: nothing waiting
-        std::string address;
+        bool ready = false;
+        int answered = -1; // the way that answered; -1: none
+        RoomPlan plan;
     } checkedPlay;
 
     void TakePlayCheck() {
         PlayCheck check;
         {
             std::lock_guard guard(probeLock);
-            if (checkedPlay.answered < 0) return;
+            if (!checkedPlay.ready) return;
             check = std::exchange(checkedPlay, PlayCheck{});
         }
         playChecking = false;
-        for (size_t i = 0; i < library.Games().size(); ++i) {
-            if (library.Games()[i].titleId != check.titleId) continue;
-            if (check.answered == 1) {
-                PlayNow(library.Games()[i]);
-            } else {
-                Confirm(L"A sala " + Wide(check.address) + L" não respondeu: o online não vai funcionar agora (servidor desligado, "
-                        L"túnel do playit fora ou endereço errado).\n\nJogar mesmo assim?",
-                        [this, id = check.titleId] {
-                            for (auto& game : library.Games()) if (game.titleId == id) PlayNow(game);
-                        });
-            }
-            return;
+        const auto play = [this, id = check.titleId](const std::string& way, const std::string& option) {
+            for (auto& game : library.Games()) if (game.titleId == id) return PlayNow(game, way, option);
+        };
+        const bool several = check.plan.ways.size() > 1;
+        if (check.answered == 0) {
+            if (several) play(check.plan.ways[0], check.plan.option);
+            else play("", "");
+        } else if (check.answered > 0) {
+            // Said, and not just done: who is on the group's server and who is on the reserve don't see each other.
+            Confirm(L"O servidor das salas não respondeu. Dá para jogar pela sala reserva (o PC do dono), mas só com quem também entrar por ela. "
+                    L"Avise seus amigos.\n\nJogar pela reserva?",
+                    [play, way = check.plan.ways[static_cast<size_t>(check.answered)], option = check.plan.hosted ? std::string() : check.plan.option] { play(way, option); });
+        } else if (several) {
+            Confirm(L"Nem o servidor das salas nem a sala reserva responderam: o online não vai funcionar agora.\n\nJogar mesmo assim?", [play] { play("", ""); });
+        } else {
+            Confirm(L"A sala " + Wide(check.plan.ways[0]) + L" não respondeu: o online não vai funcionar agora (servidor desligado, "
+                    L"túnel do playit fora ou endereço errado).\n\nJogar mesmo assim?", [play] { play("", ""); });
         }
     }
 
-    void PlayNow(Game& game) {
+    // way: the room that answered; option: the core option it goes in for this run (empty: the game's own address).
+    void PlayNow(Game& game, const std::string& way = "", const std::string& option = "") {
         Save();
         RefreshEngines();
         // For the profile: online or not, and what the friends see as being played.
@@ -5392,12 +5653,15 @@ struct Client {
         playingTitle = Utf8(game.title);
         playingSystem = SystemName(game.system);
         // Playing online, the card carries the way in ("Entrar no jogo" for the friends).
-        const Invite invite = InviteFor(game);
+        Invite invite = InviteFor(game);
+        if (!way.empty() && !invite.mode.empty()) invite.address = way;
         playingInvite = playOnline && !invite.mode.empty() ? InviteText(invite) : "";
         // For Ranga Retro: where F12 keeps the captures, and the invite its menu sends to friends.
         SetEnvironmentVariableW(L"RANGA_CAPTURAS", CapturesFolder(game).c_str());
         SetEnvironmentVariableW(L"RANGA_CONVITE", Wide(InviteText(invite)).c_str());
-        runner.Start(library.Root(), game, options);
+        Options run = options;
+        if (!way.empty() && !option.empty()) run.room = option + "=" + way;
+        runner.Start(library.Root(), game, run);
         logDirty = true;
     }
 
@@ -5507,7 +5771,10 @@ struct Client {
             if (ImGui::Button(favorite ? "      Favorito###favorito" : "      Favoritar###favorito", ImVec2(0, 44 * scale))) SetFavorite(*game, !favorite);
             DrawStar(ImGui::GetWindowDrawList(), ImVec2(at.x + 20 * scale, at.y + 22 * scale), 9 * scale, favorite ? Packed(kAmber) : Packed(kDim));
         }
-        if (thisGame && runner.Current() != Runner::State::Idle) {
+        const Diagnosis why = thisGame && runner.Current() == Runner::State::Failed ? runner.Why() : Diagnosis{};
+        if (!why.reason.empty()) {
+            WhyCard(*game, why, width - pad, scale);
+        } else if (thisGame && runner.Current() != Runner::State::Idle) {
             ImGui::SameLine();
             ImGui::AlignTextToFramePadding();
             ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 6 * scale);
@@ -5517,6 +5784,7 @@ struct Client {
             ImGui::TextWrapped("%s", Utf8(runner.Message()).c_str());
             ImGui::PopTextWrapPos();
             ImGui::PopStyleColor();
+            if (runner.CanSkip() && ImGui::Button("Pular e abrir o jogo")) runner.SkipPreparing();
         } else if (busy) {
             ImGui::SameLine();
             ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 12 * scale);
@@ -5543,14 +5811,14 @@ struct Client {
                 ImGui::EndChild();
                 ImGui::EndTabItem();
             }
-            if (profile.sonsOfSparta && ImGui::BeginTabItem("Cheats")) {
+            if (kRangaAlpha && profile.sonsOfSparta && ImGui::BeginTabItem("Cheats")) {
                 ImGui::BeginChild("##cheats", ImVec2(0, 0), ImGuiChildFlags_NavFlattened);
                 CheatsTab(scale);
                 ImGui::EndChild();
                 ImGui::EndTabItem();
             }
             // Add-ons are mounted by the PS5 runtime; the Bloodborne port and other emulators have no such mount.
-            if (game->system == L"PS5" && ImGui::BeginTabItem("DLC")) {
+            if (kRangaAlpha && game->system == L"PS5" && ImGui::BeginTabItem("DLC")) {
                 ImGui::BeginChild("##dlc", ImVec2(0, 0), ImGuiChildFlags_NavFlattened);
                 DlcTab(*game, scale);
                 ImGui::EndChild();
@@ -5875,9 +6143,16 @@ struct Client {
             if ((ended.code & 0xF0000000u) == 0xC0000000u && ended.code != 0xCFFFFFFFu) {
                 wchar_t hex[16];
                 std::swprintf(hex, 16, L"0x%lX", ended.code);
-                Confirm(ended.game.title + L" fechou com erro (código " + hex + L") depois de " + std::to_wstring(ended.seconds) +
-                            L" s.\n\nQuer gerar o relatório de erro (um .zip com os logs) para mandar a quem for ajudar?",
-                        [this, game = ended.game] { MakeErrorReport(game); });
+                // Built from translated pieces: a text this long is not looked up whole.
+                const std::wstring head = ended.game.title + Idioma::TrW(L" fechou com erro (código ") + hex + Idioma::TrW(L") depois de ") +
+                                          std::to_wstring(ended.seconds);
+                if (CrashReport::Enabled())
+                    Choose(head + Idioma::TrW(kCrashAskTail), "Enviar ao Ranga",
+                           [this, game = ended.game, code = ended.code, seconds = ended.seconds] { SendCrashReport(game, code, static_cast<unsigned long>(seconds)); },
+                           "Gerar .zip", [this, game = ended.game] { MakeErrorReport(game); });
+                else
+                    Confirm(head + Idioma::TrW(L" s.\n\nQuer gerar o relatório de erro (um .zip com os logs) para mandar a quem for ajudar?"),
+                            [this, game = ended.game] { MakeErrorReport(game); });
             }
         }
         ScanProfileRa();
@@ -5999,6 +6274,12 @@ struct Client {
                 sentMediaDone = true;
             }
             const HttpResult sent = CentralCall(root, "POST", "/perfil", body, session, 8000);
+            // The group's server of rooms, if there is one. (404: a central that doesn't know of it yet.)
+            if (sent.status == 200) {
+                if (const HttpResult rooms = CentralCall(root, "GET", "/salas", "", session, 8000); rooms.status == 200 && rooms.body.rfind("servidor\t", 0) == 0) {
+                    SaveRoomServers(root, ReadRoomServers(rooms.body));
+                }
+            }
             const HttpResult got = sent.status == 200 ? CentralCall(root, "GET", "/amigos", "", session, 8000) : HttpResult{};
             const HttpResult gotGroups = got.status == 200 ? CentralCall(root, "GET", "/grupos", "", session, 8000) : HttpResult{};
             {
@@ -7117,6 +7398,7 @@ struct Client {
             invite.address = ReadCoreOption(game, "ranga_online_endereco");
         }
         if (invite.address.empty()) invite.mode.clear();
+        else invite.address = RoomWays(LoadRoomServers(library.Root()), invite.mode == "switch" ? RoomKind::Switch : invite.mode == "3ds" ? RoomKind::N3ds : RoomKind::Classics, invite.address).front();
         return invite;
     }
 
@@ -8890,6 +9172,7 @@ struct Client {
 
     std::wstring startGame; // RANGA_CLIENT_PAGE=jogo:<titleId> (tests), until the library has it
 
+    bool openFilesTab = false; // RANGA_CLIENT_PAGE=arquivos (tests)
     bool startChat = false; // RANGA_CLIENT_PAGE=chat (tests)
 
     void Frame(float scale) {
@@ -8905,6 +9188,8 @@ struct Client {
                 // RANGA_CLIENT_RELATORIO=1 (tests): makes that game's error report at once.
                 if (_wgetenv(L"RANGA_CLIENT_RELATORIO") != nullptr) MakeErrorReport(library.Games()[i]);
                 startGame.clear();
+                // RANGA_CLIENT_JOGAR=1 (tests): and plays it.
+                if (_wgetenv(L"RANGA_CLIENT_JOGAR") != nullptr) pending = [this, i] { Play(library.Games()[i]); };
                 break;
             }
         }
@@ -8937,6 +9222,7 @@ struct Client {
         TendMedia();
         ProcessEnded();
         TakeRaLogin();
+        TakeCrashAnswer();
         ProcessAccount();
         background = false;
         SyncProfiles(false);
@@ -9136,6 +9422,10 @@ LRESULT WINAPI WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 }
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
+#ifdef RANGA_ALPHA
+    // Never publishes, signs, hosts rooms, installs or updates: no argument reaches any of it.
+    commandLine = nullptr;
+#endif
     // RangaEmu.exe --salas (the shortcut Windows runs when it starts): only opens the rooms marked on, no window.
     if (commandLine != nullptr && wcsstr(commandLine, L"--salas") != nullptr) {
         wchar_t self[MAX_PATH * 2] = {};
@@ -9147,7 +9437,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     }
     // A RangaEmu.exe that came alone (downloaded by itself) offers to install itself first; the copy it opens is the
     // Ranga, so this one closes before taking the single-instance lock.
-    if (commandLine == nullptr || wcsstr(commandLine, L"--") == nullptr) {
+    if (!kRangaAlpha && (commandLine == nullptr || wcsstr(commandLine, L"--") == nullptr)) {
         wchar_t self[MAX_PATH * 2] = {};
         GetModuleFileNameW(nullptr, self, MAX_PATH * 2);
         std::wstring folder = self;
@@ -9195,6 +9485,38 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
         }
         return error.empty() ? 0 : 1;
     }
+    // RangaEmu.exe --servidor-salas <host|nenhum>: tells the central which server has the group's rooms, with this PC's
+    // own playit addresses (the last typed ones) as the reserve. Only the owner's PC has the key.
+    if (const wchar_t* at = commandLine != nullptr ? wcsstr(commandLine, L"--servidor-salas ") : nullptr; at != nullptr) {
+        std::wstring host = at + 17;
+        while (!host.empty() && (host.front() == L' ' || host.front() == L'"')) host.erase(0, 1);
+        host = host.substr(0, host.find_first_of(L" \""));
+        const std::wstring ini = root + L"\\engines.ini";
+        std::string text = "servidor\t" + (host == L"nenhum" ? "" : Utf8(host)) + "\n";
+        const auto reserve = [&](const char* key, const wchar_t* section, const wchar_t* name, const wchar_t* portName) {
+            std::string address = Utf8(ReadIni(ini, section, name, L""));
+            if (address.empty() || address.rfind("127.", 0) == 0 || address.rfind("192.168.", 0) == 0 || address.rfind("10.", 0) == 0 || address == "localhost") return;
+            if (portName != nullptr && address.find(':') == std::string::npos) address += ":" + Utf8(ReadIni(ini, section, portName, L"24872"));
+            text += std::string(key) + "\t" + address + "\n";
+        };
+        reserve("switch", L"SWITCH", L"sala_endereco", L"sala_porta");
+        reserve("3ds", L"Ranga", L"sala3ds_endereco", nullptr);
+        reserve("classicos", L"Ranga", L"online_endereco", nullptr);
+        reserve("xbox", L"Ranga", L"xbox_hub", nullptr);
+        const RoomServers servers = ReadRoomServers(text);
+        std::wstring result;
+        if (host != L"nenhum" && servers.host.empty()) result = L"servidor das salas: o endereço não vale (só o nome ou o IP, sem porta)";
+        else if (const HttpResult got = OwnerCall(root, "POST", "/dono/salas", WriteRoomServers(servers)); got.status != 200)
+            result = L"servidor das salas: a central NÃO aceitou (" + std::to_wstring(got.status) + L")";
+        else {
+            SaveRoomServers(root, servers);
+            result = L"servidor das salas: " + (servers.host.empty() ? std::wstring(L"nenhum, todos voltam aos endereços de antes") : Wide(servers.host));
+            static const wchar_t* names[] = {L"Switch", L"3DS", L"clássicos", L"Xbox"};
+            for (int i = 0; i < 4 && !servers.host.empty(); ++i) result += std::wstring(L" | ") + names[i] + (servers.reserve[i].empty() ? L" SEM reserva" : L" com reserva");
+        }
+        WriteTextLine(root + L"\\salas\\publicar.log", result);
+        return result.find(L"NÃO") != std::wstring::npos || result.find(L"não vale") != std::wstring::npos ? 1 : 0;
+    }
     // RangaEmu.exe --publicar "o que mudou": publishes this PC's Ranga for the friends without opening the window;
     // the result goes to salas\publicar.log.
     if (commandLine != nullptr && wcsstr(commandLine, L"--publicar") != nullptr) {
@@ -9207,21 +9529,52 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
         std::wstring notes = wcsstr(commandLine, L"--publicar") + 10;
         while (!notes.empty() && (notes.front() == L' ' || notes.front() == L'"')) notes.erase(0, 1);
         while (!notes.empty() && (notes.back() == L' ' || notes.back() == L'"')) notes.pop_back();
+        // --beta (before --publicar): only for who asked for betas.
+        const wchar_t* betaAt = wcsstr(commandLine, L"--beta ");
+        const bool beta = betaAt != nullptr && betaAt < wcsstr(commandLine, L"--publicar");
         std::string version;
-        const std::wstring error = PublishUpdate(root, Utf8(notes), version, wanted);
+        const std::wstring error = PublishUpdate(root, Utf8(notes), version, wanted, beta);
         if (!error.empty()) {
             WriteTextLine(root + L"\\salas\\publicar.log", error);
             return 1;
         }
         std::string sent;
-        const std::wstring github = wcsstr(commandLine, L"--sem-github") != nullptr ? L"GitHub: pulado" : PublishToGitHub(root, sent);
+        const std::wstring github = wcsstr(commandLine, L"--sem-github") != nullptr ? L"GitHub: pulado" : PublishToGitHub(root, sent, beta);
         WriteTextLine(root + L"\\salas\\publicar.log", L"publicada " + Wide(InstalledVersionName(root)) + L" (" + Wide(version) + L") | " + (github.empty() ? L"GitHub: ok" : github));
         return 0;
     }
+    // RangaEmu.exe --voltar-versao goes back without the window. And when the first start after an update never got to
+    // the window working (ConfirmUpdate), this one offers to go back before trying again.
+    // RANGA_CLIENT_VOLTAR=1 (tests) answers yes.
+    const bool askedBack = commandLine != nullptr && wcsstr(commandLine, L"--voltar-versao") != nullptr;
+    if (!kRangaAlpha && (askedBack || UpdateNeverOpened(root))) {
+        Idioma::Init(root);
+        const PreviousVersion before = Previous(root);
+        const std::wstring name = Wide(before.name.empty() ? before.version : before.name);
+        const bool yes = askedBack || _wgetenv(L"RANGA_CLIENT_VOLTAR") != nullptr ||
+                         MessageBoxW(nullptr, (Idioma::TrW(L"O Ranga não abriu direito depois da atualização. Voltar para a versão anterior?") + L"\n\n" + name).c_str(), kAppName,
+                                     MB_YESNO | MB_ICONWARNING | MB_SETFOREGROUND) == IDYES;
+        if (yes) {
+            const std::wstring error = RollBack(root);
+            if (!error.empty()) {
+                MessageBoxW(nullptr, Idioma::TrW(error).c_str(), kAppName, MB_OK | MB_ICONERROR);
+                if (askedBack) return 1;
+            } else {
+                STARTUPINFOW startup{sizeof(startup)};
+                PROCESS_INFORMATION process{};
+                std::wstring command = L"\"" + root + L"\\RangaEmu.exe\" --atualizado";
+                if (CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, 0, nullptr, root.c_str(), &startup, &process)) {
+                    CloseHandle(process.hProcess);
+                    CloseHandle(process.hThread);
+                }
+                return 0;
+            }
+        } else {
+            ConfirmUpdate(root); // not asked again
+        }
+    }
     // RangaEmu.exe --servidor: this PC hosts rooms; the rooms section shows from now on.
     if (commandLine != nullptr && wcsstr(commandLine, L"--servidor") != nullptr) SetRoomServerEnabled(root, true);
-    if (commandLine != nullptr && wcsstr(commandLine, L"--mostrar-ps4-ps5") != nullptr) SetShowPs4Ps5(root, true);
-    if (commandLine != nullptr && wcsstr(commandLine, L"--esconder-ps4-ps5") != nullptr) SetShowPs4Ps5(root, false);
 
     ImGui_ImplWin32_EnableDpiAwareness();
     const float scale = ImGui_ImplWin32_GetDpiScaleForMonitor(MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY));
@@ -9329,8 +9682,15 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
     float appliedScale = scale;
 
     bool done = false;
+    bool confirmed = false;
+    const ULONGLONG openedAt = GetTickCount64();
     while (!done) {
         MSG message;
+        // 15 s of the window working: an update that just came in is good (UpdateNeverOpened).
+        if (!confirmed && GetTickCount64() - openedAt > 15000) {
+            confirmed = true;
+            ConfirmUpdate(root);
+        }
         // Idle frames wait for input, so the client costs nothing while a game runs; a busy runner keeps it ticking for status.
         // A controller is read, not told by a message, and the console row slides: those need frames meanwhile.
         if (!client.runner.Busy()) MsgWaitForMultipleObjects(0, nullptr, FALSE, client.FrameWait(), QS_ALLINPUT);
@@ -9393,6 +9753,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
         // A screen asleep presents nothing and returns at once: the loop is held to about 60 turns a second.
         if (shotPath != nullptr && g_occluded) Sleep(16);
     }
+    ConfirmUpdate(root); // closed by the player: it opened fine
     g_runner = nullptr;
     g_client = nullptr;
     for (auto* cache : {&client.icons, &client.banners}) {

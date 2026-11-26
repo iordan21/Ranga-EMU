@@ -22,12 +22,21 @@ constexpr const char* kPublicKey =
     "babfe9abaa7b8db9d7c4bc9d8552409e";
 constexpr const wchar_t* kDefaultSource = RANGA_FONTE_ATUALIZACAO;
 constexpr const wchar_t* kGithubRepo = L"iordan21/Ranga-EMU";
+constexpr const wchar_t* kGithubBeta = L"https://github.com/iordan21/Ranga-EMU/releases/download/beta";
 constexpr const wchar_t* kGithubSource = L"https://github.com/iordan21/Ranga-EMU/releases/latest/download";
 
 std::wstring Ini(const std::wstring& root) { return root + L"\\engines.ini"; }
-std::wstring Published(const std::wstring& root) { return root + L"\\salas\\atualizacao"; }
+std::wstring Published(const std::wstring& root, bool beta = false) { return root + (beta ? L"\\salas\\atualizacao-beta" : L"\\salas\\atualizacao"); }
 std::wstring PrivateKey(const std::wstring& root) { return root + L"\\salas\\chave-atualizacao.bin"; }
 std::wstring Staging(const std::wstring& root) { return root + L"\\atualizacao-baixada"; }
+std::wstring PreviousFolder(const std::wstring& root) { return root + L"\\versao-anterior"; }
+
+bool WriteBytes(const std::wstring& path, const std::string& bytes) {
+    FILE* file = nullptr;
+    if (_wfopen_s(&file, path.c_str(), L"wb") != 0 || file == nullptr) return false;
+    const bool ok = std::fwrite(bytes.data(), 1, bytes.size(), file) == bytes.size();
+    return std::fclose(file) == 0 && ok;
+}
 
 std::string Hex(const unsigned char* data, size_t size) {
     static const char* digits = "0123456789abcdef";
@@ -173,6 +182,9 @@ std::wstring AssetName(const std::wstring& path) {
 // GET from a source: a table server ("host:port", the paths as they are) or a release folder ("https://...", where
 // /ranga/manifest is manifest.txt and /ranga/f/<path> is the asset AssetName(path); redirects are followed).
 int HttpGet(const std::wstring& source, const std::wstring& request, std::string* body, const std::wstring& toFile, const std::function<void(uint64_t)>& got) {
+#ifdef RANGA_ALPHA
+    return 0;
+#endif
     std::wstring host = source, path = request;
     INTERNET_PORT port = 80;
     DWORD flags = 0;
@@ -237,7 +249,7 @@ int HttpGet(const std::wstring& source, const std::wstring& request, std::string
 }
 
 // The lines of a signed list: its version, notes and files (only the safe paths).
-void ReadManifest(const std::string& manifest, std::string& version, std::string& notes, std::vector<UpdateFile>& files, std::string* name = nullptr) {
+void ReadManifest(const std::string& manifest, std::string& version, std::string& notes, std::vector<UpdateFile>& files, std::string* name = nullptr, bool* beta = nullptr) {
     size_t start = 0;
     while (start < manifest.size()) {
         size_t end = manifest.find('\n', start);
@@ -246,6 +258,7 @@ void ReadManifest(const std::string& manifest, std::string& version, std::string
         start = end + 1;
         if (line.rfind("versao ", 0) == 0) version = line.substr(7);
         else if (line.rfind("nome ", 0) == 0 && name != nullptr) *name = line.substr(5);
+        else if (line == "canal beta" && beta != nullptr) *beta = true;
         else if (line.rfind("notas ", 0) == 0) notes = line.substr(6);
         else if (line.rfind("arquivo ", 0) == 0) {
             const size_t a = 8, b = line.find(' ', a), c = b == std::string::npos ? b : line.find(' ', b + 1);
@@ -282,7 +295,9 @@ std::wstring FetchManifest(const std::wstring& root, std::string& manifest, std:
         }
         std::string version, notes;
         std::vector<UpdateFile> files;
-        ReadManifest(text, version, notes, files);
+        bool beta = false;
+        ReadManifest(text, version, notes, files, nullptr, &beta);
+        if (beta && !BetaChannel(root)) continue;
         // "AAAA.MM.DD-HHMM" sorts as text.
         if (!version.empty() && version > best) {
             best = version;
@@ -341,6 +356,7 @@ std::vector<std::wstring> UpdateSources(const std::wstring& root) {
         add(chosen.substr(start, end - start));
         start = end + 1;
     }
+    if (BetaChannel(root)) add(kGithubBeta);
     add(kGithubSource);
     add(kDefaultSource);
     return sources;
@@ -369,11 +385,14 @@ bool VersionName(const std::string& text) {
 
 std::string InstalledVersionName(const std::wstring& root) { return Utf8(ReadIni(Ini(root), L"Ranga", L"versao_nome", L"")); }
 
-std::wstring PublishUpdate(const std::wstring& root, const std::string& notes, std::string& version, const std::string& wanted) {
+std::wstring PublishUpdate(const std::wstring& root, const std::string& notes, std::string& version, const std::string& wanted, bool beta) {
+#ifdef RANGA_ALPHA
+    return L"O Ranga Alpha não publica.";
+#endif
     const std::string key = ReadBytes(PrivateKey(root));
     if (key.empty()) return L"Falta a chave de assinatura (salas\\chave-atualizacao.bin).";
     // The files are copied first, so a build made later does not change what friends are downloading.
-    const std::wstring folder = Published(root), next = folder + L".nova";
+    const std::wstring folder = Published(root, beta), next = folder + L".nova";
     RemoveTree(next);
     std::string list;
     for (const std::wstring& path : PublishedFiles(root)) {
@@ -408,7 +427,7 @@ std::wstring PublishUpdate(const std::wstring& root, const std::string& notes, s
     std::replace(oneLine.begin(), oneLine.end(), '\n', ' ');
     std::replace(oneLine.begin(), oneLine.end(), '\r', ' ');
     oneLine.erase(std::remove(oneLine.begin(), oneLine.end(), '\t'), oneLine.end());
-    const std::string manifest = "ranga-atualizacao 1\nversao " + version + "\nnome " + number + "\nnotas " + oneLine + "\n" + list;
+    const std::string manifest = "ranga-atualizacao 1\nversao " + version + "\nnome " + number + (beta ? " beta\ncanal beta" : "") + "\nnotas " + oneLine + "\n" + list;
     std::string signature;
     if (!Sign(key, manifest, signature)) return L"A assinatura falhou (a chave está estragada?).";
     for (const auto& [name, bytes] : {std::pair<const wchar_t*, const std::string*>{L"\\manifest.txt", &manifest}, {L"\\manifest.sig", &signature}}) {
@@ -424,6 +443,11 @@ std::wstring PublishUpdate(const std::wstring& root, const std::string& notes, s
     if (!MoveFileExW(next.c_str(), folder.c_str(), 0)) return L"Não deu para pôr a versão no lugar.";
     RemoveTree(old);
     EnsureUnicodeIni(Ini(root));
+    // A beta spends no number and makes no news; this PC only shows what it runs.
+    if (beta) {
+        WritePrivateProfileStringW(L"Ranga", L"versao_nome", Wide(number + " beta").c_str(), Ini(root).c_str());
+        return L"";
+    }
     WritePrivateProfileStringW(L"Ranga", L"versao_atualizacao", Wide(version).c_str(), Ini(root).c_str());
     WritePrivateProfileStringW(L"Ranga", L"versao_nome", Wide(number).c_str(), Ini(root).c_str());
     if (FILE* file = _wfopen(numberFile.c_str(), L"wb")) {
@@ -447,6 +471,9 @@ UpdateInfo CheckUpdate(const std::wstring& root) {
     if (!info.error.empty()) return info;
     std::vector<UpdateFile> files;
     ReadManifest(manifest, info.version, info.notes, files, &info.name);
+    info.older = !info.version.empty() && info.version < InstalledUpdate(root);
+    info.declined = !info.version.empty() && info.version <= DeclinedUpdate(root);
+    if (info.older || info.declined) return info;
     for (const UpdateFile& file : files) {
         const std::wstring local = root + L"\\" + file.path;
         if (Exists(local) && static_cast<uint64_t>(FileSize(local)) == file.size && HashFile(local) == file.sha256) continue;
@@ -462,7 +489,7 @@ namespace {
 // What a friend's package leaves out, relative to Ranga's folder in lower case: whole folders, and single files.
 const std::vector<std::wstring> kPackageSkipFolders = {
     L"pacote-amigo-temp", L"jogos", L"bios", L"backups", L"saves", L"perfil", L"covers", L"salas", L"tools", L"addons", L"reshade-shaders", L"logs",
-    L"atualizacao-baixada", L"emuladores\\_downloads", L"emuladores\\eden\\user\\keys", L"emuladores\\eden\\user\\nand",
+    L"atualizacao-baixada", L"versao-anterior", L"versao-anterior.antiga", L"emuladores\\_downloads", L"emuladores\\eden\\user\\keys", L"emuladores\\eden\\user\\nand",
     L"emuladores\\eden\\user\\shader", L"emuladores\\eden\\user\\sdmc", L"emuladores\\rpcs3\\dev_flash", L"emuladores\\rpcs3\\dev_hdd0",
     L"emuladores\\cemu\\cemu_2.6\\portable\\mlc01", L"emuladores\\xenia\\content", L"emuladores\\retroarch\\retroarch-win64\\saves",
     L"emuladores\\retroarch\\retroarch-win64\\states", L"emuladores\\retroarch\\retroarch-win64\\system",
@@ -535,7 +562,7 @@ std::wstring MakeFriendPackage(const std::wstring& root, const std::wstring& fol
         RemoveTree(staging);
         return L"Não deu para preparar o engines.ini.";
     }
-    for (const wchar_t* key : {L"servidor", L"grupo", L"backup", L"backup_quando", L"qualidade", L"raiz", L"perfis", L"central"})
+    for (const wchar_t* key : {L"servidor", L"grupo", L"backup", L"backup_quando", L"qualidade", L"raiz", L"perfis", L"central", L"beta", L"versao_pulada"})
         WritePrivateProfileStringW(L"Ranga", key, nullptr, ini.c_str());
     const std::string readme =
         "RANGA EMU - instalação completa\r\n"
@@ -601,8 +628,11 @@ std::wstring MakeFriendPackage(const std::wstring& root, const std::wstring& fol
     return L"";
 }
 
-std::wstring PublishToGitHub(const std::wstring& root, std::string& version) {
-    const std::wstring published = Published(root);
+std::wstring PublishToGitHub(const std::wstring& root, std::string& version, bool beta) {
+#ifdef RANGA_ALPHA
+    return L"O Ranga Alpha não publica.";
+#endif
+    const std::wstring published = Published(root, beta);
     const std::string manifest = ReadBytes(published + L"\\manifest.txt");
     std::string notes, number;
     std::vector<UpdateFile> files;
@@ -628,25 +658,28 @@ std::wstring PublishToGitHub(const std::wstring& root, std::string& version) {
     }
     CopyFileW((published + L"\\manifest.txt").c_str(), (staging + L"\\manifest.txt").c_str(), FALSE);
     CopyFileW((published + L"\\manifest.sig").c_str(), (staging + L"\\manifest.sig").c_str(), FALSE);
-    const bool history = CopyFileW((root + L"\\salas\\novidades.txt").c_str(), (staging + L"\\novidades.txt").c_str(), FALSE) != 0;
+    const bool history = !beta && CopyFileW((root + L"\\salas\\novidades.txt").c_str(), (staging + L"\\novidades.txt").c_str(), FALSE) != 0;
     if (FILE* note = _wfopen((staging + L"\\notas.txt").c_str(), L"wb")) {
-        const std::string text = notes + "\n\nVersão assinada do Ranga Emu. Primeira vez: baixe só o RangaEmu.exe, abra e escolha a pasta; ele baixa o resto. Quem já tem o Ranga não precisa baixar nada daqui: ele se atualiza sozinho.\n";
+        const std::string text = beta ? notes + "\n\nVersão beta, para teste: só vai para quem marcou Receber versões beta (Emuladores > Arquivos do Ranga).\n" : notes + "\n\nVersão assinada do Ranga Emu. Primeira vez: baixe só o RangaEmu.exe, abra e escolha a pasta; ele baixa o resto. Quem já tem o Ranga não precisa baixar nada daqui: ele se atualiza sozinho.\n";
         std::fwrite(text.data(), 1, text.size(), note);
         std::fclose(note);
     }
     // The tag stays the date (it sorts, and the three newest are kept by it); the title is the number people know
     // ("Ranga 1.5.1"), the date only when the version had no number.
-    const std::wstring tag = L"v" + Wide(version);
+    const std::wstring tag = beta ? L"beta" : L"v" + Wide(version);
     std::string said;
+    // One beta at a time, always at the same address.
+    if (beta) RunCaptured(L"\"" + gh + L"\" release delete beta --repo " + kGithubRepo + L" --cleanup-tag --yes", L"", said);
     const int code = RunCaptured(L"\"" + gh + L"\" release create " + tag + L" --repo " + kGithubRepo + L" --title \"Ranga " +
                                      Wide(number.empty() ? version : number) +
-                                     L"\" --notes-file notas.txt --latest manifest.txt manifest.sig" + (history ? L" novidades.txt" : L"") + assets,
+                                     L"\" --notes-file notas.txt " + (beta ? L"--prerelease --latest=false" : L"--latest") + L" manifest.txt manifest.sig" + (history ? L" novidades.txt" : L"") + assets,
                                  staging, said);
     RemoveTree(staging);
     if (code != 0) {
         if (said.size() > 300) said = said.substr(said.size() - 300);
         return L"O GitHub não aceitou a versão (" + std::to_wstring(code) + L"): " + Wide(said);
     }
+    if (beta) return L"";
     // Only the three newest releases stay (each has every file).
     std::string list;
     if (RunCaptured(L"\"" + gh + L"\" release list --repo " + std::wstring(kGithubRepo) + L" --limit 100 --json tagName --jq .[].tagName", L"", list) == 0) {
@@ -695,6 +728,15 @@ IntegrityReport CheckIntegrity(const std::wstring& root, const std::function<voi
         report.error = L"A lista dos arquivos veio vazia.";
         return report;
     }
+    // A beta, or a version the player went back to: the list is another version's, and "repairing" would install it.
+    if (!report.host && report.version < InstalledUpdate(root)) {
+        report.error = L"Este Ranga é mais novo que a última versão publicada (beta): não há lista desta versão para conferir.";
+        return report;
+    }
+    if (!report.host && report.version <= DeclinedUpdate(root)) {
+        report.error = L"Você voltou para uma versão anterior: a conferência só vale para a última versão.";
+        return report;
+    }
     report.repair.version = report.version;
     report.behind = !report.host && InstalledUpdate(root) != report.version;
     for (size_t i = 0; i < files.size(); ++i) {
@@ -728,23 +770,132 @@ std::wstring DownloadUpdate(const std::wstring& root, const UpdateInfo& info, co
 }
 
 std::wstring ApplyUpdate(const std::wstring& root, const UpdateInfo& info) {
-    const std::wstring staging = Staging(root);
+    const std::wstring staging = Staging(root), previous = PreviousFolder(root), older = previous + L".antiga";
+    const std::string from = InstalledUpdate(root), fromName = InstalledVersionName(root);
+    // A repair of the same version keeps nothing: what it replaces is broken.
+    const bool keep = !info.changed.empty() && !from.empty() && from != info.version;
+    for (const UpdateFile& file : info.changed)
+        if (!Exists(staging + L"\\" + file.path)) return L"Falta o arquivo baixado " + file.path + L".";
+    if (keep) {
+        RemoveTree(older);
+        MoveFileExW(previous.c_str(), older.c_str(), 0);
+    }
+    const auto savedAt = [&](const std::wstring& path) { return keep ? previous + L"\\" + path : root + L"\\" + path + L".old"; };
+    struct Swap { std::wstring path; bool saved; };
+    std::vector<Swap> done;
+    // Everything back as it was: the new files to the download folder, the old ones to their places.
+    const auto undo = [&] {
+        for (auto it = done.rbegin(); it != done.rend(); ++it) {
+            const std::wstring target = root + L"\\" + it->path;
+            if (Exists(target)) MoveFileExW(target.c_str(), (staging + L"\\" + it->path).c_str(), MOVEFILE_REPLACE_EXISTING);
+            if (it->saved) MoveFileExW(savedAt(it->path).c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING);
+        }
+        if (keep) {
+            RemoveTree(previous);
+            MoveFileExW(older.c_str(), previous.c_str(), 0);
+        }
+    };
     for (const UpdateFile& file : info.changed) {
-        const std::wstring target = root + L"\\" + file.path, ready = staging + L"\\" + file.path;
-        if (!Exists(ready)) return L"Falta o arquivo baixado " + file.path + L".";
-        if (Exists(target) && !MoveFileExW(target.c_str(), (target + L".old").c_str(), MOVEFILE_REPLACE_EXISTING))
+        const std::wstring target = root + L"\\" + file.path, ready = staging + L"\\" + file.path, saved = savedAt(file.path);
+        MakeParents(saved);
+        const bool had = Exists(target);
+        if (had && !MoveFileExW(target.c_str(), saved.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+            undo();
             return L"O arquivo " + file.path + L" está em uso: feche o jogo e tente de novo.";
+        }
+        done.push_back({file.path, had});
         // A Ranga installed from the exe alone has no cores folder yet.
         if (const size_t slash = target.find_last_of(L'\\'); slash != std::wstring::npos) SHCreateDirectoryExW(nullptr, target.substr(0, slash).c_str(), nullptr);
         if (!MoveFileExW(ready.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED)) {
-            MoveFileExW((target + L".old").c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING);
+            undo();
             return L"Não deu para trocar " + file.path + L".";
         }
+    }
+    if (keep) {
+        std::string list = "versao " + from + "\nnome " + fromName + "\n";
+        bool any = false;
+        for (const Swap& swap : done) {
+            if (!swap.saved) continue;
+            const std::wstring saved = savedAt(swap.path);
+            list += "arquivo " + HashFile(saved) + " " + std::to_string(FileSize(saved)) + " " + UrlPath(swap.path) + "\n";
+            any = true;
+        }
+        if (any && WriteBytes(previous + L"\\lista.txt", list)) WriteBytes(previous + L"\\confirmar.txt", "0");
+        RemoveTree(older);
     }
     EnsureUnicodeIni(Ini(root));
     WritePrivateProfileStringW(L"Ranga", L"versao_atualizacao", Wide(info.version).c_str(), Ini(root).c_str());
     WritePrivateProfileStringW(L"Ranga", L"versao_nome", info.name.empty() ? nullptr : Wide(info.name).c_str(), Ini(root).c_str());
+    WritePrivateProfileStringW(L"Ranga", L"versao_pulada", nullptr, Ini(root).c_str());
     return L"";
+}
+
+PreviousVersion Previous(const std::wstring& root) {
+    PreviousVersion previous;
+    std::string notes;
+    ReadManifest(ReadBytes(PreviousFolder(root) + L"\\lista.txt"), previous.version, notes, previous.files, &previous.name);
+    if (previous.files.empty()) previous.version.clear();
+    return previous;
+}
+
+std::wstring RollBack(const std::wstring& root) {
+    const PreviousVersion previous = Previous(root);
+    const std::wstring folder = PreviousFolder(root);
+    if (previous.version.empty()) return L"Não há versão anterior guardada.";
+    for (const UpdateFile& file : previous.files)
+        if (HashFile(folder + L"\\" + file.path) != file.sha256) return L"A versão anterior guardada está incompleta (" + file.path + L"): nada foi trocado.";
+    struct Swap { std::wstring path; bool had; };
+    std::vector<Swap> done;
+    std::wstring error;
+    for (const UpdateFile& file : previous.files) {
+        const std::wstring target = root + L"\\" + file.path, saved = folder + L"\\" + file.path;
+        const bool had = Exists(target);
+        if (had && !MoveFileExW(target.c_str(), (target + L".old").c_str(), MOVEFILE_REPLACE_EXISTING)) {
+            error = L"O arquivo " + file.path + L" está em uso: feche o jogo e tente de novo.";
+            break;
+        }
+        done.push_back({file.path, had});
+        if (!MoveFileExW(saved.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+            error = L"Não deu para trocar " + file.path + L".";
+            break;
+        }
+    }
+    if (!error.empty()) {
+        for (auto it = done.rbegin(); it != done.rend(); ++it) {
+            const std::wstring target = root + L"\\" + it->path;
+            if (Exists(target)) MoveFileExW(target.c_str(), (folder + L"\\" + it->path).c_str(), MOVEFILE_REPLACE_EXISTING);
+            if (it->had) MoveFileExW((target + L".old").c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING);
+        }
+        return error;
+    }
+    const std::string left = InstalledUpdate(root);
+    EnsureUnicodeIni(Ini(root));
+    WritePrivateProfileStringW(L"Ranga", L"versao_pulada", Wide(left).c_str(), Ini(root).c_str());
+    WritePrivateProfileStringW(L"Ranga", L"versao_atualizacao", Wide(previous.version).c_str(), Ini(root).c_str());
+    WritePrivateProfileStringW(L"Ranga", L"versao_nome", previous.name.empty() ? nullptr : Wide(previous.name).c_str(), Ini(root).c_str());
+    RemoveTree(folder);
+    return L"";
+}
+
+std::string DeclinedUpdate(const std::wstring& root) { return Utf8(ReadIni(Ini(root), L"Ranga", L"versao_pulada", L"")); }
+
+void ForgetDeclined(const std::wstring& root) { WritePrivateProfileStringW(L"Ranga", L"versao_pulada", nullptr, Ini(root).c_str()); }
+
+bool UpdateNeverOpened(const std::wstring& root) {
+    const std::wstring marker = PreviousFolder(root) + L"\\confirmar.txt";
+    if (!Exists(marker) || Previous(root).version.empty()) return false;
+    const bool before = std::atoi(ReadBytes(marker).c_str()) > 0;
+    if (!before) WriteBytes(marker, "1");
+    return before;
+}
+
+void ConfirmUpdate(const std::wstring& root) { DeleteFileW((PreviousFolder(root) + L"\\confirmar.txt").c_str()); }
+
+bool BetaChannel(const std::wstring& root) { return ReadIni(Ini(root), L"Ranga", L"beta", L"") == L"1"; }
+
+void SetBetaChannel(const std::wstring& root, bool on) {
+    EnsureUnicodeIni(Ini(root));
+    WritePrivateProfileStringW(L"Ranga", L"beta", on ? L"1" : nullptr, Ini(root).c_str());
 }
 
 void CleanUpdateLeftovers(const std::wstring& root) {
@@ -761,6 +912,8 @@ void CleanUpdateLeftovers(const std::wstring& root) {
     }
     const std::wstring staging = Staging(root);
     if (IsDirectory(staging)) RemoveTree(staging);
+    const std::wstring older = PreviousFolder(root) + L".antiga";
+    if (IsDirectory(older)) RemoveTree(older);
 }
 
 int DownloadUrl(const std::wstring& url, std::string* body, const std::wstring& toFile, const std::function<void(uint64_t)>& got) {

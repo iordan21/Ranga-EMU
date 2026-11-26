@@ -60,6 +60,25 @@ int XboxHubPort(const std::wstring& root);
 // defaultPort). Switch and 3DS rooms (ENet, UDP) get a connection request, which a room answers at once; the classics'
 // server (tcp) a connection. Blocks: run it off the drawing thread.
 int ProbeRoom(const std::string& address, int defaultPort, bool tcp);
+// The group's own server of rooms (launcher/net/servidor), the same for everyone: its host, told by the central to who
+// has an account, and the hosting PC's playit addresses it stands in for. Kept in engines.ini [Salas]; empty host: none,
+// and every game goes to the address it has.
+enum class RoomKind { Switch, N3ds, Classics, Xbox, Ps3 };
+struct RoomServers {
+    std::string host;
+    std::string reserve[5]; // by RoomKind, "host:port"; empty when there is none
+};
+RoomServers LoadRoomServers(const std::wstring& root);
+void SaveRoomServers(const std::wstring& root, const RoomServers& servers);
+// "campo<TAB>valor" lines (servidor, switch, 3ds, classicos, xbox, ps3), as the central keeps them. An address that is
+// not a plain host or host:port is dropped (it ends up in a command line).
+RoomServers ReadRoomServers(const std::string& text);
+std::string WriteRoomServers(const RoomServers& servers);
+// "host:port" of the group's server for that kind of room; empty without one.
+std::string RoomServerAddress(const RoomServers& servers, RoomKind kind);
+// Where a game set to address goes, in order: the group's server and then its reserve when the address is one of those
+// two, otherwise (a room of someone else's) only the address itself.
+std::vector<std::string> RoomWays(const RoomServers& servers, RoomKind kind, const std::string& address);
 // On the hosting PC: copies each Switch game's portable shader cache (Eden's vulkan.bin) to salas\shaders\<id>.bin,
 // which the classics' server hands out (GET /ranga/shaders/<id>.bin).
 void ShareShaderCaches(const std::wstring& root);

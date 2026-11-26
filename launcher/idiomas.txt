@@ -616,11 +616,6 @@ Este archivo es de otro juego (
 ), а не от 
 ), no de 
 
-Escolha a pasta do jogo (PS5, Bloodborne, PS3, Xbox 360 ou Wii U)
-Choose the game folder (PS5, Bloodborne, PS3, Xbox 360 or Wii U)
-Выберите папку игры (PS5, Bloodborne, PS3, Xbox 360 или Wii U)
-Elige la carpeta del juego (PS5, Bloodborne, PS3, Xbox 360 o Wii U)
-
 Escolha a pasta do jogo (PS3, Xbox 360 ou Wii U)
 Choose the game folder (PS3, Xbox 360 or Wii U)
 Выберите папку игры (PS3, Xbox 360 или Wii U)
@@ -740,11 +735,6 @@ Roda no próprio Ranga
 Runs in Ranga itself
 Работает в самом Ranga
 Funciona en el propio Ranga
-
-Só o Bloodborne, como experimento
-Only Bloodborne, as an experiment
-Только Bloodborne, в качестве эксперимента
-Solo Bloodborne, como experimento
 
 Roda dentro do Ranga
 Runs inside Ranga
@@ -1076,11 +1066,6 @@ Frames
 Кадры
 Fotogramas
 
-Experimento: o Ranga não roda jogos de PS4, só este. Roda pelo port nativo do Bloodborne (deadinside28, Mrsuss60 e shadPS4, licença GPL), não pelo emulador de PS5. Precisa da versão 1.09 com a atualização mesclada na pasta do jogo e do Python 3.10 ou mais novo.
-Experiment: Ranga doesn't run PS4 games, only this one. It runs through the native Bloodborne port (deadinside28, Mrsuss60 and shadPS4, GPL license), not through the PS5 emulator. It needs version 1.09 with the update merged into the game folder, and Python 3.10 or newer.
-Эксперимент: Ranga не запускает игры PS4, только эту. Она работает через нативный порт Bloodborne (deadinside28, Mrsuss60 и shadPS4, лицензия GPL), а не через эмулятор PS5. Нужна версия 1.09 с обновлением, объединённым в папке игры, и Python 3.10 или новее.
-Experimento: Ranga no ejecuta juegos de PS4, solo este. Funciona con el port nativo de Bloodborne (deadinside28, Mrsuss60 y shadPS4, licencia GPL), no con el emulador de PS5. Necesita la versión 1.09 con la actualización combinada en la carpeta del juego y Python 3.10 o más nuevo.
-
 No jogo, Insert ou L3 + R3 abre o menu de gráficos e FSR.
 In the game, Insert or L3 + R3 opens the graphics and FSR menu.
 В игре Insert или L3 + R3 открывает меню графики и FSR.
@@ -1090,11 +1075,6 @@ Emulador
 Emulator
 Эмулятор
 Emulador
-
-Jogo experimental: o Ranga Emu só foi testado com God of War Sons of Sparta. Este jogo pode travar ou nem abrir. Se der erro, a aba Log mostra o que aconteceu.
-Experimental game: Ranga Emu has only been tested with God of War Sons of Sparta. This game may freeze or not even open. If there's an error, the Log tab shows what happened.
-Экспериментальная игра: Ranga Emu проверен только с God of War Sons of Sparta. Эта игра может зависнуть или вовсе не запуститься. Если будет ошибка, вкладка «Журнал» покажет, что случилось.
-Juego experimental: Ranga Emu solo se probó con God of War Sons of Sparta. Este juego puede colgarse o ni abrir. Si da error, la pestaña Log muestra lo que pasó.
 
 Desligada
 Off
@@ -2205,11 +2185,6 @@ arquivo não encontrado
 file not found
 файл не найден
 archivo no encontrado
-
-Escolha a pasta da DLC (a que tem sce_sys\\param.json)
-Choose the DLC folder (the one with sce_sys\\param.json)
-Выберите папку DLC (ту, где есть sce_sys\\param.json)
-Elige la carpeta del DLC (la que tiene sce_sys\\param.json)
 
 Feche o jogo para instalar ou remover DLC.
 Close the game to install or remove DLC.
@@ -4501,40 +4476,15 @@ I didn't recognize the game in this folder:\n\n
 Не удалось распознать игру в этой папке:\n\n
 No reconocí el juego en esta carpeta:\n\n
 
-\n\nPasta de jogo é a de PS5 ou do Bloodborne (com eboot.bin e sce_sys), PS3 (com PS3_GAME ou USRDIR), Xbox 360 (com default.xex) ou Wii U (com code e meta). Para ISO, ROM e outros arquivos, use \"Arquivo do jogo\".
-\n\nA game folder is a PS5 or Bloodborne one (with eboot.bin and sce_sys), PS3 (with PS3_GAME or USRDIR), Xbox 360 (with default.xex) or Wii U (with code and meta). For ISO, ROM and other files, use \"Game file\".
-\n\nПапка игры — это папка PS5 или Bloodborne (с eboot.bin и sce_sys), PS3 (с PS3_GAME или USRDIR), Xbox 360 (с default.xex) или Wii U (с code и meta). Для ISO, ROM и других файлов используйте «Файл игры».
-\n\nLa carpeta de juego es la de PS5 o Bloodborne (con eboot.bin y sce_sys), PS3 (con PS3_GAME o USRDIR), Xbox 360 (con default.xex) o Wii U (con code y meta). Para ISO, ROM y otros archivos, usa \"Archivo del juego\".
-
-Não deu para ler sce_sys\\param.json (PS5) nem sce_sys\\param.sfo (PS4) em:\n\n
-Couldn't read sce_sys\\param.json (PS5) or sce_sys\\param.sfo (PS4) in:\n\n
-Не удалось прочитать sce_sys\\param.json (PS5) или sce_sys\\param.sfo (PS4) в:\n\n
-No se pudo leer sce_sys\\param.json (PS5) ni sce_sys\\param.sfo (PS4) en:\n\n
-
-O Ranga não roda jogos de PS4: 
-Ranga doesn't run PS4 games: 
-Ranga не запускает игры PS4: 
-Ranga no ejecuta juegos de PS4: 
-
-) ficou de fora. Do PS4, só o Bloodborne (CUSA03173), como experimento, pelo port dele.
-) was left out. From the PS4, only Bloodborne (CUSA03173), as an experiment, through its port.
-) не добавлена. Из PS4 — только Bloodborne (CUSA03173), в качестве эксперимента, через его порт.
-) quedó fuera. De PS4, solo Bloodborne (CUSA03173), como experimento, con su port.
+\n\nPasta de jogo é a do PS3 (com PS3_GAME ou USRDIR), Xbox 360 (com default.xex) ou Wii U (com code e meta). Para ISO, ROM e outros arquivos, use \"Arquivo do jogo\".
+\n\nA game folder is a PS3 one (with PS3_GAME or USRDIR), Xbox 360 (with default.xex) or Wii U (with code and meta). For ISO, ROM and other files, use \"Game file\".
+\n\nПапка игры — это папка PS3 (с PS3_GAME или USRDIR), Xbox 360 (с default.xex) или Wii U (с code и meta). Для ISO, ROM и других файлов используйте «Файл игры».
+\n\nLa carpeta de juego es la de PS3 (con PS3_GAME o USRDIR), Xbox 360 (con default.xex) o Wii U (con code y meta). Para ISO, ROM y otros archivos, usa \"Archivo del juego\".
 
 Não deu para salvar library.ini em:\n\n
 Couldn't save library.ini in:\n\n
 Не удалось сохранить library.ini в:\n\n
 No se pudo guardar library.ini en:\n\n
-
-Esta pasta não tem sce_sys\\param.json, então não parece uma DLC tirada do console:\n\n
-This folder doesn't have sce_sys\\param.json, so it doesn't look like a DLC taken from the console:\n\n
-В этой папке нет sce_sys\\param.json, значит, это не похоже на DLC, снятое с консоли:\n\n
-Esta carpeta no tiene sce_sys\\param.json, así que no parece un DLC sacado de la consola:\n\n
-
-Não deu para ler o código da DLC (contentId) no param.json:\n\n
-Couldn't read the DLC code (contentId) in param.json:\n\n
-Не удалось прочитать код DLC (contentId) в param.json:\n\n
-No se pudo leer el código del DLC (contentId) en param.json:\n\n
 
 Esta DLC é de outro jogo (
 This DLC is from another game (
@@ -4911,11 +4861,6 @@ The libs and tools folders are missing next to RangaEmu.exe. Extract the whole d
 Рядом с RangaEmu.exe нет папок libs и tools. Распакуйте загрузку целиком заново.
 Faltan las carpetas libs y tools junto a RangaEmu.exe. Vuelve a extraer la descarga completa.
 
-O executável do jogo não está descriptografado. É preciso um eboot.bin ou eboot.elf descriptografado do seu próprio console.
-The game's executable isn't decrypted. A decrypted eboot.bin or eboot.elf from your own console is needed.
-Исполняемый файл игры не расшифрован. Нужен расшифрованный eboot.bin или eboot.elf с вашей собственной консоли.
-El ejecutable del juego no está descifrado. Se necesita un eboot.bin o eboot.elf descifrado de tu propia consola.
-
 Preparando o jogo a partir dos seus arquivos. Só acontece uma vez e leva uns 2 minutos...
 Preparing the game from your files. It only happens once and takes about 2 minutes...
 Подготовка игры из ваших файлов. Это происходит один раз и занимает около 2 минут...
@@ -4956,11 +4901,6 @@ El juego se detuvo de repente (código
  на вкладке «Журнал».
  en la pestaña Log.
 
-O port do Bloodborne parou ao preparar o jogo (código 
-The Bloodborne port stopped while preparing the game (code 
-Порт Bloodborne остановился при подготовке игры (код 
-El port de Bloodborne se detuvo al preparar el juego (código 
-
 ). Veja game.log na aba Log.
 ). See game.log in the Log tab.
 ). Смотрите game.log на вкладке «Журнал».
@@ -4971,30 +4911,10 @@ Game closed after
 Игра закрыта через 
 Juego cerrado después de 
 
-Não há eboot.bin em 
-There's no eboot.bin in 
-Нет eboot.bin в 
-No hay eboot.bin en 
-
-Falta o port do Bloodborne em 
-The Bloodborne port is missing in 
-Не хватает порта Bloodborne в 
-Falta el port de Bloodborne en 
-
  (run.bat e out\\bbport.exe).
  (run.bat and out\\bbport.exe).
  (run.bat и out\\bbport.exe).
  (run.bat y out\\bbport.exe).
-
-O port do Bloodborne precisa do Python 3.10 ou mais novo (python.org ou Microsoft Store). Instale e tente de novo.
-The Bloodborne port needs Python 3.10 or newer (python.org or Microsoft Store). Install it and try again.
-Порту Bloodborne нужен Python 3.10 или новее (python.org или Microsoft Store). Установите и попробуйте снова.
-El port de Bloodborne necesita Python 3.10 o más nuevo (python.org o Microsoft Store). Instálalo y vuelve a intentarlo.
-
-O port do Bloodborne não pôde ser iniciado.
-The Bloodborne port couldn't be started.
-Не удалось запустить порт Bloodborne.
-No se pudo iniciar el port de Bloodborne.
 
 O jogo não está mais em 
 The game is no longer in 
@@ -5905,3 +5825,428 @@ Primeira vez: baixando os arquivos do Ranga (%.0f MB)...
 First time: downloading Ranga's files (%.0f MB)...
 Первый запуск: скачиваются файлы Ranga (%.0f МБ)...
 Primera vez: descargando los archivos de Ranga (%.0f MB)...
+
+Versão instalada: %s
+Installed version: %s
+Установленная версия: %s
+Versión instalada: %s
+
+Voltar para a versão
+Go back to version
+Вернуться к версии
+Volver a la versión
+
+Voltar para a versão anterior? Jogos e saves ficam como estão. O Ranga fecha e abre de novo.
+Go back to the previous version? Games and saves stay as they are. Ranga closes and opens again.
+Вернуться к предыдущей версии? Игры и сохранения останутся как есть. Ranga закроется и откроется снова.
+¿Volver a la versión anterior? Los juegos y las partidas quedan como están. Ranga se cierra y se abre de nuevo.
+
+Se a atualização deu problema, isto põe de volta os programas de antes dela.
+If the update caused problems, this puts back the programs from before it.
+Если обновление вызвало проблемы, это вернёт программы, которые были до него.
+Si la actualización dio problemas, esto pone de vuelta los programas de antes.
+
+Você voltou de uma atualização: ela não é mais oferecida, só a próxima.
+You went back from an update: it is no longer offered, only the next one.
+Вы отказались от обновления: оно больше не предлагается, только следующее.
+Volviste de una actualización: ya no se ofrece, solo la próxima.
+
+Oferecer de novo
+Offer it again
+Предлагать снова
+Ofrecer de nuevo
+
+Receber versões beta
+Get beta versions
+Получать бета-версии
+Recibir versiones beta
+
+Chegam antes e podem ter defeito. Ao desligar, o Ranga fica como está até sair uma versão normal mais nova.
+They come earlier and may have bugs. When turned off, Ranga stays as it is until a newer normal version comes out.
+Они выходят раньше и могут содержать ошибки. После отключения Ranga останется как есть до выхода более новой обычной версии.
+Llegan antes y pueden tener fallos. Al desactivarlo, Ranga queda como está hasta que salga una versión normal más nueva.
+
+O Ranga não abriu direito depois da atualização. Voltar para a versão anterior?
+Ranga did not open properly after the update. Go back to the previous version?
+Ranga не открылся как следует после обновления. Вернуться к предыдущей версии?
+Ranga no abrió bien después de la actualización. ¿Volver a la versión anterior?
+
+Este Ranga é mais novo que a última versão publicada (beta): não há lista desta versão para conferir.
+This Ranga is newer than the last published version (beta): there is no list of this version to check.
+Эта версия Ranga новее последней опубликованной (бета): списка для проверки нет.
+Este Ranga es más nuevo que la última versión publicada (beta): no hay lista de esta versión para comprobar.
+
+Você voltou para uma versão anterior: a conferência só vale para a última versão.
+You went back to an earlier version: the check only works for the latest version.
+Вы вернулись к предыдущей версии: проверка работает только для последней.
+Volviste a una versión anterior: la comprobación solo vale para la última versión.
+
+Por que não abriu?
+Why didn't it open?
+Почему не открылось?
+¿Por qué no abrió?
+
+O que pode ter acontecido
+What may have happened
+Что могло произойти
+Qué puede haber pasado
+
+Baixar da Microsoft
+Download from Microsoft
+Скачать с сайта Microsoft
+Descargar de Microsoft
+
+Desligar o DLSS 5 e tentar de novo
+Turn off DLSS 5 and try again
+Выключить DLSS 5 и попробовать снова
+Desactivar DLSS 5 y reintentar
+
+A placa de vídeo não conseguiu iniciar o Vulkan.
+The graphics card could not start Vulkan.
+Видеокарта не смогла запустить Vulkan.
+La tarjeta gráfica no pudo iniciar Vulkan.
+
+Atualize o driver da placa de vídeo pelo site do fabricante e reinicie o PC.
+Update the graphics driver from the maker's site and restart the PC.
+Обновите драйвер видеокарты с сайта производителя и перезагрузите ПК.
+Actualiza el controlador de la tarjeta gráfica desde el sitio del fabricante y reinicia el PC.
+
+As chaves do Switch não abrem este jogo: faltam chaves ou elas são mais antigas que ele.
+The Switch keys cannot open this game: keys are missing or older than it.
+Ключи Switch не открывают эту игру: ключей не хватает или они старше неё.
+Las claves de Switch no abren este juego: faltan o son más antiguas que él.
+
+Tire de novo as chaves (prod.keys e title.keys) e o firmware do seu console, atualizado.
+Dump the keys (prod.keys and title.keys) and firmware again from your updated console.
+Снова снимите ключи (prod.keys и title.keys) и прошивку со своей обновлённой консоли.
+Extrae de nuevo las claves (prod.keys y title.keys) y el firmware de tu consola actualizada.
+
+O arquivo é uma atualização ou um DLC, não o jogo.
+The file is an update or a DLC, not the game.
+Файл — это обновление или DLC, а не игра.
+El archivo es una actualización o un DLC, no el juego.
+
+Abra o arquivo do jogo base; a atualização e o DLC entram nas opções do jogo.
+Open the base game's file; the update and DLC go in the game's options.
+Откройте файл основной игры; обновление и DLC добавляются в её настройках.
+Abre el archivo del juego base; la actualización y el DLC van en las opciones del juego.
+
+O arquivo do jogo está incompleto ou corrompido.
+The game's file is incomplete or corrupted.
+Файл игры неполный или повреждён.
+El archivo del juego está incompleto o dañado.
+
+Copie o jogo de novo do seu console.
+Copy the game again from your console.
+Скопируйте игру со своей консоли ещё раз.
+Copia el juego de nuevo desde tu consola.
+
+O firmware do Switch está faltando ou incompleto.
+The Switch firmware is missing or incomplete.
+Прошивка Switch отсутствует или неполная.
+El firmware de Switch falta o está incompleto.
+
+Tire de novo o firmware do seu console.
+Dump the firmware again from your console.
+Снимите прошивку со своей консоли ещё раз.
+Extrae de nuevo el firmware de tu consola.
+
+O jogo está criptografado e a chave dele não está no PC.
+The game is encrypted and its key is not on this PC.
+Игра зашифрована, и её ключа нет на ПК.
+El juego está cifrado y su clave no está en el PC.
+
+Coloque a licença (.rap) ou a chave do disco tirada do seu próprio console.
+Add the licence (.rap) or disc key taken from your own console.
+Добавьте лицензию (.rap) или ключ диска со своей консоли.
+Pon la licencia (.rap) o la clave del disco sacada de tu propia consola.
+
+O firmware do PS3 está faltando ou é antigo demais para este jogo.
+The PS3 firmware is missing or too old for this game.
+Прошивка PS3 отсутствует или слишком старая для этой игры.
+El firmware de PS3 falta o es demasiado antiguo para este juego.
+
+Baixe o PS3UPDAT.PUP no site da Sony e instale pelo RPCS3 (File > Install Firmware).
+Download PS3UPDAT.PUP from Sony's site and install it with RPCS3 (File > Install Firmware).
+Скачайте PS3UPDAT.PUP с сайта Sony и установите через RPCS3 (File > Install Firmware).
+Descarga PS3UPDAT.PUP del sitio de Sony e instálalo con RPCS3 (File > Install Firmware).
+
+O estado salvo não serve nesta versão do emulador.
+The save state does not work in this version of the emulator.
+Сохранённое состояние не подходит для этой версии эмулятора.
+El estado guardado no sirve en esta versión del emulador.
+
+Abra o jogo sem carregar o estado salvo.
+Open the game without loading the save state.
+Откройте игру без загрузки сохранённого состояния.
+Abre el juego sin cargar el estado guardado.
+
+O arquivo do jogo não está mais no lugar.
+The game's file is no longer there.
+Файла игры больше нет на месте.
+El archivo del juego ya no está en su lugar.
+
+Ponha o arquivo de volta ou escolha o novo lugar em \"Trocar\", nas opções do jogo.
+Put the file back or choose its new place with \"Change\" in the game's options.
+Верните файл или выберите новое место кнопкой замены в настройках игры.
+Pon el archivo de vuelta o elige el nuevo lugar en las opciones del juego.
+
+O jogo está só na nuvem (OneDrive ou parecido), não neste PC.
+The game is only in the cloud (OneDrive or similar), not on this PC.
+Игра только в облаке (OneDrive и т. п.), а не на этом ПК.
+El juego está solo en la nube (OneDrive o similar), no en este PC.
+
+Clique com o botão direito no arquivo e escolha manter sempre neste dispositivo, ou mova o jogo para fora do OneDrive.
+Right-click the file and choose to always keep it on this device, or move the game out of OneDrive.
+Щёлкните файл правой кнопкой и выберите «всегда хранить на этом устройстве» или перенесите игру из OneDrive.
+Haz clic derecho en el archivo y elige mantenerlo siempre en este dispositivo, o saca el juego de OneDrive.
+
+O arquivo do jogo está vazio (0 bytes).
+The game's file is empty (0 bytes).
+Файл игры пустой (0 байт).
+El archivo del juego está vacío (0 bytes).
+
+O Windows não deixou ler o arquivo do jogo.
+Windows did not allow reading the game's file.
+Windows не дала прочитать файл игры.
+Windows no dejó leer el archivo del juego.
+
+Veja se outro programa está usando o arquivo e se o disco está com defeito.
+Check whether another program is using the file and whether the disk is faulty.
+Проверьте, не занят ли файл другой программой и исправен ли диск.
+Mira si otro programa está usando el archivo y si el disco tiene fallos.
+
+O arquivo é uma página da internet salva no lugar do jogo.
+The file is a web page saved in place of the game.
+Вместо игры сохранена веб-страница.
+El archivo es una página web guardada en lugar del juego.
+
+Falta um arquivo do disco que este jogo pede.
+A disc file this game asks for is missing.
+Не хватает файла диска, который нужен игре.
+Falta un archivo del disco que este juego pide.
+
+Ponha todos os arquivos do jogo na mesma pasta, com os nomes originais.
+Put all the game's files in the same folder, with their original names.
+Поместите все файлы игры в одну папку с исходными именами.
+Pon todos los archivos del juego en la misma carpeta, con sus nombres originales.
+
+O jogo ainda está compactado (zip, rar ou 7z).
+The game is still compressed (zip, rar or 7z).
+Игра ещё в архиве (zip, rar или 7z).
+El juego sigue comprimido (zip, rar o 7z).
+
+Extraia o jogo e adicione o arquivo que sair.
+Extract the game and add the file that comes out.
+Распакуйте игру и добавьте полученный файл.
+Extrae el juego y añade el archivo que salga.
+
+Falta no Windows uma peça que o emulador usa (Visual C++).
+Windows lacks a part the emulator uses (Visual C++).
+В Windows нет компонента, нужного эмулятору (Visual C++).
+Falta en Windows una pieza que usa el emulador (Visual C++).
+
+Instale o Visual C++ Redistributable da Microsoft e tente de novo.
+Install Microsoft's Visual C++ Redistributable and try again.
+Установите Visual C++ Redistributable от Microsoft и попробуйте снова.
+Instala el Visual C++ Redistributable de Microsoft y reintenta.
+
+O processador deste PC não tem uma instrução que este emulador usa (AVX).
+This PC's processor lacks an instruction this emulator uses (AVX).
+Процессор этого ПК не поддерживает нужную эмулятору инструкцию (AVX).
+El procesador de este PC no tiene una instrucción que usa este emulador (AVX).
+
+Este console precisa de um processador mais novo.
+This console needs a newer processor.
+Для этой консоли нужен более новый процессор.
+Esta consola necesita un procesador más nuevo.
+
+O disco do Ranga está cheio.
+Ranga's disk is full.
+Диск с Ranga заполнен.
+El disco de Ranga está lleno.
+
+Libere espaço: o emulador precisa gravar saves e cache.
+Free some space: the emulator needs to write saves and cache.
+Освободите место: эмулятору нужно записывать сохранения и кэш.
+Libera espacio: el emulador necesita guardar partidas y caché.
+
+O núcleo deste console não carregou (faltando, corrompido ou bloqueado pelo antivírus).
+This console's core did not load (missing, corrupted or blocked by the antivirus).
+Ядро этой консоли не загрузилось (нет, повреждено или заблокировано антивирусом).
+El núcleo de esta consola no cargó (falta, dañado o bloqueado por el antivirus).
+
+Use Verificar agora para baixar o que faltar; se sumir de novo, libere a pasta do Ranga no antivírus.
+Use Check now to download what is missing; if it disappears again, allow Ranga's folder in the antivirus.
+Нажмите «Проверить сейчас», чтобы скачать недостающее; если пропадёт снова, разрешите папку Ranga в антивирусе.
+Usa Comprobar ahora para descargar lo que falte; si desaparece otra vez, permite la carpeta de Ranga en el antivirus.
+
+Este console não abre o sistema sem um jogo.
+This console does not open its system without a game.
+Эта консоль не открывает систему без игры.
+Esta consola no abre el sistema sin un juego.
+
+Escolha um jogo e aperte Jogar.
+Choose a game and press Play.
+Выберите игру и нажмите «Играть».
+Elige un juego y pulsa Jugar.
+
+O jogo parece estar criptografado.
+The game seems to be encrypted.
+Похоже, игра зашифрована.
+El juego parece estar cifrado.
+
+Tire do seu console uma cópia descriptografada.
+Take a decrypted copy from your console.
+Снимите со своей консоли расшифрованную копию.
+Saca de tu consola una copia descifrada.
+
+O emulador não achou a BIOS ou o firmware que este jogo pede.
+The emulator did not find the BIOS or firmware this game asks for.
+Эмулятор не нашёл BIOS или прошивку, нужные этой игре.
+El emulador no encontró la BIOS o el firmware que pide este juego.
+
+Ponha na pasta a BIOS da mesma região do jogo, tirada do seu console.
+Put in the folder the BIOS of the game's region, taken from your console.
+Поместите в папку BIOS того же региона, что и игра, со своей консоли.
+Pon en la carpeta la BIOS de la misma región del juego, sacada de tu consola.
+
+O emulador não aceitou o arquivo do jogo.
+The emulator did not accept the game's file.
+Эмулятор не принял файл игры.
+El emulador no aceptó el archivo del juego.
+
+Veja se o jogo é deste console e se a cópia está completa.
+Check that the game is for this console and that the copy is complete.
+Проверьте, что игра для этой консоли и копия полная.
+Mira si el juego es de esta consola y si la copia está completa.
+
+A placa de vídeo não conseguiu iniciar o gráfico deste console.
+The graphics card could not start this console's graphics.
+Видеокарта не смогла запустить графику этой консоли.
+La tarjeta gráfica no pudo iniciar los gráficos de esta consola.
+
+O driver de vídeo parou no meio do jogo.
+The graphics driver stopped during the game.
+Видеодрайвер остановился во время игры.
+El controlador de vídeo se detuvo en medio del juego.
+
+Atualize o driver da placa de vídeo e tire o overclock dela, se tiver.
+Update the graphics driver and remove the card's overclock, if any.
+Обновите драйвер видеокарты и уберите разгон, если он есть.
+Actualiza el controlador de la tarjeta y quita el overclock, si tiene.
+
+Faltou memória no PC ou na placa de vídeo.
+The PC or the graphics card ran out of memory.
+Не хватило памяти ПК или видеокарты.
+Faltó memoria en el PC o en la tarjeta gráfica.
+
+Feche outros programas e diminua a resolução nas opções do console.
+Close other programs and lower the resolution in the console's options.
+Закройте другие программы и уменьшите разрешение в настройках консоли.
+Cierra otros programas y baja la resolución en las opciones de la consola.
+
+O emulador fechou com erro, e o DLSS 5 está ligado neste jogo.
+The emulator closed with an error, and DLSS 5 is on in this game.
+Эмулятор закрылся с ошибкой, а в этой игре включён DLSS 5.
+El emulador se cerró con error, y DLSS 5 está activado en este juego.
+
+Desligue o DLSS 5 e tente de novo para saber se era ele.
+Turn off DLSS 5 and try again to know if it was the cause.
+Выключите DLSS 5 и попробуйте снова, чтобы понять, в нём ли дело.
+Desactiva DLSS 5 y reintenta para saber si era eso.
+
+O emulador fechou com erro ao abrir o jogo.
+The emulator closed with an error while opening the game.
+Эмулятор закрылся с ошибкой при запуске игры.
+El emulador se cerró con error al abrir el juego.
+
+Feche outros programas, atualize o driver de vídeo e tente de novo. Se repetir, gere o relatório de erro.
+Close other programs, update the graphics driver and try again. If it repeats, make the error report.
+Закройте другие программы, обновите видеодрайвер и попробуйте снова. Если повторится, создайте отчёт об ошибке.
+Cierra otros programas, actualiza el controlador de vídeo y reintenta. Si se repite, genera el informe de error.
+
+O emulador fechou sozinho no meio do jogo.
+The emulator closed by itself during the game.
+Эмулятор сам закрылся во время игры.
+El emulador se cerró solo en medio del juego.
+
+Abra de novo e continue do último save. Se repetir no mesmo lugar, gere o relatório de erro.
+Open it again and go on from the last save. If it repeats in the same place, make the error report.
+Откройте снова и продолжите с последнего сохранения. Если повторится в том же месте, создайте отчёт об ошибке.
+Ábrelo de nuevo y sigue desde la última partida guardada. Si se repite en el mismo lugar, genera el informe de error.
+
+O emulador fechou antes de abrir o jogo.
+The emulator closed before opening the game.
+Эмулятор закрылся, не открыв игру.
+El emulador se cerró antes de abrir el juego.
+
+Tente de novo. Se repetir, gere o relatório de erro.
+Try again. If it repeats, make the error report.
+Попробуйте снова. Если повторится, создайте отчёт об ошибке.
+Reintenta. Si se repite, genera el informe de error.
+
+O servidor das salas não respondeu. Dá para jogar pela sala reserva (o PC do dono), mas só com quem também entrar por ela. Avise seus amigos.\n\nJogar pela reserva?
+The rooms server didn't answer. You can play through the backup room (the owner's PC), but only with those who also join through it. Tell your friends.\n\nPlay through the backup?
+Сервер комнат не ответил. Можно играть через резервную комнату (ПК владельца), но только с теми, кто тоже зайдёт через неё. Предупредите друзей.\n\nИграть через резервную?
+El servidor de las salas no respondió. Puedes jugar por la sala de reserva (el PC del dueño), pero solo con quien también entre por ella. Avisa a tus amigos.\n\n¿Jugar por la reserva?
+
+Nem o servidor das salas nem a sala reserva responderam: o online não vai funcionar agora.\n\nJogar mesmo assim?
+Neither the rooms server nor the backup room answered: online play won't work right now.\n\nPlay anyway?
+Ни сервер комнат, ни резервная комната не ответили: онлайн сейчас не заработает.\n\nВсё равно играть?
+Ni el servidor de las salas ni la sala de reserva respondieron: el online no funcionará ahora.\n\n¿Jugar de todos modos?
+
+Enviar ao Ranga
+Send to Ranga
+Отправить в Ranga
+Enviar a Ranga
+
+Enviando...
+Sending...
+Отправка...
+Enviando...
+
+Gerar .zip
+Make .zip
+Создать .zip
+Generar .zip
+
+Manda ao Ranga a versão, o console, o emulador, o jogo e os logs desta vez, para consertar o erro. Seu nome de usuário, o nome do PC, e-mails e IPs são tirados dos logs; saves, jogos e conta não vão.
+Sends Ranga the version, the console, the emulator, the game and the logs of this run, to fix the error. Your user name, the PC's name, e-mails and IPs are taken out of the logs; saves, games and account don't go.
+Отправляет в Ranga версию, консоль, эмулятор, игру и журналы этого запуска, чтобы исправить ошибку. Ваше имя пользователя, имя ПК, e-mail и IP удаляются из журналов; сохранения, игры и аккаунт не отправляются.
+Envía a Ranga la versión, la consola, el emulador, el juego y los registros de esta vez, para arreglar el error. Tu nombre de usuario, el nombre del PC, los correos y las IP se quitan de los registros; las partidas, los juegos y la cuenta no se envían.
+
+ s.\n\nQuer mandar o relatório de erro ao Ranga? Vão a versão, o console, o emulador, o jogo e os logs desta vez; seu nome de usuário, o nome do PC, e-mails e IPs são tirados, e saves, jogos e conta não vão.\n\nGerar .zip só faz o arquivo, para você mandar a quem for ajudar.
+ s.\n\nDo you want to send the error report to Ranga? The version, the console, the emulator, the game and the logs of this run go; your user name, the PC's name, e-mails and IPs are taken out, and saves, games and account don't go.\n\nMake .zip only makes the file, for you to send to whoever is going to help.
+ с.\n\nОтправить отчёт об ошибке в Ranga? Отправляются версия, консоль, эмулятор, игра и журналы этого запуска; имя пользователя, имя ПК, e-mail и IP удаляются, а сохранения, игры и аккаунт не отправляются.\n\n«Создать .zip» только создаёт файл, чтобы вы отправили его тому, кто будет помогать.
+ s.\n\n¿Quieres enviar el informe de error a Ranga? Van la versión, la consola, el emulador, el juego y los registros de esta vez; tu nombre de usuario, el nombre del PC, los correos y las IP se quitan, y las partidas, los juegos y la cuenta no van.\n\nGenerar .zip solo crea el archivo, para que se lo mandes a quien te vaya a ayudar.
+
+Relatório enviado. Obrigado: ele ajuda a consertar o Ranga.
+Report sent. Thank you: it helps fix Ranga.
+Отчёт отправлен. Спасибо: он помогает исправить Ranga.
+Informe enviado. Gracias: ayuda a arreglar Ranga.
+
+Sem resposta (sem internet?). O relatório não foi enviado.
+No answer (no internet?). The report was not sent.
+Нет ответа (нет интернета?). Отчёт не отправлен.
+Sin respuesta (¿sin internet?). El informe no se envió.
+
+O Ranga recebeu relatórios demais agora. Tente mais tarde.
+Ranga got too many reports right now. Try again later.
+Ranga сейчас получил слишком много отчётов. Попробуйте позже.
+Ranga recibió demasiados informes ahora. Inténtalo más tarde.
+
+O envio falhou (resposta 
+Sending failed (answer 
+Отправка не удалась (ответ 
+El envío falló (respuesta 
+
+O envio ainda não está ligado nesta versão do Ranga.
+Sending is not on yet in this version of Ranga.
+В этой версии Ranga отправка ещё не включена.
+El envío todavía no está activado en esta versión de Ranga.
+
+O Ranga Alpha não envia nada.
+Ranga Alpha sends nothing.
+Ranga Alpha ничего не отправляет.
+Ranga Alpha no envía nada.

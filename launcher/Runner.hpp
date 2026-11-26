@@ -1,6 +1,7 @@
 #ifndef LAUNCHER_RUNNER_HPP
 #define LAUNCHER_RUNNER_HPP
 
+#include "Diagnosis.hpp"
 #include "Library.hpp"
 
 #include <atomic>
@@ -21,6 +22,11 @@ public:
     State Current() const { return state.load(); }
     std::wstring Message() const;
     std::wstring TitleId() const;
+    // Stops the preparation that can be skipped (Ranga Alpha) and opens the game as it is; what was done stays done.
+    void SkipPreparing() { skip = true; }
+    bool CanSkip() const { return skippable.load() && Current() == State::Preparing; }
+    // Why the last game did not open or closed by itself (empty reason: it did not).
+    Diagnosis Why() const;
     // root is the folder of this program, with libs and tools.
     void Start(const std::wstring& root, const Game& game, const Options& options);
     // The console's own system with no game (the PS2's menu, the Xbox dashboard on its hard disk, the Switch's Mii
@@ -38,13 +44,16 @@ private:
     // Any other console goes to the emulator chosen for it on the Emulators page.
     void RunExternal(const std::wstring& root, const Game& game, const Options& options);
     // Waits for the started game, journals how it ended and reports it.
-    void Await(PROCESS_INFORMATION& process, const std::wstring& logs, const Game& game, const wchar_t* errorLog);
-    void Report(State next, const std::wstring& text);
+    void Await(PROCESS_INFORMATION& process, const std::wstring& logs, const Game& game, const wchar_t* errorLog,
+               const std::function<Diagnosis(unsigned long code, unsigned long seconds)>& why = nullptr);
+    void Report(State next, const std::wstring& text, const Diagnosis& why = {});
 
     std::atomic<State> state{State::Idle};
     mutable std::mutex lock;
     std::wstring message;
     std::wstring titleId;
+    Diagnosis diagnosis;
+    std::atomic<bool> skip{false}, skippable{false};
     std::thread worker;
 };
 

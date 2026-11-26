@@ -171,6 +171,7 @@ void LinkFolder(const std::wstring& link, const std::wstring& target, const std:
 }
 
 void LinkGameFiles(const std::wstring& game, const std::wstring& app0, const std::wstring& log) {
+    if (!kRangaAlpha) return;
     CreateDirectoryW(app0.c_str(), nullptr);
     WIN32_FIND_DATAW found;
     HANDLE search = FindFirstFileW((game + L"\\*").c_str(), &found);
@@ -197,16 +198,19 @@ void LinkGameFiles(const std::wstring& game, const std::wstring& app0, const std
 }
 
 std::wstring GameExecutable(const std::wstring& folder) {
+    if (!kRangaAlpha) return L"";
     if (Exists(folder + L"\\eboot.bin")) return folder + L"\\eboot.bin";
     if (Exists(folder + L"\\eboot.elf")) return folder + L"\\eboot.elf";
     return L"";
 }
 
 bool IsGameFolder(const std::wstring& folder) {
+    if (!kRangaAlpha) return false;
     return !folder.empty() && !GameExecutable(folder).empty() && IsDirectory(folder + L"\\sce_sys");
 }
 
 bool IsElf(const std::wstring& path) {
+    if (!kRangaAlpha) return false;
     HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
     if (file == INVALID_HANDLE_VALUE) return false;
     unsigned char magic[4] = {};
@@ -294,6 +298,7 @@ bool ExtractSelf(const std::wstring& selfPath, const std::wstring& elfPath) {
 }
 
 bool ConvertOrCopy(const std::wstring& from, const std::wstring& to) {
+    if (!kRangaAlpha) return false;
     if (IsElf(from)) return CopyFileW(from.c_str(), to.c_str(), FALSE) != 0;
     if (ExtractSelf(from, to)) return true;
     // Dumps re-signed for the console keep the plain ELF beside the SELF, as <name>.esbak.
@@ -302,6 +307,7 @@ bool ConvertOrCopy(const std::wstring& from, const std::wstring& to) {
 }
 
 void PrepareModules(const std::wstring& game, const std::wstring& prep, std::wstring& failed) {
+    if (!kRangaAlpha) return;
     CreateDirectoryW(prep.c_str(), nullptr);
     CreateDirectoryW((prep + L"\\sce_module").c_str(), nullptr);
     for (const wchar_t* sub : {L"\\sce_module", L"\\Media\\Modules", L"\\Media\\Plugins"}) {
@@ -585,6 +591,7 @@ size_t FindInteger(const std::vector<unsigned char>& data, const char* key, size
 }
 
 int ReadSosSetting(const std::wstring& workspace, const char* key) {
+    if (!kRangaAlpha) return -1;
     std::vector<unsigned char> data;
     size_t digits = 0;
     int value = -1;
@@ -594,6 +601,7 @@ int ReadSosSetting(const std::wstring& workspace, const char* key) {
 // Rewrites only the digits of one value, in place and with the same length, so the rest of the file stays byte for byte
 // the same. Nothing is written when the value is already set, so a missing file is seeded only when something changes.
 bool WriteSosSetting(const std::wstring& workspace, const char* key, int value) {
+    if (!kRangaAlpha) return false;
     std::vector<unsigned char> data;
     size_t digits = 0;
     int current = -1;
@@ -611,6 +619,7 @@ bool WriteSosSetting(const std::wstring& workspace, const char* key, int value) 
 // release is posted to it, so SDL's fullscreen state stays consistent and F11 keeps working both ways. If the game window
 // does not become the active window, nothing is sent, so keys are never sent to another window.
 void RequestFullscreen(const PROCESS_INFORMATION& process) {
+    if (!kRangaAlpha) return;
     for (int i = 0; i < 240 && WaitForSingleObject(process.hProcess, 250) == WAIT_TIMEOUT; ++i) {
         HWND window = GetForegroundWindow();
         DWORD owner = 0;

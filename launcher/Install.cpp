@@ -134,7 +134,7 @@ bool InstallTo(const std::wstring& self, const std::wstring& folder) {
 
 }
 
-bool FirstInstall(const std::wstring& root) { return !Exists(root + L"\\ranga_retro.exe"); }
+bool FirstInstall(const std::wstring& root) { return !kRangaAlpha && !Exists(root + L"\\ranga_retro.exe"); }
 
 bool OfferInstall(const std::wstring& root) {
     // Ranga has run here already (it makes jogos on its first start), or this is a whole Ranga folder.

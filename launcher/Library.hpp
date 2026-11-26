@@ -19,7 +19,7 @@ struct Game {
     std::wstring folder;
     std::wstring workspace;
     // PS5 games run in Ranga's runtime; any other console (see Systems.hpp) goes to its emulator.
-    std::wstring system = L"PS5";
+    std::wstring system = kRangaAlpha ? L"PS5" : L"";
     // The serial read from the disc or its param.sfo, shown beside the title; may be empty.
     std::wstring serial;
 };
@@ -94,6 +94,8 @@ private:
 
 // Per-game options, kept in options.ini in the game's workspace.
 struct Options {
+    // The room this run joins instead of the game's own address ("key=value", a core option); never saved.
+    std::string room;
     bool borderless = false;
     // resolutionIndex in Sons of Sparta's settings: 0 is 3840 x 2160, 6 is 2560 x 1440, 8 is 1920 x 1080, -1 keeps the game's choice.
     int resolution = -1;

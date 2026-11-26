@@ -28,6 +28,8 @@ struct UpdateInfo {
     std::vector<UpdateFile> changed; // the files that differ from this PC's
     uint64_t download = 0;           // their size together
     std::wstring error;              // why there is nothing (empty: checked fine)
+    bool declined = false;           // the newest is one the player went back from (RollBack)
+    bool older = false;              // the newest there is older than this Ranga (it is on a beta)
 };
 
 // Where updates come from, tried in order and the newest signed list wins: engines.ini [Ranga] atualizacao (one or
@@ -41,7 +43,9 @@ std::string InstalledUpdate(const std::wstring& root);
 // The PC that hosts: whether it can sign (has the key), and publishing the programs as they are now.
 bool CanPublishUpdate(const std::wstring& root);
 // wanted: the number to give it ("1.1.0"); empty: the last one with its last part one up (the first is 1.0.0).
-std::wstring PublishUpdate(const std::wstring& root, const std::string& notes, std::string& version, const std::string& wanted = "");
+// beta: only for who asked for betas (BetaChannel): its own folder (salas\atualizacao-beta, which the table server does
+// not hand out), no entry in the news and no number spent.
+std::wstring PublishUpdate(const std::wstring& root, const std::string& notes, std::string& version, const std::string& wanted = "", bool beta = false);
 // This Ranga's number ("1.0.0"), empty when its version had none; true when text is such a number.
 std::string InstalledVersionName(const std::wstring& root);
 bool VersionName(const std::string& text);
@@ -53,6 +57,27 @@ std::wstring DownloadUpdate(const std::wstring& root, const UpdateInfo& info, co
 // Puts the downloaded files in place (the running RangaEmu.exe is renamed to .old first, as Windows allows) and records
 // the version. No game may be running.
 std::wstring ApplyUpdate(const std::wstring& root, const UpdateInfo& info);
+// ---- Going back ----
+// ApplyUpdate keeps what it replaced in versao-anterior (one version back, only the files that changed). RollBack puts
+// them in place again and notes the version left behind, which is not offered anymore (a newer one is).
+struct PreviousVersion {
+    std::string version, name; // empty version: there is none to go back to
+    std::vector<UpdateFile> files;
+};
+PreviousVersion Previous(const std::wstring& root);
+std::wstring RollBack(const std::wstring& root);
+std::string DeclinedUpdate(const std::wstring& root);
+void ForgetDeclined(const std::wstring& root);
+// The first starts after an update: UpdateNeverOpened counts this start and is true when the one before never got to
+// ConfirmUpdate (the new Ranga breaks as it opens).
+bool UpdateNeverOpened(const std::wstring& root);
+void ConfirmUpdate(const std::wstring& root);
+
+// Betas (engines.ini [Ranga] beta=1): the beta release counts as a source too. A signed list that says it is a beta is
+// refused everywhere else.
+bool BetaChannel(const std::wstring& root);
+void SetBetaChannel(const std::wstring& root, bool on);
+
 // Removes what an update left behind (*.old, the download folder) once the new Ranga runs.
 void CleanUpdateLeftovers(const std::wstring& root);
 
@@ -76,7 +101,8 @@ IntegrityReport CheckIntegrity(const std::wstring& root, const std::function<voi
 // The hosting PC: the published version (salas\atualizacao) also as a release on GitHub, through the gh command
 // (signed in on this PC), so friends get it with this PC turned off. The three newest releases stay. Uploads everything
 // (about 450 MB): minutes, off the window's thread.
-std::wstring PublishToGitHub(const std::wstring& root, std::string& version);
+// beta: the published beta, as the one release tagged "beta" (a prerelease, the last one replaced).
+std::wstring PublishToGitHub(const std::wstring& root, std::string& version, bool beta = false);
 
 // The hosting PC: a whole Ranga for a friend who has none (a new or formatted PC), as one zip in folder: the programs,
 // the cores and the emulators, with this PC's engines.ini minus what is only this PC's (server, group, backup,

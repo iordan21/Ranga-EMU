@@ -1,4 +1,5 @@
 #include "ConsoleGraphics.hpp"
+#include "AlphaExtra.hpp"
 
 namespace Ranga {
 
@@ -188,6 +189,7 @@ const std::vector<GraphicsOption> kDs = {
      "Só para o desenho em 3D (OpenGL). Vale ao reabrir."},
 };
 
+
 }
 
 const std::vector<GraphicsOption>* ConsoleGraphics(const std::wstring& system) {
@@ -200,7 +202,11 @@ const std::vector<GraphicsOption>* ConsoleGraphics(const std::wstring& system) {
     for (const auto& [id, table] : tables) {
         if (system == id) return table;
     }
+#ifdef RANGA_ALPHA_EXTRA
+    return AlphaExtra::Graphics(system);
+#else
     return nullptr;
+#endif
 }
 
 }

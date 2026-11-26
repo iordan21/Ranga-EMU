@@ -43,6 +43,16 @@ cmake --build build --target RangaEmu RangaRetro RangaSala
 | `launcher/net/` | Servidor das salas (`ranga-sala`) e o servidor dos amigos na Cloudflare |
 | `core/` | O runtime de PS5 herdado do [AnyPS5](https://github.com/boykopovar/AnyPS5) (escondido no Ranga por enquanto) |
 
+## Privacidade: relatório de erro
+
+Quando um jogo fecha com erro, o Ranga pergunta se você quer **Enviar ao Ranga**. Só vai se você apertar o botão; nada é enviado sozinho.
+
+- **O que vai:** a versão do Ranga, o console, o emulador, o nome e o serial do jogo, o código do erro, quantos segundos o jogo rodou e o final dos logs daquela vez.
+- **O que é tirado dos logs antes:** seu nome de usuário do Windows, a pasta do seu usuário, o nome do PC, e-mails, endereços IP e linhas com senha ou token.
+- **O que não vai:** saves, jogos, BIOS, chaves dos consoles, sua conta e seu IP (o relatório pede para não guardá-lo).
+- **Para onde:** para o projeto do Ranga no [Sentry](https://sentry.io), um serviço de relatórios de erro, onde só o dono do Ranga vê. Serve só para achar e consertar o que quebra.
+- O **Gerar .zip** continua fazendo o arquivo no seu PC, sem enviar nada.
+
 ## Créditos
 
 - O Ranga nasceu de um fork do [AnyPS5](https://github.com/boykopovar/AnyPS5) e do SoS-PS5.

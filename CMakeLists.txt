@@ -67,7 +67,7 @@ add_subdirectory(core/relinker)
 if(WIN32)
     set(IMGUI_DIR ${CMAKE_SOURCE_DIR}/3rdparty/imgui)
     add_executable(RangaEmu WIN32
-        launcher/Client.cpp launcher/Common.cpp launcher/Covers.cpp launcher/Dlss5.cpp launcher/Library.cpp launcher/Runner.cpp launcher/Systems.cpp launcher/Embed.cpp launcher/Rooms.cpp launcher/ConsoleGraphics.cpp launcher/Update.cpp launcher/Http.cpp launcher/PlayerProfile.cpp launcher/Lobby.cpp launcher/Media.cpp launcher/Backup.cpp launcher/Cloud.cpp launcher/Store.cpp launcher/Idioma.cpp launcher/Install.cpp launcher/launcher.rc
+        launcher/Client.cpp launcher/Common.cpp launcher/Covers.cpp launcher/Dlss5.cpp launcher/Library.cpp launcher/Runner.cpp launcher/Systems.cpp launcher/Embed.cpp launcher/Rooms.cpp launcher/ConsoleGraphics.cpp launcher/Update.cpp launcher/Http.cpp launcher/PlayerProfile.cpp launcher/Lobby.cpp launcher/Media.cpp launcher/Backup.cpp launcher/Cloud.cpp launcher/Store.cpp launcher/Idioma.cpp launcher/Install.cpp launcher/Diagnosis.cpp launcher/CrashReport.cpp launcher/launcher.rc
         ${IMGUI_DIR}/imgui.cpp ${IMGUI_DIR}/imgui_draw.cpp ${IMGUI_DIR}/imgui_tables.cpp ${IMGUI_DIR}/imgui_widgets.cpp
         ${IMGUI_DIR}/backends/imgui_impl_win32.cpp ${IMGUI_DIR}/backends/imgui_impl_dx11.cpp ${IMGUI_DIR}/misc/freetype/imgui_freetype.cpp)
     # The translations (launcher/idiomas.txt) go into the .rc: a change to them rebuilds it.
@@ -78,6 +78,20 @@ if(WIN32)
     target_compile_definitions(RangaEmu PRIVATE UNICODE _UNICODE IMGUI_USE_WCHAR32 IMGUI_ENABLE_FREETYPE)
     target_link_options(RangaEmu PRIVATE -municode -static)
     target_link_libraries(RangaEmu PRIVATE SDL2-static freetype d3d11 d3dcompiler dxgi dwmapi ole32 shell32 shlwapi uuid gdi32 comctl32 winhttp bcrypt ws2_32 iphlpapi mfplat mfreadwrite mfuuid)
+    # Ranga Alpha: Ranga with the consoles still being worked on and nothing else, for this PC only. Built by name
+    # (--target RangaAlpha), never part of a normal build, and it has no network, updates or publishing.
+    get_target_property(RANGA_SOURCES RangaEmu SOURCES)
+    add_executable(RangaAlpha WIN32 EXCLUDE_FROM_ALL ${RANGA_SOURCES})
+    foreach(PROPERTY INCLUDE_DIRECTORIES COMPILE_DEFINITIONS LINK_OPTIONS LINK_LIBRARIES)
+        get_target_property(VALUE RangaEmu ${PROPERTY})
+        set_target_properties(RangaAlpha PROPERTIES ${PROPERTY} "${VALUE}")
+    endforeach()
+    target_compile_definitions(RangaAlpha PRIVATE RANGA_ALPHA)
+    # The Alpha's private consoles (launcher/alpha, kept on the owner's PC and never published), only when it is there.
+    if(EXISTS ${CMAKE_SOURCE_DIR}/launcher/alpha/Extra.cpp)
+        target_sources(RangaAlpha PRIVATE launcher/alpha/Extra.cpp)
+        target_compile_definitions(RangaAlpha PRIVATE RANGA_ALPHA_EXTRA)
+    endif()
     # Ranga Retro: libretro cores inside Ranga's own window (launcher/retro).
     # RetroAchievements (3rdparty/rcheevos, MIT): the achievements Ranga Retro checks in the game's memory.
     enable_language(C)

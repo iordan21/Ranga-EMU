@@ -1,4 +1,5 @@
 #include "Systems.hpp"
+#include "AlphaExtra.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -169,6 +170,9 @@ std::vector<System> MakeSystems() {
          {{L"Xenia Canary", L"xenia", L"{fullscreen} \"{rom}\"", L"--fullscreen=true", {}, L"", true}},
          "Jogo em ISO, ou pasta com default.xex. No nativo (core do Xenia feito para o Ranga) os saves ficam no content do "
          "Xenia portátil, sem save state."},
+#ifdef RANGA_ALPHA_EXTRA
+#include "alpha/Sistemas.inc"
+#endif
         {L"PCE", "PC Engine / TurboGrafx-16", {L".pce", L".sgx"}, false,
          {RetroArch(L"mednafen_pce_fast"), RetroArch(L"mednafen_pce")},
          "Não precisa de BIOS (só os jogos em CD)."},
@@ -492,7 +496,7 @@ const System* FindSystem(const std::wstring& id) {
 }
 
 std::string SystemName(const std::wstring& id) {
-    if (id == L"PS5") return "PlayStation 5";
+    if (kRangaAlpha && id == L"PS5") return "PlayStation 5";
     const System* system = FindSystem(id);
     return system != nullptr ? system->name : Utf8(id);
 }
@@ -667,12 +671,9 @@ void RepairLinks(const std::wstring& root) {
     }
 }
 
-bool ShowPs4Ps5(const std::wstring& root) { return ReadIni(EnginesIni(root), L"Ranga", L"ps4ps5", L"0") == L"1"; }
+bool IsAlphaSystem(const std::wstring& id) { return AlphaExtra::IsSystem(id); }
 
-void SetShowPs4Ps5(const std::wstring& root, bool on) {
-    EnsureUnicodeIni(EnginesIni(root));
-    WritePrivateProfileStringW(L"Ranga", L"ps4ps5", on ? L"1" : nullptr, EnginesIni(root).c_str());
-}
+bool SystemShown(const std::wstring&, const std::wstring& id) { return kRangaAlpha == IsAlphaSystem(id); }
 
 std::wstring Quality(const std::wstring& root) {
     const std::wstring level = ReadIni(EnginesIni(root), L"Ranga", L"qualidade", L"bom");
@@ -711,6 +712,9 @@ Engine LoadEngine(const std::wstring& root, const std::wstring& id) {
         return engine;
     }
     engine.exe = ReadIni(ini, id.c_str(), L"exe", L"");
+#ifdef RANGA_ALPHA_EXTRA
+    if (engine.exe.empty()) engine.exe = AlphaExtra::DefaultExe(root, id);
+#endif
     const Preset* preset = MatchPreset(*system, engine.exe);
     if (preset != nullptr) {
         engine.presetName = preset->name;
@@ -1121,6 +1125,9 @@ Detected DetectFolder(const std::wstring& folder) {
         found.systems = {L"X360"};
         return found;
     }
+#ifdef RANGA_ALPHA_EXTRA
+    if (AlphaExtra::DetectFolder(folder, found)) return found;
+#endif
     if (!GameRom(L"WIIU", folder).empty()) {
         found.systems = {L"WIIU"};
         const std::string meta = ReadBytes(folder + L"\\meta\\meta.xml");
@@ -1146,6 +1153,9 @@ std::wstring GameRom(const std::wstring& system, const std::wstring& path) {
         return L"";
     }
     if (system == L"X360") return Exists(path + L"\\default.xex") ? path + L"\\default.xex" : L"";
+#ifdef RANGA_ALPHA_EXTRA
+    if (std::wstring rom; AlphaExtra::GameRom(system, path, rom)) return rom;
+#endif
     if (system == L"WIIU") return FirstMatch(path + L"\\code", L"*.rpx");
     return L"";
 }

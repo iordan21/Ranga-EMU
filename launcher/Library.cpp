@@ -1,5 +1,6 @@
 #include "Library.hpp"
 #include "Systems.hpp"
+#include "AlphaExtra.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -76,6 +77,7 @@ std::string JsonString(const std::string& text, const std::string& key, size_t f
 
 Profile ProfileFor(const std::wstring& titleId) {
     Profile profile;
+    if (!kRangaAlpha) return profile;
     // Unity plugins and a network library the runtime replaces; deferred modules start when the game first needs them.
     profile.excludedModules = {L"CommonDialog.prx", L"VoiceInputPlugin.prx", L"libSceNpCppWebApi.prx"};
     profile.deferredModules = {L"PSN.prx", L"SaveData.prx", L"lib_burst_generated.prx"};
@@ -97,9 +99,10 @@ Profile ProfileFor(const std::wstring& titleId) {
     return profile;
 }
 
-std::wstring BloodborneEngine(const std::wstring& root) { return root + L"\\engines\\bloodborne"; }
+std::wstring BloodborneEngine(const std::wstring& root) { return kRangaAlpha ? root + L"\\engines\\bloodborne" : L""; }
 
 bool ReadGameInfo(const std::wstring& folder, Game& game) {
+    if (!kRangaAlpha) return false;
     const std::string text = ReadBytes(folder + L"\\sce_sys\\param.json");
     const std::string titleId = JsonString(text, "titleId");
     if (titleId.empty()) {
@@ -132,7 +135,7 @@ bool ReadGameInfo(const std::wstring& folder, Game& game) {
 }
 
 bool GameAvailable(const Game& game) {
-    if (game.system == L"PS5" || (game.system == L"PS4" && ProfileFor(game.titleId).bloodborne)) return IsGameFolder(game.folder);
+    if (kRangaAlpha && (game.system == L"PS5" || (game.system == L"PS4" && ProfileFor(game.titleId).bloodborne))) return IsGameFolder(game.folder);
     return !GameRom(game.system, game.folder).empty();
 }
 
@@ -149,9 +152,11 @@ void Library::Load() {
         const std::wstring folder = ReadIni(IniPath(), name, L"folder", L"");
         // Entries from before other consoles have no system: their title id says PS4 or PS5.
         const std::wstring system = ReadIni(IniPath(), name, L"system", titleId.rfind(L"CUSA", 0) == 0 ? L"PS4" : L"PS5");
+        // Those two are Ranga Alpha's: here their entries stay in library.ini as they are, unread.
+        if (!kRangaAlpha && (system == L"PS5" || system == L"PS4")) continue;
         // A game whose folder is gone stays listed under its stored name, so it can be pointed at its new place. Other
         // consoles keep what was read when they were added.
-        if (system != L"PS5" && system != L"PS4") {
+        if (!kRangaAlpha || (system != L"PS5" && system != L"PS4")) {
             game.titleId = titleId;
             game.title = ReadIni(IniPath(), name, L"title", name);
             game.folder = folder;
@@ -181,15 +186,16 @@ void Library::Load() {
 
 int Library::Add(const std::wstring& folder, std::wstring& error) {
     Game game;
-    if (!IsGameFolder(folder)) {
+    if (!kRangaAlpha || !IsGameFolder(folder)) {
         // Not a PS5 or PS4 dump: maybe a PS3, Xbox 360 or Wii U game folder.
         const Detected found = DetectFolder(folder);
-        if (found.systems.size() == 1) {
+        if (found.systems.size() == 1 && SystemShown(root, found.systems[0])) {
             const std::wstring key = found.systems[0] == L"PS3" && !found.serial.empty() ? found.serial : FileKey(found.systems[0], folder);
             return Store(key, folder, found.systems[0], found.serial, found.title, error);
         }
         error = L"Não reconheci o jogo nesta pasta:\n\n" + folder +
-                L"\n\nPasta de jogo é a de PS5 ou do Bloodborne (com eboot.bin e sce_sys), PS3 (com PS3_GAME ou USRDIR), Xbox 360 (com default.xex) ou Wii U (com code e meta). Para ISO, ROM e outros arquivos, use \"Arquivo do jogo\".";
+                (kRangaAlpha ? L"\n\nPasta de jogo é a de PS5 ou do Bloodborne (com eboot.bin e sce_sys)" RANGA_ALPHA_EXTRA_FOLDERS "."
+                             : L"\n\nPasta de jogo é a do PS3 (com PS3_GAME ou USRDIR), Xbox 360 (com default.xex) ou Wii U (com code e meta). Para ISO, ROM e outros arquivos, use \"Arquivo do jogo\".");
         return -1;
     }
     if (!ReadGameInfo(folder, game)) {
@@ -330,8 +336,10 @@ int Library::ScanGamesFolders(const std::wstring& only) {
     };
     std::vector<std::wstring> ids;
     if (only.empty()) {
-        if (ShowPs4Ps5(root)) ids.push_back(L"PS5");
-        for (const auto& system : Systems()) ids.push_back(system.id);
+        if (kRangaAlpha) ids.push_back(L"PS5");
+        for (const auto& system : Systems()) {
+            if (SystemShown(root, system.id)) ids.push_back(system.id);
+        }
     } else {
         ids.push_back(only);
     }
@@ -347,7 +355,7 @@ int Library::ScanGamesFolders(const std::wstring& only) {
         list(folder, files, folders);
         const System* system = FindSystem(id);
         for (const auto& inner : folders) {
-            if (id == L"PS5") {
+            if (kRangaAlpha && id == L"PS5") {
                 Game game;
                 if (IsGameFolder(inner) && ReadGameInfo(inner, game) && game.system == L"PS5" && !known(game.titleId)) {
                     store(game.titleId, inner, L"PS5", L"", game.title);
@@ -440,20 +448,20 @@ Options LoadOptions(const Game& game) {
     Options options;
     options.borderless = _wcsicmp(ReadIni(path, L"Display", L"mode", L"Windowed").c_str(), L"Borderless") == 0;
     const std::wstring resolution = ReadIni(path, L"Display", L"resolution", L"");
-    options.resolution = !resolution.empty() ? _wtoi(resolution.c_str()) : ProfileFor(game.titleId).sonsOfSparta ? ReadSosSetting(game.workspace, "resolutionIndex") : -1;
+    options.resolution = !resolution.empty() ? _wtoi(resolution.c_str()) : kRangaAlpha && ProfileFor(game.titleId).sonsOfSparta ? ReadSosSetting(game.workspace, "resolutionIndex") : -1;
     if (options.resolution != 0 && options.resolution != 6 && options.resolution != 8) options.resolution = -1;
     options.skipIntro = ReadFlag(path, L"Startup", L"skip_intro");
     options.skipDialogue = ReadFlag(path, L"QualityOfLife", L"SkipDialogue");
     options.godMode = ReadFlag(path, L"Cheats", L"god_mode");
-    options.infiniteSpirit = ReadFlag(path, L"Cheats", L"infinite_spartan_spirit");
+    options.infiniteSpirit = kRangaAlpha && ReadFlag(path, L"Cheats", L"infinite_spartan_spirit");
     options.infiniteMagic = ReadFlag(path, L"Cheats", L"infinite_magic");
     options.movementSpeed = ReadFlag(path, L"Cheats", L"movement_speed");
     options.jumpHeight = ReadFlag(path, L"Cheats", L"jump_height");
     const int damage = _wtoi(ReadIni(path, L"Cheats", L"damage_multiplier", L"1").c_str());
     options.damageMultiplier = damage == 2 || damage == 4 || damage == 6 ? damage : 1;
-    const std::wstring fps = ReadIni(path, L"Bloodborne", L"fps", L"60");
+    const std::wstring fps = kRangaAlpha ? ReadIni(path, L"Bloodborne", L"fps", L"60") : L"60";
     options.fps = fps == L"30" || fps == L"90" || fps == L"uncap" ? fps : L"60";
-    const std::wstring render = ReadIni(path, L"Bloodborne", L"render_resolution", L"");
+    const std::wstring render = kRangaAlpha ? ReadIni(path, L"Bloodborne", L"render_resolution", L"") : L"";
     options.renderResolution = render == L"1280x720" || render == L"2560x1440" || render == L"3840x2160" ? render : L"";
     options.dlss5 = ReadFlag(path, L"Enhancements", L"dlss5");
     return options;
@@ -597,6 +605,7 @@ std::vector<Addon> LoadAddons(const Game& game) {
 }
 
 std::wstring InstallAddon(const Game& game, const std::wstring& folder) {
+    if (!kRangaAlpha) return L"";
     const std::string text = ReadBytes(folder + L"\\sce_sys\\param.json");
     if (text.empty()) return L"Esta pasta não tem sce_sys\\param.json, então não parece uma DLC tirada do console:\n\n" + folder;
     const std::wstring titleId = Wide(JsonString(text, "titleId"));
@@ -651,13 +660,13 @@ void SaveOptions(const Game& game, const Options& options) {
     WriteFlag(path, L"Startup", L"skip_intro", options.skipIntro);
     WriteFlag(path, L"QualityOfLife", L"SkipDialogue", options.skipDialogue);
     WriteFlag(path, L"Cheats", L"god_mode", options.godMode);
-    WriteFlag(path, L"Cheats", L"infinite_spartan_spirit", options.infiniteSpirit);
+    if (kRangaAlpha) WriteFlag(path, L"Cheats", L"infinite_spartan_spirit", options.infiniteSpirit);
     WriteFlag(path, L"Cheats", L"infinite_magic", options.infiniteMagic);
     WriteFlag(path, L"Cheats", L"movement_speed", options.movementSpeed);
     WriteFlag(path, L"Cheats", L"jump_height", options.jumpHeight);
     WritePrivateProfileStringW(L"Cheats", L"damage_multiplier", options.damageMultiplier == 1 ? nullptr : std::to_wstring(options.damageMultiplier).c_str(), path.c_str());
     WriteFlag(path, L"Enhancements", L"dlss5", options.dlss5);
-    if (ProfileFor(game.titleId).bloodborne) {
+    if (kRangaAlpha && ProfileFor(game.titleId).bloodborne) {
         WritePrivateProfileStringW(L"Bloodborne", L"fps", options.fps.c_str(), path.c_str());
         WritePrivateProfileStringW(L"Bloodborne", L"render_resolution", options.renderResolution.c_str(), path.c_str());
     }

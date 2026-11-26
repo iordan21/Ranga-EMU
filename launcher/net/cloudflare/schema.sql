@@ -163,3 +163,9 @@ CREATE TABLE IF NOT EXISTS nuvem_partes (
   quando INTEGER NOT NULL,
   PRIMARY KEY (conta, hash, indice)
 );
+
+-- O que o dono escolhe para todos: 'salas' é o servidor das salas e os endereços de reserva (POST /dono/salas).
+CREATE TABLE IF NOT EXISTS ajustes (
+  chave TEXT PRIMARY KEY,
+  valor TEXT NOT NULL
+);

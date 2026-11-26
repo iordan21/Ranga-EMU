@@ -13,7 +13,13 @@
 // may have any characters in its name.
 namespace Ranga {
 
+#ifdef RANGA_ALPHA
+inline constexpr bool kRangaAlpha = true;
+inline constexpr const wchar_t* kAppName = L"Ranga Alpha";
+#else
+inline constexpr bool kRangaAlpha = false;
 inline constexpr const wchar_t* kAppName = L"Ranga Emu";
+#endif
 inline constexpr const wchar_t* kRuntime = L"ranga_runtime.exe";
 
 bool Exists(const std::wstring& path);

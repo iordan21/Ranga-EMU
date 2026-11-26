@@ -57,6 +57,7 @@
 //   POST /dono/desbanir    conta
 //   GET  /dono/denuncias                                  as denúncias abertas
 //   POST /dono/denuncia    id                             (arquiva)
+//   POST /dono/salas       servidor e as reservas         (o servidor das salas; GET /salas entrega a quem tem conta)
 
 const PBKDF2_ITERATIONS = 20000;
 const MAX_ACCOUNTS = 5000;
@@ -823,6 +824,14 @@ export default {
         await env.DB.prepare("UPDATE denuncias SET resolvida = 1 WHERE id = ?").bind(Number(fields.id) || 0).run();
         return answer(200, { ok: 1 });
       }
+      if (request.method === "POST" && path === "/dono/salas") {
+        // Só endereços simples: o Ranga confere de novo antes de usar.
+        const host = /^[A-Za-z0-9][A-Za-z0-9.-]{0,119}$/, way = /^[A-Za-z0-9][A-Za-z0-9.-]{0,110}:[0-9]{1,5}$/;
+        let text = `servidor\t${host.test(fields.servidor || "") ? fields.servidor : ""}\n`;
+        for (const key of ["switch", "3ds", "classicos", "xbox", "ps3"]) if (way.test(fields[key] || "")) text += `${key}\t${fields[key]}\n`;
+        await env.DB.prepare("INSERT INTO ajustes (chave, valor) VALUES ('salas', ?) ON CONFLICT (chave) DO UPDATE SET valor = excluded.valor").bind(text).run();
+        return answer(200, { ok: 1 });
+      }
       return answer(404);
     }
     if (request.method === "POST" && path === "/conta/entrar") return login(env, ip, fields);
@@ -869,6 +878,10 @@ export default {
         return messages(env, me, Math.max(0, Number(url.searchParams.get("desde") || "0") || 0), groupsAfter === null ? null : Math.max(0, Number(groupsAfter) || 0));
       }
       if (path === "/grupos") return groups(env, me);
+      if (path === "/salas") {
+        const row = await env.DB.prepare("SELECT valor FROM ajustes WHERE chave = 'salas'").first();
+        return answer(200, null, row ? row.valor : "servidor\t\n");
+      }
       if (path === "/nuvem") return cloudList(env, me);
       if (path === "/nuvem/parte") return cloudRead(env, me, url.searchParams.get("hash"), Number(url.searchParams.get("indice")));
     }

@@ -111,11 +111,9 @@ void RepairLinks(const std::wstring& root);
 // backups\mudou-de-pasta-<date>. Remembers the folder in engines.ini [Ranga] raiz. Returns how many files changed.
 int RelocateRoot(const std::wstring& root);
 std::wstring Quality(const std::wstring& root);
-// PS4 and PS5 (God of War Sons of Sparta through AnyPS5, Bloodborne through its port) are experiments kept out of
-// sight: off unless engines.ini [Ranga] ps4ps5=1 (RangaEmu.exe --mostrar-ps4-ps5; --esconder-ps4-ps5 hides them).
-// Hidden, they have no card on the home screen and no folder in jogos; their games and code stay as they are.
-bool ShowPs4Ps5(const std::wstring& root);
-void SetShowPs4Ps5(const std::wstring& root, bool on);
+// What is still Alpha is only compiled into Ranga Alpha, which shows nothing else.
+bool IsAlphaSystem(const std::wstring& id);
+bool SystemShown(const std::wstring& root, const std::wstring& id);
 void SetQuality(const std::wstring& root, const std::wstring& level);
 // Writes the preset's tweaks into the emulator's configuration, which has to be closed, and makes its BIOS folder.
 // Returns what was changed, one line each, or why nothing could be.

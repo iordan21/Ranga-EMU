@@ -57,6 +57,9 @@ HttpResult HttpRequest(const std::string& method, const std::string& url, const 
     const bool secure = parts.nScheme == INTERNET_SCHEME_HTTPS;
     const std::wstring target = std::wstring(path) + extra;
 
+#ifdef RANGA_ALPHA
+    return result;
+#endif
     HINTERNET session = WinHttpOpen(Widen(userAgent).c_str(), WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (session == nullptr) return result;
     WinHttpSetTimeouts(session, timeoutMs, timeoutMs, timeoutMs, timeoutMs);
