@@ -2965,6 +2965,11 @@ int RetroMain(int argc, wchar_t** argv) {
     for (auto* pad : g_pads) if (pad != nullptr) SDL_GameControllerClose(pad);
     SDL_Quit();
     Log("[retro] fim\n");
+    // Eden's global destructors crashed (0xC0000005 freeing a null pointer) after this line on 2 runs in 3 on
+    // 27/11/2026, old core too, and Ranga then showed "O jogo parou de repente" for a game closed by hand. The game
+    // is saved and the core gone by now: the process ends here, and Windows frees the rest, as with DLSS 5 above.
+    std::fflush(nullptr);
+    TerminateProcess(GetCurrentProcess(), 0);
     return 0;
 }
 

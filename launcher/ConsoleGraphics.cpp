@@ -161,6 +161,13 @@ const std::vector<GraphicsOption> kPs2 = {
      "Só para jogos que aceitam o multitap do PS2, com um controle por jogador ligado no PC. Cada jogo usa uma porta: se só aparecerem 2 jogadores, tente a outra. Vale ao reabrir."},
 };
 
+// PS3: the core's only option on this list; the PS3's graphics and online have their own sections. 1 by default: with
+// more pads connected, some games ask who plays with which controller.
+const std::vector<GraphicsOption> kPs3 = {
+    {"Controles", "rpcs3_jogadores", "Jogadores no mesmo PC", {{"auto", "Automático (1)"}, {"2", "2"}, {"3", "3"}, {"4", "4"}},
+     "Um controle por jogador ligado no PC, para jogos de PS3 com tela dividida ou vários jogadores na mesma TV (como Call of Duty ou LittleBigPlanet). Deixe em 1 quando jogar sozinho. Vale ao reabrir."},
+};
+
 const std::vector<GraphicsOption> kDolphin = {
     {"Imagem", "dolphin_efb_scale", "Resolução",
      {{"auto", "Automático (pela Qualidade)"}, {"1", "1x (480p, original)"}, {"2", "2x (720p)"}, {"3", "3x (1080p)"}, {"4", "4x (1440p)"}, {"6", "6x (4K)"}}, "Vale ao reabrir."},
@@ -199,7 +206,7 @@ const std::vector<GraphicsOption>* ConsoleGraphics(const std::wstring& system) {
     static const std::pair<const wchar_t*, const std::vector<GraphicsOption>*> tables[] = {
         {L"NES", &kNes}, {L"SNES", &kSnes}, {L"MD", &kMegaDrive}, {L"SMS", &kMegaDrive}, {L"SEGACD", &kMegaDrive}, {L"PCE", &kPce},
         {L"A2600", &kAtari}, {L"ARCADE", &kArcade}, {L"GBA", &kGba}, {L"GB", &kGb}, {L"SATURN", &kSaturn}, {L"PS1", &kPs1},
-        {L"N64", &kN64}, {L"PSP", &kPsp}, {L"DC", &kDreamcast}, {L"PS2", &kPs2}, {L"GC", &kDolphin}, {L"WII", &kDolphin},
+        {L"N64", &kN64}, {L"PSP", &kPsp}, {L"DC", &kDreamcast}, {L"PS2", &kPs2}, {L"PS3", &kPs3}, {L"GC", &kDolphin}, {L"WII", &kDolphin},
         {L"3DS", &k3ds}, {L"NDS", &kDs},
     };
     for (const auto& [id, table] : tables) {

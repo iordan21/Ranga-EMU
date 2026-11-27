@@ -4803,6 +4803,9 @@ struct Client {
          "Guarda os shaders prontos para a próxima vez. Vale ao reabrir."},
         {"Avançado", "eden_video", "Vídeos do jogo", {{"auto", "Automático (placa de vídeo)"}, {"gpu", "Na placa de vídeo"}, {"cpu", "No processador"}, {"desligado", "Desligados"}},
          "Cenas em vídeo. Se travarem, tente no processador. Vale ao reabrir."},
+        // 1 by default: with more pads connected, some games ask who plays with which controller.
+        {"Controles", "eden_jogadores", "Jogadores no mesmo PC", {{"auto", "Automático (1)"}, {"2", "2"}, {"3", "3"}, {"4", "4"}},
+         "Um controle por jogador ligado no PC, para jogar junto em tela dividida (como no Mario Kart 8). Deixe em 1 quando jogar sozinho. Vale ao reabrir."},
     };
 
     template <typename Label> void SwitchGraphics(const Game& game, Label& label, float labelWidth, float scale) {

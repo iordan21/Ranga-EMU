@@ -6275,3 +6275,23 @@ Só para jogos que aceitam o multitap do PS2, com um controle por jogador ligado
 Only for games that accept the PS2 multitap, with one gamepad per player plugged into the PC. Each game uses one port: if only 2 players show up, try the other. Takes effect on reopening.
 Только для игр, которые поддерживают мультитап PS2, по одному геймпаду на игрока, подключённому к ПК. Каждая игра использует один порт: если видно только 2 игроков, попробуйте другой. Применяется после перезапуска.
 Solo para juegos que aceptan el multitap de PS2, con un mando por jugador conectado al PC. Cada juego usa un puerto: si solo aparecen 2 jugadores, prueba el otro. Se aplica al volver a abrir.
+
+Jogadores no mesmo PC
+Players on this PC
+Игроки на этом ПК
+Jugadores en el mismo PC
+
+Automático (1)
+Automatic (1)
+Автоматически (1)
+Automático (1)
+
+Um controle por jogador ligado no PC, para jogar junto em tela dividida (como no Mario Kart 8). Deixe em 1 quando jogar sozinho. Vale ao reabrir.
+One gamepad per player plugged into the PC, to play together on split screen (as in Mario Kart 8). Leave it at 1 when playing alone. Takes effect on reopening.
+По одному геймпаду на игрока, подключённому к ПК, чтобы играть вместе на разделённом экране (как в Mario Kart 8). Оставьте 1, если играете один. Применяется после перезапуска.
+Un mando por jugador conectado al PC, para jugar juntos en pantalla dividida (como en Mario Kart 8). Déjalo en 1 cuando juegues solo. Se aplica al volver a abrir.
+
+Um controle por jogador ligado no PC, para jogos de PS3 com tela dividida ou vários jogadores na mesma TV (como Call of Duty ou LittleBigPlanet). Deixe em 1 quando jogar sozinho. Vale ao reabrir.
+One gamepad per player plugged into the PC, for PS3 games with split screen or several players on the same TV (like Call of Duty or LittleBigPlanet). Leave it at 1 when playing alone. Takes effect on reopening.
+Один геймпад на игрока, подключённый к ПК, для игр PS3 с разделённым экраном или несколькими игроками на одном телевизоре (например, Call of Duty или LittleBigPlanet). Оставьте 1, если играете один. Применяется при повторном запуске.
+Un mando por jugador conectado al PC, para juegos de PS3 con pantalla dividida o varios jugadores en la misma TV (como Call of Duty o LittleBigPlanet). Déjalo en 1 cuando juegues solo. Se aplica al reabrir.
