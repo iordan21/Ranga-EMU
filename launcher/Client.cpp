@@ -667,17 +667,27 @@ public:
             for (int b = 0; b < Count; ++b) now[b] = now[b] || ImGui::IsKeyDown(keys[b]);
         }
         const double time = ImGui::GetTime();
+        // RANGA_CLIENT_LOG_CONTROLE=1 (teste): each press and repeat the menu takes, with the time, in controle.log.
+        static FILE* trace = _wgetenv(L"RANGA_CLIENT_LOG_CONTROLE") != nullptr ? _wfopen(L"controle.log", L"w") : nullptr;
+        static const char* names[Count] = {"esquerda", "direita", "cima", "baixo", "aceitar", "voltar", "busca", "menu", "view"};
         for (int b = 0; b < Count; ++b) {
-            if (!now[b]) { held[b] = 0; continue; }
+            if (!now[b]) {
+                if (trace && held[b] != 0) std::fprintf(trace, "%9.3f %s solto\n", time, names[b]);
+                held[b] = 0;
+                continue;
+            }
             if (held[b] == 0) {
                 held[b] = time;
                 next[b] = time + 0.4;
                 pressed[b] = active;
+                if (trace) std::fprintf(trace, "%9.3f %s APERTOU (ativo=%d)\n", time, names[b], active ? 1 : 0);
             } else if (b <= Down && time >= next[b]) {
                 next[b] = time + 0.11;
                 pressed[b] = active;
+                if (trace) std::fprintf(trace, "%9.3f %s repetiu segurando (desde %.3f)\n", time, names[b], held[b]);
             }
         }
+        if (trace) std::fflush(trace);
     }
 
     // Any button or stick of any controller down now, read straight from SDL without a frame (the main loop asks it
@@ -691,6 +701,12 @@ public:
             const int x = SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_LEFTX), y = SDL_GameControllerGetAxis(pad, SDL_CONTROLLER_AXIS_LEFTY);
             if (x < -20000 || x > 20000 || y < -20000 || y > 20000) return true;
         }
+        return false;
+    }
+
+    // A button the menu still takes as down (its release not read yet).
+    bool AnyHeld() const {
+        for (const double since : held) if (since != 0) return true;
         return false;
     }
 
@@ -9313,7 +9329,9 @@ struct Client {
         // RANGA_CLIENT_TODO_QUADRO=1 (medição): o jeito antigo, um quadro a cada leitura do controle.
         static const bool everyFrame = _wgetenv(L"RANGA_CLIENT_TODO_QUADRO") != nullptr;
         if (everyFrame || !PadInFront() || Moving()) return false;
-        if (gamepads.AnyDown()) return false;
+        // A button the menu still takes as down keeps the frames coming until its release is read: skipped, the release
+        // waited up to 250 ms and ImGui, seeing the d-pad or Cross still down, repeated it (27/11/2026, the game page).
+        if (gamepads.AnyDown() || gamepads.AnyHeld()) return false;
         return GetTickCount64() - lastFrameAt < (animatedLastFrame ? 40u : 250u);
     }
 
@@ -9462,9 +9480,17 @@ struct Client {
         // which has the focus, and start the game.
         static std::array<bool, Gamepads::Count> padSent{}, padStale{};
         const bool padFront = _wgetenv(L"RANGA_CLIENT_TEST_INPUT") != nullptr || GetForegroundWindow() == window;
+        // A window that held the loop (Adicionar atualização ou DLC's file dialog, say) makes the time jump: a button
+        // still down across it would count as held all that while and ImGui would repeat it. It counts again only once
+        // let go.
+        static ULONGLONG lastPadFrame = 0;
+        const ULONGLONG padNow = GetTickCount64();
+        const bool padGap = lastPadFrame != 0 && padNow - lastPadFrame > 200;
+        lastPadFrame = padNow;
         for (const auto& [button, key] : padKeys) {
             const bool held = gamepads.Held(button);
             if (!held) padStale[button] = false;
+            else if (padGap && padSent[button]) padStale[button] = true;
             // Nor is the press the Controle tab takes as a new button.
             else if (!fieldNav || captureFor >= 0 || captureCooling) padStale[button] = true;
             const bool down = fieldNav && padFront && held && !padStale[button];
