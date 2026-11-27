@@ -121,7 +121,7 @@ Diagnosis FromRpcs3(const std::string& log) {
     if (Has(log, {"Failed to decrypt", "Missing decryption key", "Wrong decryption key"}))
         return Make(true, "O jogo está criptografado e a chave dele não está no PC.", "Coloque a licença (.rap) ou a chave do disco tirada do seu próprio console.");
     if (Has(log, {"Firmware is missing", "Firmware is too old", "falta o firmware"}))
-        return Make(true, "O firmware do PS3 está faltando ou é antigo demais para este jogo.", "Baixe o PS3UPDAT.PUP no site da Sony e instale pelo RPCS3 (File > Install Firmware).");
+        return Make(true, "O firmware do PS3 está faltando ou é antigo demais para este jogo.", "Baixe o PS3UPDAT.PUP no site da Sony e use o botão Instalar firmware do PS3, na página do jogo.");
     if (Has(log, {"Invalid file or folder", "Invalid dev_bdvd", "Nothing to boot", "disc type is not supported"}))
         return Make(true, "O arquivo do jogo está incompleto ou corrompido.", "Copie o jogo de novo do seu console.");
     if (Has(log, {"Savestate"})) return Make(true, "O estado salvo não serve nesta versão do emulador.", "Abra o jogo sem carregar o estado salvo.");

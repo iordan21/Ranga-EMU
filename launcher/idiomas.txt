@@ -5966,10 +5966,10 @@ The PS3 firmware is missing or too old for this game.
 Прошивка PS3 отсутствует или слишком старая для этой игры.
 El firmware de PS3 falta o es demasiado antiguo para este juego.
 
-Baixe o PS3UPDAT.PUP no site da Sony e instale pelo RPCS3 (File > Install Firmware).
-Download PS3UPDAT.PUP from Sony's site and install it with RPCS3 (File > Install Firmware).
-Скачайте PS3UPDAT.PUP с сайта Sony и установите через RPCS3 (File > Install Firmware).
-Descarga PS3UPDAT.PUP del sitio de Sony e instálalo con RPCS3 (File > Install Firmware).
+Baixe o PS3UPDAT.PUP no site da Sony e use o botão Instalar firmware do PS3, na página do jogo.
+Download PS3UPDAT.PUP from Sony's site and use the Install PS3 firmware button on the game's page.
+Скачайте PS3UPDAT.PUP с сайта Sony и нажмите кнопку «Установить прошивку PS3» на странице игры.
+Descarga PS3UPDAT.PUP del sitio de Sony y usa el botón Instalar firmware de PS3 en la página del juego.
 
 O estado salvo não serve nesta versão do emulador.
 The save state does not work in this version of the emulator.
@@ -6295,3 +6295,48 @@ Um controle por jogador ligado no PC, para jogos de PS3 com tela dividida ou vá
 One gamepad per player plugged into the PC, for PS3 games with split screen or several players on the same TV (like Call of Duty or LittleBigPlanet). Leave it at 1 when playing alone. Takes effect on reopening.
 Один геймпад на игрока, подключённый к ПК, для игр PS3 с разделённым экраном или несколькими игроками на одном телевизоре (например, Call of Duty или LittleBigPlanet). Оставьте 1, если играете один. Применяется при повторном запуске.
 Un mando por jugador conectado al PC, para juegos de PS3 con pantalla dividida o varios jugadores en la misma TV (como Call of Duty o LittleBigPlanet). Déjalo en 1 cuando juegues solo. Se aplica al reabrir.
+
+Instalar firmware do PS3...
+Install PS3 firmware...
+Установить прошивку PS3...
+Instalar firmware de PS3...
+
+O PS3UPDAT.PUP é grátis no site da Sony (atualização do sistema do PS3).
+PS3UPDAT.PUP is free on Sony's site (PS3 system update).
+PS3UPDAT.PUP бесплатно на сайте Sony (обновление системы PS3).
+PS3UPDAT.PUP es gratis en el sitio de Sony (actualización del sistema de PS3).
+
+Escolher prod.keys...
+Choose prod.keys...
+Выбрать prod.keys...
+Elegir prod.keys...
+
+Instalar firmware do Switch...
+Install Switch firmware...
+Установить прошивку Switch...
+Instalar firmware de Switch...
+
+As chaves e o firmware saem do seu próprio Switch; o Ranga só os coloca no lugar certo.
+The keys and firmware come from your own Switch; Ranga only puts them in the right place.
+Ключи и прошивка берутся с вашего собственного Switch; Ranga только кладёт их на нужное место.
+Las claves y el firmware salen de tu propia Switch; Ranga solo los pone en el lugar correcto.
+
+Instalando...
+Installing...
+Установка...
+Instalando...
+
+Escolha o PS3UPDAT.PUP
+Choose PS3UPDAT.PUP
+Выберите PS3UPDAT.PUP
+Elige PS3UPDAT.PUP
+
+Escolha a prod.keys do seu Switch
+Choose your Switch's prod.keys
+Выберите prod.keys вашего Switch
+Elige la prod.keys de tu Switch
+
+Escolha a pasta do firmware do seu Switch
+Choose your Switch's firmware folder
+Выберите папку с прошивкой вашего Switch
+Elige la carpeta del firmware de tu Switch

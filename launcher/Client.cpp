@@ -952,6 +952,7 @@ struct Client {
         if (updateThread.joinable()) updateThread.join();
         if (checkThread.joinable()) checkThread.join();
         if (backupThread.joinable()) backupThread.join();
+        if (setupThread.joinable()) setupThread.join();
         if (cloudThread.joinable()) cloudThread.join();
         if (packageThread.joinable()) packageThread.join();
         if (githubThread.joinable()) githubThread.join();
@@ -1505,6 +1506,157 @@ struct Client {
             }
             backupBusy = false;
         });
+    }
+
+    // What a console's core needs from the player (the PS3's firmware, the Switch's keys and firmware), put where the
+    // core reads it from what the player picks, so nobody has to find bios\retroarch. The PS3's firmware is Sony's
+    // PS3UPDAT.PUP, installed by the PS3 core itself (rpcs3_instalar_firmware), as RPCS3's File > Install Firmware.
+    enum class Setup { Ps3Firmware, SwitchKeys, SwitchFirmware };
+    std::thread setupThread;
+    std::atomic<bool> setupBusy{false};
+    std::mutex setupLock;
+    std::wstring setupResult; // under setupLock
+
+    // The file or folder the player picks, or empty. filter: L"*.PUP"; empty for a folder.
+    std::wstring PickPath(const wchar_t* title, const wchar_t* filterName, const wchar_t* filter) {
+        IFileOpenDialog* dialog = nullptr;
+        std::wstring chosen;
+        if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)))) return chosen;
+        DWORD options = 0;
+        dialog->GetOptions(&options);
+        dialog->SetOptions(options | FOS_FORCEFILESYSTEM | (filter == nullptr ? FOS_PICKFOLDERS : FOS_FILEMUSTEXIST));
+        dialog->SetTitle(Idioma::TrW(title).c_str());
+        if (filter != nullptr) {
+            const COMDLG_FILTERSPEC spec[] = {{filterName, filter}};
+            dialog->SetFileTypes(1, spec);
+        }
+        if (SUCCEEDED(dialog->Show(window))) {
+            IShellItem* item = nullptr;
+            if (SUCCEEDED(dialog->GetResult(&item))) {
+                wchar_t* path = nullptr;
+                if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path))) chosen = path;
+                CoTaskMemFree(path);
+                item->Release();
+            }
+        }
+        dialog->Release();
+        return chosen;
+    }
+
+    // Runs the PS3 core with no game to install the PUP; its "[firmware] ..." line says how it went.
+    static std::wstring InstallPs3Firmware(const std::wstring& root, const std::wstring& pup) {
+        const System* system = FindSystem(L"PS3");
+        if (system == nullptr) return L"Não deu: o Ranga não achou o PS3.";
+        wchar_t temp[MAX_PATH] = L"";
+        GetTempPathW(MAX_PATH, temp);
+        const std::wstring log = std::wstring(temp) + L"ranga-firmware-ps3.log";
+        SECURITY_ATTRIBUTES inherit{sizeof(inherit), nullptr, TRUE};
+        HANDLE out = CreateFileW(log.c_str(), GENERIC_WRITE, FILE_SHARE_READ, &inherit, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (out == INVALID_HANDLE_VALUE) return L"Não deu: o Ranga não conseguiu criar o registro da instalação.";
+        STARTUPINFOW startup{sizeof(startup)};
+        startup.dwFlags = STARTF_USESTDHANDLES;
+        startup.hStdOutput = startup.hStdError = out;
+        PROCESS_INFORMATION process{};
+        std::wstring command = L"\"" + root + L"\\ranga_retro.exe\" --core \"" + NativeCorePath(root, *system) + L"\" --no-game --title \"Firmware do PS3\" --system \"" +
+                               root + L"\\bios\\retroarch\" --option \"rpcs3_instalar_firmware=" + pup + L"\"";
+        const bool started = CreateProcessW(nullptr, command.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, root.c_str(), &startup, &process);
+        CloseHandle(out);
+        if (!started) return L"Não deu: o ranga_retro.exe não abriu.";
+        const bool ended = WaitForSingleObject(process.hProcess, 10 * 60 * 1000) == WAIT_OBJECT_0;
+        if (!ended) TerminateProcess(process.hProcess, 1);
+        CloseHandle(process.hProcess);
+        CloseHandle(process.hThread);
+        const std::string text = ReadBytes(log);
+        const std::string done = "[firmware] instalado: ", failed = "[firmware] erro: ";
+        const auto after = [&text](const std::string& mark) {
+            const size_t at = text.find(mark);
+            if (at == std::string::npos) return std::string();
+            const size_t from = at + mark.size();
+            return text.substr(from, text.find_first_of("\r\n", from) - from);
+        };
+        if (const std::string version = after(done); !version.empty()) return L"Firmware do PS3 instalado (" + Wide(version) + L"). Já pode abrir os jogos.";
+        if (const std::string why = after(failed); !why.empty()) return L"Não deu: " + Wide(why) + L".";
+        return ended ? L"Não deu: a instalação parou sem dizer por quê. Veja " + log + L"." : L"Não deu: a instalação passou de 10 minutos e foi parada.";
+    }
+
+    // The Switch: prod.keys (and title.keys beside it, when there) into eden\keys; the firmware's .nca files, from the
+    // folder the player dumped from the console, into the NAND where Eden installs firmware.
+    static std::wstring InstallSwitch(const std::wstring& root, Setup what, const std::wstring& chosen) {
+        namespace fs = std::filesystem;
+        std::error_code error;
+        const fs::path eden = fs::path(root) / L"bios" / L"retroarch" / L"eden";
+        if (what == Setup::SwitchKeys) {
+            const fs::path keys = eden / L"keys";
+            fs::create_directories(keys, error);
+            if (!fs::copy_file(chosen, keys / L"prod.keys", fs::copy_options::overwrite_existing, error)) return L"Não deu para copiar a prod.keys: " + Wide(error.message()) + L".";
+            const fs::path title = fs::path(chosen).parent_path() / L"title.keys";
+            const bool withTitle = fs::exists(title, error) && fs::copy_file(title, keys / L"title.keys", fs::copy_options::overwrite_existing, error);
+            return withTitle ? L"Chaves do Switch colocadas (prod.keys e title.keys)." : L"Chave do Switch colocada (prod.keys).";
+        }
+        const fs::path target = eden / L"nand" / L"system" / L"Contents" / L"registered";
+        std::vector<fs::path> found;
+        for (fs::recursive_directory_iterator it(chosen, fs::directory_options::skip_permission_denied, error), end; !error && it != end; it.increment(error)) {
+            if (it->is_regular_file(error) && Lower(it->path().extension().wstring()) == L".nca") found.push_back(it->path());
+        }
+        if (found.empty()) return L"Não deu: a pasta escolhida não tem arquivos .nca. Escolha a pasta do firmware tirado do seu Switch (já extraída, se veio em .zip).";
+        fs::create_directories(target, error);
+        for (const auto& file : found) {
+            if (!fs::copy_file(file, target / file.filename(), fs::copy_options::overwrite_existing, error)) return L"Não deu para copiar " + file.filename().wstring() + L": " + Wide(error.message()) + L".";
+        }
+        return L"Firmware do Switch instalado (" + std::to_wstring(found.size()) + L" arquivos).";
+    }
+
+    void StartSetup(Setup what) {
+        if (setupBusy) return;
+        const std::wstring chosen = what == Setup::Ps3Firmware ? PickPath(L"Escolha o PS3UPDAT.PUP", L"Firmware do PS3", L"*.PUP")
+                                    : what == Setup::SwitchKeys ? PickPath(L"Escolha a prod.keys do seu Switch", L"Chaves do Switch", L"*.keys")
+                                                                : PickPath(L"Escolha a pasta do firmware do seu Switch", nullptr, nullptr);
+        if (chosen.empty()) return;
+        if (setupThread.joinable()) setupThread.join();
+        setupBusy = true;
+        {
+            std::lock_guard guard(setupLock);
+            setupResult.clear();
+        }
+        setupThread = std::thread([this, what, chosen, root = library.Root()] {
+            const std::wstring result = what == Setup::Ps3Firmware ? InstallPs3Firmware(root, chosen) : InstallSwitch(root, what, chosen);
+            {
+                std::lock_guard guard(setupLock);
+                setupResult = result;
+            }
+            missingAt = 0;
+            setupBusy = false;
+        });
+    }
+
+    // Under the "Falta ..." warning: the buttons that put the missing piece in place, and how the last one went.
+    void SetupButtons(const std::wstring& system, float scale, bool missing) {
+        if (system != L"PS3" && system != L"SWITCH") return;
+        // Once it is all there only the last result stays, so the player sees the install went through.
+        if (!missing && !setupBusy) {
+            std::lock_guard guard(setupLock);
+            if (!setupResult.empty()) ImGui::TextDisabled("%s", Utf8(setupResult).c_str());
+            return;
+        }
+        ImGui::BeginDisabled(setupBusy);
+        if (system == L"PS3") {
+            if (ImGui::Button("Instalar firmware do PS3...", ImVec2(0, 34 * scale))) StartSetup(Setup::Ps3Firmware);
+            ImGui::SameLine();
+            ImGui::TextDisabled("O PS3UPDAT.PUP é grátis no site da Sony (atualização do sistema do PS3).");
+        } else {
+            if (ImGui::Button("Escolher prod.keys...", ImVec2(0, 34 * scale))) StartSetup(Setup::SwitchKeys);
+            ImGui::SameLine();
+            if (ImGui::Button("Instalar firmware do Switch...", ImVec2(0, 34 * scale))) StartSetup(Setup::SwitchFirmware);
+            ImGui::TextDisabled("As chaves e o firmware saem do seu próprio Switch; o Ranga só os coloca no lugar certo.");
+        }
+        ImGui::EndDisabled();
+        if (setupBusy) ImGui::TextDisabled("Instalando...");
+        std::lock_guard guard(setupLock);
+        if (!setupResult.empty()) {
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextUnformatted(Utf8(setupResult).c_str());
+            ImGui::PopTextWrapPos();
+        }
     }
 
     void BackupTab(float scale) {
@@ -3286,6 +3438,8 @@ struct Client {
             ImGui::PopTextWrapPos();
             ImGui::PopStyleColor();
         }
+        // Before the first game too: a friend with no PS3 game yet sees the warning here, not on a game's page.
+        if (engine.native && engine.ready) SetupButtons(console, scale, !missing.empty());
         ImGui::EndGroup();
 
         // A few of its games, straight to their page, each with its name under it.
@@ -3792,11 +3946,13 @@ struct Client {
                 enginesPage = true;
                 RefreshEngines();
             }
-            if (const std::wstring& problem = engine.ready ? MissingFor(game.system, game.folder) : engine.problem; !problem.empty()) {
+            const std::wstring problem = engine.ready ? MissingFor(game.system, game.folder) : engine.problem;
+            if (!problem.empty()) {
                 ImGui::PushStyleColor(ImGuiCol_Text, Color(kAmber));
                 ImGui::TextWrapped("%s", Utf8(problem).c_str());
                 ImGui::PopStyleColor();
             }
+            if (engine.native && engine.ready) SetupButtons(game.system, scale, !problem.empty());
             if (const System* system = FindSystem(game.system)) {
                 ImGui::PushTextWrapPos(0);
                 ImGui::TextDisabled("%s", system->note.c_str());

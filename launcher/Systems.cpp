@@ -63,8 +63,8 @@ std::vector<System> MakeSystems() {
          {{L"RPCS3", L"rpcs3", L"--no-gui {fullscreen} \"{rom}\"", L"--fullscreen",
            {{L"GuiConfigs\\CurrentSettings.ini", "main_window", "infoBoxEnabledWelcome", "false"}}, L"", true}},
          "Instale no RPCS3 o firmware do PS3 (PS3UPDAT.PUP, do site da Sony). Jogo em pasta (com PS3_GAME ou USRDIR) ou ISO. "
-         "No nativo (core do RPCS3 feito para o Ranga) o firmware e os saves são os do RPCS3 portátil, só com o controle 1 e "
-         "sem save state; a primeira abertura compila os shaders e demora."},
+         "No nativo (core do RPCS3 feito para o Ranga), o firmware entra pelo botão Instalar firmware do PS3; até 4 controles "
+         "(Jogadores no mesmo PC) e sem save state; a primeira abertura compila os shaders e demora."},
         {L"PS2", "PlayStation 2", {L".iso", L".chd", L".cso", L".zso", L".bin", L".cue", L".gz", L".mdf", L".img", L".m3u", L".elf"}, false,
          {{L"PCSX2", L"pcsx2", L"-batch {fullscreen} -- \"{rom}\"", L"-fullscreen",
            Join({{L"inis\\PCSX2.ini", "UI", "SetupWizardIncomplete", "false"},
@@ -932,14 +932,17 @@ std::wstring MissingFiles(const std::wstring& root, const std::wstring& id, cons
         if (!absent.empty()) return Missing(L"o que o xemu precisa do seu Xbox (" + absent + L")", shown + L"\\xemu");
     }
     if (core == L"eden") {
-        if (!Exists(shown + L"\\eden\\keys\\prod.keys")) return Missing(L"a prod.keys do Switch", shown + L"\\eden\\keys");
+        // The buttons under the warning (Escolher prod.keys, Instalar firmware do Switch) put them in these folders.
+        if (!Exists(shown + L"\\eden\\keys\\prod.keys"))
+            return L"Falta a prod.keys do Switch. Ela sai do seu próprio Switch; use o botão Escolher prod.keys, aqui embaixo.";
         if (!HasMatch(shown + L"\\eden\\nand\\system\\Contents\\registered\\*.nca"))
-            return Missing(L"o firmware do Switch", shown + L"\\eden\\nand\\system\\Contents\\registered");
+            return L"Falta o firmware do Switch. Ele sai do seu próprio Switch; use o botão Instalar firmware do Switch, aqui embaixo.";
     }
-    // The PS3 firmware is the one Sony publishes on its site; RPCS3 installs it (File > Install Firmware).
+    // The PS3 firmware is the one Sony publishes on its site; the game page's "Instalar firmware do PS3" installs it.
     const std::wstring vsh = L"\\dev_flash\\vsh\\module\\vsh.self";
     if ((core == L"rpcs3" && !Exists(shown + L"\\rpcs3" + vsh)) || (core.empty() && id == L"PS3" && !Exists(exeDir + vsh)))
-        return L"Falta o firmware do PS3. Baixe o PS3UPDAT.PUP no site da Sony e instale pelo RPCS3 (File > Install Firmware).";
+        return core == L"rpcs3" ? L"Falta o firmware do PS3. Baixe o PS3UPDAT.PUP no site da Sony e use o botão Instalar firmware do PS3, aqui embaixo."
+                                : L"Falta o firmware do PS3. Baixe o PS3UPDAT.PUP no site da Sony e instale pelo RPCS3 (File > Install Firmware).";
     if ((ext == L".wud" || ext == L".wux") &&
         ((core == L"cemu" && !Exists(shown + L"\\Cemu\\keys.txt")) || (core.empty() && id == L"WIIU" && !Exists(exeDir + L"\\keys.txt"))))
         return Missing(L"a chave do seu Wii U para jogos WUD e WUX (keys.txt)", core.empty() ? exeDir : shown + L"\\Cemu");
