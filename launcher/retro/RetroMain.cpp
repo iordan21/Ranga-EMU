@@ -16,6 +16,7 @@
 #include "Achievements.hpp"
 #include "Social.hpp"
 #include "Queda.hpp"
+#include "../ControleDb.hpp"
 // The captures' PNG (F12), kept to this file.
 #define STB_IMAGE_WRITE_STATIC
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -2597,6 +2598,8 @@ int RetroMain(int argc, wchar_t** argv) {
         SDL_SetHint("SDL_DIRECTINPUT_ENABLED", "1");
         if (SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) != 0) Log("[retro] SDL: %s\n", SDL_GetError());
     }
+    // The community list of generic pads, so a cheap USB pad works as a gamepad too (ControleDb.cpp).
+    Log("[retro] controles conhecidos: %d da lista da comunidade\n", Ranga::AddKnownPads());
     OpenPads();
 
     const double beforeCore = SinceStart();

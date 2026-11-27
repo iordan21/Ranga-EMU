@@ -1,0 +1,3 @@
+SDL_GameControllerDB (https://github.com/mdqinc/SDL_GameControllerDB), licença zlib (LICENSE).
+Versão: commit 01af257a60, de 26/11/2026.
+Para atualizar: baixe o gamecontrollerdb.txt novo aqui e rode python -I tools/gerar_controles.py.

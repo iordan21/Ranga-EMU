@@ -67,7 +67,7 @@ add_subdirectory(core/relinker)
 if(WIN32)
     set(IMGUI_DIR ${CMAKE_SOURCE_DIR}/3rdparty/imgui)
     add_executable(RangaEmu WIN32
-        launcher/Client.cpp launcher/Common.cpp launcher/Covers.cpp launcher/Dlss5.cpp launcher/Library.cpp launcher/Runner.cpp launcher/Systems.cpp launcher/Embed.cpp launcher/Rooms.cpp launcher/ConsoleGraphics.cpp launcher/Update.cpp launcher/Http.cpp launcher/PlayerProfile.cpp launcher/Lobby.cpp launcher/Media.cpp launcher/Backup.cpp launcher/Cloud.cpp launcher/Store.cpp launcher/Idioma.cpp launcher/Install.cpp launcher/Diagnosis.cpp launcher/CrashReport.cpp launcher/launcher.rc
+        launcher/Client.cpp launcher/Common.cpp launcher/Covers.cpp launcher/Dlss5.cpp launcher/Library.cpp launcher/Runner.cpp launcher/Systems.cpp launcher/Embed.cpp launcher/Rooms.cpp launcher/ConsoleGraphics.cpp launcher/Update.cpp launcher/Http.cpp launcher/PlayerProfile.cpp launcher/Lobby.cpp launcher/Media.cpp launcher/Backup.cpp launcher/Cloud.cpp launcher/Store.cpp launcher/Idioma.cpp launcher/Install.cpp launcher/Diagnosis.cpp launcher/CrashReport.cpp launcher/ControleDb.cpp launcher/launcher.rc
         ${IMGUI_DIR}/imgui.cpp ${IMGUI_DIR}/imgui_draw.cpp ${IMGUI_DIR}/imgui_tables.cpp ${IMGUI_DIR}/imgui_widgets.cpp
         ${IMGUI_DIR}/backends/imgui_impl_win32.cpp ${IMGUI_DIR}/backends/imgui_impl_dx11.cpp ${IMGUI_DIR}/misc/freetype/imgui_freetype.cpp)
     # The translations (launcher/idiomas.txt) go into the .rc: a change to them rebuilds it.
@@ -103,7 +103,7 @@ if(WIN32)
     # libchdr (3rdparty/libchdr, BSD): .chd discs for the RetroAchievements hash (launcher/retro/ChdReader.cpp).
     set(CHDR_WANT_TESTS OFF CACHE BOOL "" FORCE)
     add_subdirectory(${CMAKE_SOURCE_DIR}/3rdparty/libchdr ${CMAKE_BINARY_DIR}/libchdr EXCLUDE_FROM_ALL)
-    add_executable(RangaRetro WIN32 launcher/retro/RetroMain.cpp launcher/retro/VulkanVideo.cpp launcher/retro/Netplay.cpp launcher/retro/Achievements.cpp launcher/retro/ChdReader.cpp launcher/retro/Social.cpp launcher/retro/Queda.cpp launcher/Http.cpp launcher/retro/retro.rc)
+    add_executable(RangaRetro WIN32 launcher/retro/RetroMain.cpp launcher/retro/VulkanVideo.cpp launcher/retro/Netplay.cpp launcher/retro/Achievements.cpp launcher/retro/ChdReader.cpp launcher/retro/Social.cpp launcher/retro/Queda.cpp launcher/Http.cpp launcher/ControleDb.cpp launcher/retro/retro.rc)
     set_target_properties(RangaRetro PROPERTIES OUTPUT_NAME ranga_retro)
     target_include_directories(RangaRetro PRIVATE ${CMAKE_SOURCE_DIR}/3rdparty/libretro ${CMAKE_SOURCE_DIR}/3rdparty/Vulkan-Headers/include ${CMAKE_SOURCE_DIR}/3rdparty/stb)
     target_compile_definitions(RangaRetro PRIVATE UNICODE _UNICODE)

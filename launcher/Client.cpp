@@ -20,6 +20,7 @@
 #include "Backup.hpp"
 #include "Cloud.hpp"
 #include "CrashReport.hpp"
+#include "ControleDb.hpp"
 
 #include <d3d11.h>
 #include <shellapi.h>
@@ -608,6 +609,8 @@ public:
             SDL_SetHint("SDL_DIRECTINPUT_ENABLED", "1");
             if (SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) != 0) return;
         }
+        // The community list of generic pads, as in Ranga Retro (ControleDb.cpp).
+        AddKnownPads();
         started = true;
         Open();
     }
