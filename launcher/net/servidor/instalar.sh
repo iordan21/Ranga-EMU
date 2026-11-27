@@ -67,6 +67,12 @@ fi
 if [[ ! -f /etc/ranga/senha-switch.conf ]]; then
     (umask 077; echo 'RANGA_SENHA=""' >/etc/ranga/senha-switch.conf)
 fi
+# O código do grupo para as mesas dos clássicos, só para o administrador ler. MESAS_ARGS="--grupo CODIGO" guarda o
+# código; com "--grupo CODIGO --mesas-com-codigo" só senta quem traz o código (Ranga 1.8.2 em diante, que o recebe da
+# central). Vazio: as mesas aceitam quem tiver o endereço. Depois de mudar: sudo systemctl restart ranga-classicos
+if [[ ! -f /etc/ranga/mesas.conf ]]; then
+    (umask 077; echo 'MESAS_ARGS=' >/etc/ranga/mesas.conf)
+fi
 
 # servico nome descrição comando [linhas a mais da seção Service]
 servico() {
@@ -110,8 +116,8 @@ servico ranga-3ds "Sala do Ranga: 3DS (UDP 24874)" \
     $'DynamicUser=yes\nEnvironmentFile=/etc/ranga/salas.conf'
 # Sem --perfis e sem --atualizacao: perfis e chat são da central e a atualização é do GitHub; aqui é só o online.
 servico ranga-classicos "Sala do Ranga: clássicos (TCP 24873) e hub do Xbox (UDP 24875)" \
-    '/usr/local/bin/ranga-sala --port 24873 --lan --hub-xbox 24875 --log /var/lib/ranga-classicos/sala.log' \
-    $'DynamicUser=yes\nStateDirectory=ranga-classicos'
+    '/usr/local/bin/ranga-sala --port 24873 --lan --hub-xbox 24875 --log /var/lib/ranga-classicos/sala.log $MESAS_ARGS' \
+    $'DynamicUser=yes\nStateDirectory=ranga-classicos\nEnvironmentFile=/etc/ranga/mesas.conf'
 cat >/etc/logrotate.d/ranga <<'EOF'
 /var/lib/ranga-classicos/sala.log {
     weekly

@@ -9513,6 +9513,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int) {
         reserve("3ds", L"Ranga", L"sala3ds_endereco", nullptr);
         reserve("classicos", L"Ranga", L"online_endereco", nullptr);
         reserve("xbox", L"Ranga", L"xbox_hub", nullptr);
+        // The group's code goes too: the central hands it with the addresses to every account, and each friend's
+        // Ranga then brings it to the tables (net/RangaNet.hpp kDenied).
+        {
+            std::wstring group;
+            for (const wchar_t c : ReadIni(ini, L"Ranga", L"grupo", L"")) if (iswalnum(c) || c == L'-' || c == L'_') group += c;
+            if (!group.empty()) text += "grupo\t" + Utf8(group) + "\n";
+        }
         const RoomServers servers = ReadRoomServers(text);
         std::wstring result;
         if (host != L"nenhum" && servers.host.empty()) result = L"servidor das salas: o endereço não vale (só o nome ou o IP, sem porta)";
