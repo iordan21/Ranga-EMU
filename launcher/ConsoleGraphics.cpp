@@ -156,6 +156,9 @@ const std::vector<GraphicsOption> kPs2 = {
      "Tira o tremor de linhas que alguns jogos têm."},
     {"Desempenho", "pcsx2_blending_accuracy", "Precisão das transparências",
      {{"auto", "Automático (pela Qualidade)"}, {"Minimum", "Mínima (mais leve)"}, {"Basic", "Básica"}, {"Medium", "Média"}, {"High", "Alta (pesada)"}}, "Mais alta corrige brilhos e sombras, mas pesa."},
+    // Off by default: with it on, player 2 of a game without multitap would be on the wrong port.
+    {"Controles", "pcsx2_multitap", "Multitap (até 4 jogadores)", {{"auto", "Automático (desligado)"}, {"port 1", "Na porta 1"}, {"port 2", "Na porta 2"}},
+     "Só para jogos que aceitam o multitap do PS2, com um controle por jogador ligado no PC. Cada jogo usa uma porta: se só aparecerem 2 jogadores, tente a outra. Vale ao reabrir."},
 };
 
 const std::vector<GraphicsOption> kDolphin = {

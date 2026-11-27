@@ -6250,3 +6250,28 @@ O Ranga Alpha não envia nada.
 Ranga Alpha sends nothing.
 Ranga Alpha ничего не отправляет.
 Ranga Alpha no envía nada.
+
+Controles
+Controls
+Управление
+Controles
+
+Multitap (até 4 jogadores)
+Multitap (up to 4 players)
+Мультитап (до 4 игроков)
+Multitap (hasta 4 jugadores)
+
+Na porta 1
+On port 1
+В порту 1
+En el puerto 1
+
+Na porta 2
+On port 2
+В порту 2
+En el puerto 2
+
+Só para jogos que aceitam o multitap do PS2, com um controle por jogador ligado no PC. Cada jogo usa uma porta: se só aparecerem 2 jogadores, tente a outra. Vale ao reabrir.
+Only for games that accept the PS2 multitap, with one gamepad per player plugged into the PC. Each game uses one port: if only 2 players show up, try the other. Takes effect on reopening.
+Только для игр, которые поддерживают мультитап PS2, по одному геймпаду на игрока, подключённому к ПК. Каждая игра использует один порт: если видно только 2 игроков, попробуйте другой. Применяется после перезапуска.
+Solo para juegos que aceptan el multitap de PS2, con un mando por jugador conectado al PC. Cada juego usa un puerto: si solo aparecen 2 jugadores, prueba el otro. Se aplica al volver a abrir.

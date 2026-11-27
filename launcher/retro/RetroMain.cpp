@@ -179,7 +179,9 @@ float g_coreFps = -1;
 
 // ------------------------------------------------------------------------------------------------------------- input
 
-constexpr int kPorts = 2;
+// Four players on this PC, one gamepad each, in the order SDL found them: what the N64, GameCube, Wii and the PS2 with
+// its multitap (pcsx2_multitap) take. A core that reads only two ports leaves the others alone.
+constexpr int kPorts = 4;
 // The core is xemu, whose players come on other ports (InputState).
 bool g_xemuPorts = false;
 SDL_GameController* g_pads[kPorts] = {};
@@ -213,13 +215,18 @@ bool Key(int virtualKey) { return (GetAsyncKeyState(virtualKey) & 0x8000) != 0; 
 
 // RANGA_RETRO_PAD_SCRIPT="4000:A,6500:DOWN": player 1's buttons pressed by the clock (milliseconds since the program
 // started, 200 ms each), so a test drives a game or a console's menu without the real keyboard or a window in front.
-// Names: A B X Y UP DOWN LEFT RIGHT START SELECT L R.
+// Names: A B X Y UP DOWN LEFT RIGHT START SELECT L R. "4000:P3:A" presses it for player 3 (P1 to P4).
 const ULONGLONG g_started = GetTickCount64();
-// With a script, it alone plays player 1: a real pad or keyboard in use meanwhile would change what the test sees.
+// With a script, it alone plays: a real pad or keyboard in use meanwhile would change what the test sees.
 bool g_scripted = false;
-bool ScriptedButton(unsigned id) {
-    static const std::vector<std::pair<ULONGLONG, unsigned>> script = [] {
-        std::vector<std::pair<ULONGLONG, unsigned>> steps;
+struct ScriptStep {
+    ULONGLONG at;
+    unsigned button;
+    int port;
+};
+bool ScriptedButton(int port, unsigned id) {
+    static const std::vector<ScriptStep> script = [] {
+        std::vector<ScriptStep> steps;
         const char* text = std::getenv("RANGA_RETRO_PAD_SCRIPT");
         if (text == nullptr) return steps;
         static const std::pair<const char*, unsigned> names[] = {
@@ -236,16 +243,22 @@ bool ScriptedButton(unsigned id) {
             at = end + 1;
             const size_t colon = step.find(':');
             if (colon == std::string::npos) continue;
+            std::string rest = step.substr(colon + 1);
+            int player = 0;
+            if (rest.size() > 3 && (rest[0] == 'P' || rest[0] == 'p') && rest[1] >= '1' && rest[1] <= '4' && rest[2] == ':') {
+                player = rest[1] - '1';
+                rest = rest.substr(3);
+            }
             for (const auto& [name, button] : names) {
-                if (step.substr(colon + 1) == name) steps.push_back({std::strtoull(step.c_str(), nullptr, 10), button});
+                if (rest == name) steps.push_back({std::strtoull(step.c_str(), nullptr, 10), button, player});
             }
         }
         return steps;
     }();
     const ULONGLONG now = GetTickCount64() - g_started;
     g_scripted = !script.empty();
-    for (const auto& [at, button] : script) {
-        if (button == id && now >= at && now < at + 200) return true;
+    for (const ScriptStep& step : script) {
+        if (step.port == port && step.button == id && now >= step.at && now < step.at + 200) return true;
     }
     return false;
 }
@@ -292,7 +305,7 @@ int PadSource(SDL_GameController* pad, unsigned id) {
 }
 
 int16_t PadButton(int port, unsigned id) {
-    if (port == 0 && ScriptedButton(id)) return 1;
+    if (ScriptedButton(port, id)) return 1;
     if (g_scripted) return 0;
     // The game reads input only while its window is the one in front.
     if (GetForegroundWindow() != g_window) return 0;
@@ -313,6 +326,16 @@ int16_t PadButton(int port, unsigned id) {
             case RETRO_DEVICE_ID_JOYPAD_L: down = Key('Q'); break;
             case RETRO_DEVICE_ID_JOYPAD_R: down = Key('W'); break;
         }
+    }
+    // RANGA_RETRO_TECLADO_JOGADORES=1 (testing four players without four gamepads): players 2 to 4 on the keyboard,
+    // enough to join a split-screen game. Number 2, 3 or 4 is the bottom button (Cross, A); T, Y or U is Start;
+    // G, H or J is the right button (Circle, B).
+    static const bool extraKeys = std::getenv("RANGA_RETRO_TECLADO_JOGADORES") != nullptr;
+    if (!down && extraKeys && port >= 1 && port <= 3) {
+        static const char cross[] = {'2', '3', '4'}, start[] = {'T', 'Y', 'U'}, circle[] = {'G', 'H', 'J'};
+        if (id == RETRO_DEVICE_ID_JOYPAD_B) down = Key(cross[port - 1]);
+        else if (id == RETRO_DEVICE_ID_JOYPAD_START) down = Key(start[port - 1]);
+        else if (id == RETRO_DEVICE_ID_JOYPAD_A) down = Key(circle[port - 1]);
     }
     return down ? 1 : 0;
 }
@@ -1823,13 +1846,13 @@ void PollPads() {
         now[Close] |= button(SDL_CONTROLLER_BUTTON_GUIDE) || button(SDL_CONTROLLER_BUTTON_START);
     }
     // RANGA_RETRO_PAD_SCRIPT drives it too, in RetroPad names: B (the bottom button) picks, A goes back.
-    now[Up] |= ScriptedButton(RETRO_DEVICE_ID_JOYPAD_UP);
-    now[Down] |= ScriptedButton(RETRO_DEVICE_ID_JOYPAD_DOWN);
-    now[Left] |= ScriptedButton(RETRO_DEVICE_ID_JOYPAD_LEFT);
-    now[Right] |= ScriptedButton(RETRO_DEVICE_ID_JOYPAD_RIGHT);
-    now[A] |= ScriptedButton(RETRO_DEVICE_ID_JOYPAD_B);
-    now[B] |= ScriptedButton(RETRO_DEVICE_ID_JOYPAD_A);
-    now[Close] |= ScriptedButton(RETRO_DEVICE_ID_JOYPAD_START);
+    now[Up] |= ScriptedButton(0, RETRO_DEVICE_ID_JOYPAD_UP);
+    now[Down] |= ScriptedButton(0, RETRO_DEVICE_ID_JOYPAD_DOWN);
+    now[Left] |= ScriptedButton(0, RETRO_DEVICE_ID_JOYPAD_LEFT);
+    now[Right] |= ScriptedButton(0, RETRO_DEVICE_ID_JOYPAD_RIGHT);
+    now[A] |= ScriptedButton(0, RETRO_DEVICE_ID_JOYPAD_B);
+    now[B] |= ScriptedButton(0, RETRO_DEVICE_ID_JOYPAD_A);
+    now[Close] |= ScriptedButton(0, RETRO_DEVICE_ID_JOYPAD_START);
     const ULONGLONG tick = GetTickCount64();
     for (int b = 0; b < Count; ++b) {
         if (first || !now[b]) {
@@ -2195,13 +2218,13 @@ void PollPads() {
         now[Guide] |= button(SDL_CONTROLLER_BUTTON_GUIDE);
     }
     // RANGA_RETRO_PAD_SCRIPT, in RetroPad names: B (the bottom button) types, A erases.
-    now[Up] |= ScriptedButton(RETRO_DEVICE_ID_JOYPAD_UP);
-    now[Down] |= ScriptedButton(RETRO_DEVICE_ID_JOYPAD_DOWN);
-    now[Left] |= ScriptedButton(RETRO_DEVICE_ID_JOYPAD_LEFT);
-    now[Right] |= ScriptedButton(RETRO_DEVICE_ID_JOYPAD_RIGHT);
-    now[A] |= ScriptedButton(RETRO_DEVICE_ID_JOYPAD_B);
-    now[B] |= ScriptedButton(RETRO_DEVICE_ID_JOYPAD_A);
-    now[Start] |= ScriptedButton(RETRO_DEVICE_ID_JOYPAD_START);
+    now[Up] |= ScriptedButton(0, RETRO_DEVICE_ID_JOYPAD_UP);
+    now[Down] |= ScriptedButton(0, RETRO_DEVICE_ID_JOYPAD_DOWN);
+    now[Left] |= ScriptedButton(0, RETRO_DEVICE_ID_JOYPAD_LEFT);
+    now[Right] |= ScriptedButton(0, RETRO_DEVICE_ID_JOYPAD_RIGHT);
+    now[A] |= ScriptedButton(0, RETRO_DEVICE_ID_JOYPAD_B);
+    now[B] |= ScriptedButton(0, RETRO_DEVICE_ID_JOYPAD_A);
+    now[Start] |= ScriptedButton(0, RETRO_DEVICE_ID_JOYPAD_START);
     const ULONGLONG tick = GetTickCount64();
     for (int b = 0; b < Count; ++b) {
         if (first || !now[b]) {
@@ -2633,8 +2656,7 @@ int RetroMain(int argc, wchar_t** argv) {
     }
     // The core may have put its own last-chance handler in place of Ranga's while loading.
     Ranga::Retro::ReinstallCrashCapture();
-    g.core.setControllerPort(0, RETRO_DEVICE_JOYPAD);
-    g.core.setControllerPort(1, RETRO_DEVICE_JOYPAD);
+    for (unsigned port = 0; port < kPorts; ++port) g.core.setControllerPort(port, RETRO_DEVICE_JOYPAD);
     g.core.getAvInfo(&g.av);
     Log("[retro] tempo: core carregado aos %.0f ms, jogo lido em %.0f ms (%s, %.1f MB), core abriu o jogo aos %.0f ms\n", coreLoaded,
         romRead - beforeRead, info.need_fullpath ? "o core lê sozinho" : "lido pelo Ranga", romData.size() / 1048576.0, SinceStart());

@@ -4849,7 +4849,13 @@ struct Client {
                 }
                 ImGui::EndCombo();
             }
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", option.note);
+            // A long note breaks into lines instead of running past the screen's edge.
+            if (ImGui::IsItemHovered() && option.note != nullptr && ImGui::BeginTooltip()) {
+                ImGui::PushTextWrapPos(ImGui::GetFontSize() * 32);
+                ImGui::TextUnformatted(option.note);
+                ImGui::PopTextWrapPos();
+                ImGui::EndTooltip();
+            }
             ImGui::PopID();
         }
         ImGui::SetCursorPosX(labelWidth);
